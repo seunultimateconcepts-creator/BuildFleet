@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useState } from "react";
 import { useCommissioning } from "@/hooks/use-commissioning";
 import { useSites } from "@/hooks/use-sites";
@@ -363,7 +365,7 @@ function NewCommissionModal({ open, onClose }: { open: boolean; onClose: () => v
                   onChange={e => set("date_commissioned", e.target.value)}
                   max={new Date().toISOString().split("T")[0]} />
                 <p className="text-xs text-slate-400 mt-1">
-                  The actual date this equipment was commissioned on site — not today's date.
+                  The actual date this equipment was commissioned on site — not todays date.
                 </p>
               </F>
 

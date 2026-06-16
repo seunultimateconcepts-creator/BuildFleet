@@ -2,6 +2,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import Image from "next/image";
 import { useEffect, useState, useRef } from "react";
 import { dbu } from "@/lib/db";

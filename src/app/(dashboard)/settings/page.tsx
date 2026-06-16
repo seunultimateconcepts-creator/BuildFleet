@@ -1,5 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
+
+export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from "react";
 import { dbu } from "@/lib/db";

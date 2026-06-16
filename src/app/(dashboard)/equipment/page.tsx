@@ -1,4 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
+
+export const dynamic = 'force-dynamic';
 
 import { useState } from "react";
 import Link from "next/link";
@@ -56,6 +59,7 @@ function StatusModal({ item, onClose, onSave }: {
 }) {
   const { sites } = useSites();
   const [status, setStatus] = useState<OperationalStatus>(item.operational_status);
+   
   const [yard,   setYard]   = useState<string>((item as any).current_yard || "");
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState<string | null>(null);

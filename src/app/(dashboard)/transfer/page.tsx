@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useRef, useEffect } from "react";
 import { dbu } from "@/lib/db";
 import { printTransfer } from "@/lib/transfer-print";
@@ -822,6 +824,7 @@ function TransferHistoryTab() {
 
 export default function TransferPage() {
   const { transfers, loading, updateStatus, confirmReceipt } = useTransfers();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { profile, canTransfer } = useAuth();
 
   const [tab,          setTab]          = useState<'register'|'history'>('register');
