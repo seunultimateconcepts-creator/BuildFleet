@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -71,7 +72,6 @@ function cleanFleet(raw: string): string {
 }
 
 // Get a value from a row trying multiple key variations
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function get(row: Record<string,string>, ...keys: string[]): string {
   for (const k of keys) {
     const val = row[k] || row[k.toLowerCase()] || row[k.toUpperCase()] || "";
