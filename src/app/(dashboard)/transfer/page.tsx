@@ -50,21 +50,15 @@ function SectionHead({ title, sub, color = "slate" }: {
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// SEARCHABLE EQUIPMENT DROPDOWN
-// ─────────────────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function EquipmentSearch({ equipment, value, onChange }: {
-  equipment: any[];
-  value: string;
-  onChange: (id: string, equip: any) => void;
+  equipment: any[]; value: string; onChange: (id: string, equip: any) => void;
 }) {
   const [query,    setQuery]    = useState("");
   const [open,     setOpen]     = useState(false);
   const [selected, setSelected] = useState<any>(null);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Close on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -73,7 +67,6 @@ function EquipmentSearch({ equipment, value, onChange }: {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Filter equipment by query
   const filtered = equipment
     .filter(e => e.operational_status !== "Scrapped")
     .filter(e => {
@@ -87,45 +80,34 @@ function EquipmentSearch({ equipment, value, onChange }: {
         (e.reg_no || "").toLowerCase().includes(q)
       );
     })
-    .slice(0, 20); // cap at 20 results
+    .slice(0, 20);
 
   function select(e: any) {
-    setSelected(e);
-    setQuery("");
-    setOpen(false);
-    onChange(e.id, e);
+    setSelected(e); setQuery(""); setOpen(false); onChange(e.id, e);
   }
 
   function clear() {
-    setSelected(null);
-    setQuery("");
-    onChange("", null);
+    setSelected(null); setQuery(""); onChange("", null);
   }
 
   return (
     <div ref={ref} className="relative">
       {selected ? (
-        // Show selected equipment card
         <div className="border border-amber-300 bg-amber-50 rounded-xl p-3 flex items-start justify-between gap-3">
           <div>
             <p className="font-bold text-amber-700 font-mono text-sm">{selected.fleet_number}</p>
             <p className="text-slate-700 text-sm font-medium">{selected.name}</p>
-            <p className="text-slate-500 text-xs mt-0.5">
-              {selected.make} {selected.model} · {selected.site}
-            </p>
+            <p className="text-slate-500 text-xs mt-0.5">{selected.make} {selected.model} · {selected.site}</p>
           </div>
-          <button onClick={clear}
-            className="text-slate-400 hover:text-red-500 text-lg leading-none shrink-0">×</button>
+          <button onClick={clear} className="text-slate-400 hover:text-red-500 text-lg leading-none shrink-0">×</button>
         </div>
       ) : (
         <>
-          <input
-            placeholder="Type fleet number, name, make or category..."
+          <input placeholder="Type fleet number, name, make or category..."
             value={query}
             onChange={e => { setQuery(e.target.value); setOpen(true); }}
             onFocus={() => setOpen(true)}
-            className={iCls}
-          />
+            className={iCls} />
           {open && (
             <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-64 overflow-y-auto">
               {filtered.length === 0 ? (
@@ -133,33 +115,25 @@ function EquipmentSearch({ equipment, value, onChange }: {
                   {query ? "No equipment matches your search." : "Start typing to search equipment..."}
                 </div>
               ) : filtered.map(e => (
-                <button key={e.id}
-                  onClick={() => select(e)}
+                <button key={e.id} onClick={() => select(e)}
                   className="w-full text-left px-4 py-3 hover:bg-amber-50 border-b border-slate-50 last:border-0 transition-colors">
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-amber-600 font-mono text-xs">{e.fleet_number}</span>
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                          e.operational_status === "Working" ? "bg-emerald-100 text-emerald-700" :
-                          "bg-slate-100 text-slate-600"
+                          e.operational_status === "Working" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"
                         }`}>{e.operational_status}</span>
                       </div>
                       <p className="text-slate-700 text-sm font-medium truncate">{e.name}</p>
-                      <p className="text-slate-400 text-xs">
-                        {e.make} {e.model} · {e.category}
-                      </p>
+                      <p className="text-slate-400 text-xs">{e.make} {e.model} · {e.category}</p>
                     </div>
-                    <p className="text-slate-400 text-xs text-right shrink-0 max-w-30 truncate">
-                      {e.site}
-                    </p>
+                    <p className="text-slate-400 text-xs text-right shrink-0 max-w-30 truncate">{e.site}</p>
                   </div>
                 </button>
               ))}
               {filtered.length === 20 && (
-                <div className="px-4 py-2 text-center text-xs text-slate-400">
-                  Showing first 20 — type more to narrow down
-                </div>
+                <div className="px-4 py-2 text-center text-xs text-slate-400">Showing first 20 — type more to narrow down</div>
               )}
             </div>
           )}
@@ -169,22 +143,15 @@ function EquipmentSearch({ equipment, value, onChange }: {
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// RECEIPT MODAL
-// ─────────────────────────────────────────────────────────────
 function ReceiptModal({ transfer, onClose, onConfirm }: {
   transfer: Transfer; onClose: () => void;
   onConfirm: (data: Partial<Transfer>) => Promise<void>;
 }) {
   const [form, setForm] = useState({
-    receival_date:               new Date().toISOString().slice(0, 16),
-    receiving_officer:           "",
-    receiving_plant_engineer:    "",
-    equipment_condition_receipt: "",
-    history_file_receipt:        false,
-    speedometer_receipt:         0,
-    fire_extinguisher_receipt:   "",
-    receipt_remarks:             "",
+    receival_date: new Date().toISOString().slice(0, 16),
+    receiving_officer: "", receiving_plant_engineer: "",
+    equipment_condition_receipt: "", history_file_receipt: false,
+    speedometer_receipt: 0, fire_extinguisher_receipt: "", receipt_remarks: "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -277,34 +244,39 @@ function ReceiptModal({ transfer, onClose, onConfirm }: {
 // NEW TRANSFER MODAL
 // ─────────────────────────────────────────────────────────────
 function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { createTransfer }  = useTransfers();
-  const { equipment }       = useEquipment();
-  const { sites }           = useSites();
-  const { profile }         = useAuth();
+  const { createTransfer } = useTransfers();
+  const { equipment }      = useEquipment();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { sites }          = useSites(); // filtered by role — for from_site context
+  const { profile }        = useAuth();
+  const [allSites, setAllSites] = useState<any[]>([]); // ALL sites — for to_site dropdown
+
+  // Always fetch ALL sites for the destination dropdown
+  // regardless of the user's role restriction
+  useEffect(() => {
+    if (!open) return;
+    dbu.from("sites")
+      .select("id,name,code,cost_code")
+      .order("code", { ascending: true })
+      .then(({ data }: { data: any[] | null }) => setAllSites(data || []));
+  }, [open]);
 
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState<string | null>(null);
   const [selectedEquip, setSelectedEquip] = useState<any>(null);
 
   const [form, setForm] = useState({
-    equipment_id:                "",
-    transfer_type:               "Temporary Release" as TransferType,
-    from_site:                   "",
-    from_cost_code:              "",
-    transfer_date:               new Date().toISOString().slice(0, 16),
-    expected_arrival_date:       "",
-    dispatching_officer:         profile?.full_name || "",
-    dispatching_plant_engineer:  "",
-    to_site:                     "",
-    to_cost_code:                "",
-    equipment_condition_dispatch: "",
-    transport_mode:              "",
-    history_file_dispatch:       false,
-    accompanying_operator:       "",
-    speedometer_dispatch:        0,
-    fire_extinguisher_dispatch:  "",
-    fleet_attachments:           "",
-    dispatch_remarks:            "",
+    equipment_id: "", transfer_type: "Temporary Release" as TransferType,
+    from_site: "", from_cost_code: "",
+    transfer_date: new Date().toISOString().slice(0, 16),
+    expected_arrival_date: "",
+    dispatching_officer: profile?.full_name || "",
+    dispatching_plant_engineer: "",
+    to_site: "", to_cost_code: "",
+    equipment_condition_dispatch: "", transport_mode: "",
+    history_file_dispatch: false, accompanying_operator: "",
+    speedometer_dispatch: 0, fire_extinguisher_dispatch: "",
+    fleet_attachments: "", dispatch_remarks: "",
   });
 
   function set(k: string, v: any) { setForm(p => ({ ...p, [k]: v })); }
@@ -313,8 +285,7 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
     set("equipment_id", id);
     if (equip) {
       set("from_site", equip.site || "");
-      // Auto-fill cost code from sites list if available
-      const siteRecord = sites.find(s => s.name === equip.site);
+      const siteRecord = allSites.find(s => s.name === equip.site);
       if (siteRecord) set("from_cost_code", siteRecord.cost_code || siteRecord.code || "");
     }
     setSelectedEquip(equip);
@@ -322,8 +293,7 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
 
   function handleToSiteChange(siteName: string) {
     set("to_site", siteName);
-    // Auto-fill destination cost code
-    const siteRecord = sites.find(s => s.name === siteName);
+    const siteRecord = allSites.find(s => s.name === siteName);
     if (siteRecord) set("to_cost_code", siteRecord.cost_code || siteRecord.code || "");
   }
 
@@ -338,62 +308,56 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
     setSaving(true); setError(null);
 
     const result = await createTransfer({
-      equipment_id:                form.equipment_id,
-      equipment_code:              selectedEquip?.fleet_number || "",
-      equipment_name:              selectedEquip?.name || "",
-      machine_type:                selectedEquip?.category || "",
-      machine_make:                selectedEquip?.make || "",
-      machine_model:               selectedEquip?.model || "",
-      reg_no:                      selectedEquip?.reg_no || "",
-      transfer_type:               form.transfer_type,
-      from_site:                   form.from_site,
-      from_cost_code:              form.from_cost_code,
-      transfer_date:               form.transfer_date,
-      expected_arrival_date:       form.expected_arrival_date || undefined,
-      dispatching_officer:         form.dispatching_officer,
-      dispatching_plant_engineer:  form.dispatching_plant_engineer,
-      to_site:                     form.to_site,
-      to_cost_code:                form.to_cost_code,
+      equipment_id: form.equipment_id,
+      equipment_code: selectedEquip?.fleet_number || "",
+      equipment_name: selectedEquip?.name || "",
+      machine_type: selectedEquip?.category || "",
+      machine_make: selectedEquip?.make || "",
+      machine_model: selectedEquip?.model || "",
+      reg_no: selectedEquip?.reg_no || "",
+      transfer_type: form.transfer_type,
+      from_site: form.from_site, from_cost_code: form.from_cost_code,
+      transfer_date: form.transfer_date,
+      expected_arrival_date: form.expected_arrival_date || undefined,
+      dispatching_officer: form.dispatching_officer,
+      dispatching_plant_engineer: form.dispatching_plant_engineer,
+      to_site: form.to_site, to_cost_code: form.to_cost_code,
       equipment_condition_dispatch: form.equipment_condition_dispatch,
-      transport_mode:              form.transport_mode,
-      history_file_dispatch:       form.history_file_dispatch,
-      accompanying_operator:       form.accompanying_operator,
-      speedometer_dispatch:        form.speedometer_dispatch,
-      fire_extinguisher_dispatch:  form.fire_extinguisher_dispatch,
-      fleet_attachments:           form.fleet_attachments,
-      dispatch_remarks:            form.dispatch_remarks,
+      transport_mode: form.transport_mode,
+      history_file_dispatch: form.history_file_dispatch,
+      accompanying_operator: form.accompanying_operator,
+      speedometer_dispatch: form.speedometer_dispatch,
+      fire_extinguisher_dispatch: form.fire_extinguisher_dispatch,
+      fleet_attachments: form.fleet_attachments,
+      dispatch_remarks: form.dispatch_remarks,
     } as any);
 
     setSaving(false);
     if (!result.success) { setError(result.error || "Transfer failed."); return; }
 
     onClose();
-
-    // Download transfer form after closing modal
     printTransfer({
       ...(result.data || {}),
-      equipment_code:             selectedEquip?.fleet_number || "",
-      equipment_name:             selectedEquip?.name || "",
-      machine_make:               selectedEquip?.make || "",
-      machine_model:              selectedEquip?.model || "",
-      reg_no:                     selectedEquip?.reg_no || "",
-      machine_type:               selectedEquip?.category || "",
-      transfer_type:              form.transfer_type,
-      from_site:                  form.from_site,
-      from_cost_code:             form.from_cost_code,
-      to_site:                    form.to_site,
-      to_cost_code:               form.to_cost_code,
-      transfer_date:              form.transfer_date,
-      expected_arrival_date:      form.expected_arrival_date,
-      dispatching_officer:        form.dispatching_officer,
+      equipment_code: selectedEquip?.fleet_number || "",
+      equipment_name: selectedEquip?.name || "",
+      machine_make: selectedEquip?.make || "",
+      machine_model: selectedEquip?.model || "",
+      reg_no: selectedEquip?.reg_no || "",
+      machine_type: selectedEquip?.category || "",
+      transfer_type: form.transfer_type,
+      from_site: form.from_site, from_cost_code: form.from_cost_code,
+      to_site: form.to_site, to_cost_code: form.to_cost_code,
+      transfer_date: form.transfer_date,
+      expected_arrival_date: form.expected_arrival_date,
+      dispatching_officer: form.dispatching_officer,
       dispatching_plant_engineer: form.dispatching_plant_engineer,
-      transport_mode:             form.transport_mode,
-      speedometer_dispatch:       form.speedometer_dispatch,
+      transport_mode: form.transport_mode,
+      speedometer_dispatch: form.speedometer_dispatch,
       fire_extinguisher_dispatch: form.fire_extinguisher_dispatch,
-      history_file_dispatch:      form.history_file_dispatch,
-      fleet_attachments:          form.fleet_attachments,
-      dispatch_remarks:           form.dispatch_remarks,
-      status:                     "Pending",
+      history_file_dispatch: form.history_file_dispatch,
+      fleet_attachments: form.fleet_attachments,
+      dispatch_remarks: form.dispatch_remarks,
+      status: "Pending",
     });
   }
 
@@ -404,52 +368,38 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
       <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl my-6 overflow-hidden">
         <div className="px-8 py-5 bg-slate-900 flex items-center justify-between shrink-0">
           <div>
-            <p className="text-amber-400 text-[11px] font-bold uppercase tracking-widest mb-0.5">
-              Equipment Transfer Form
-            </p>
+            <p className="text-amber-400 text-[11px] font-bold uppercase tracking-widest mb-0.5">Equipment Transfer Form</p>
             <h2 className="text-xl font-bold text-white">New Transfer — Dispatching Area</h2>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white text-3xl leading-none">×</button>
         </div>
 
         <div className="p-8 space-y-6">
-
-          {/* Equipment selection */}
           <div className="grid grid-cols-2 gap-5">
             <SectionHead title="Equipment Details" sub="Search by fleet number, name, make or category" />
             <div className="col-span-2">
               <F label="Select Equipment" required>
-                <EquipmentSearch
-                  equipment={equipment}
-                  value={form.equipment_id}
-                  onChange={handleEquipmentSelect}
-                />
+                <EquipmentSearch equipment={equipment} value={form.equipment_id} onChange={handleEquipmentSelect} />
               </F>
             </div>
-
             {selectedEquip && (
               <div className="col-span-2 bg-amber-50 border border-amber-200 rounded-xl p-4">
                 <div className="grid grid-cols-3 gap-3 text-xs">
                   {[
-                    ["Fleet No.",    selectedEquip.fleet_number],
-                    ["Category",     selectedEquip.category],
+                    ["Fleet No.", selectedEquip.fleet_number],
+                    ["Category", selectedEquip.category],
                     ["Make / Model", `${selectedEquip.make} ${selectedEquip.model}`],
                     ["Current Site", selectedEquip.site],
-                    ["Reg. No.",     selectedEquip.reg_no || "—"],
-                    ["Condition",    selectedEquip.assessment],
+                    ["Reg. No.", selectedEquip.reg_no || "—"],
+                    ["Condition", selectedEquip.assessment],
                   ].map(([l, v]) => (
-                    <div key={l}>
-                      <p className="text-slate-400">{l}</p>
-                      <p className="font-semibold text-slate-800">{v}</p>
-                    </div>
+                    <div key={l}><p className="text-slate-400">{l}</p><p className="font-semibold text-slate-800">{v}</p></div>
                   ))}
                 </div>
               </div>
             )}
-
             <F label="Transfer Type" required>
-              <select className={iCls} value={form.transfer_type}
-                onChange={e => set("transfer_type", e.target.value)}>
+              <select className={iCls} value={form.transfer_type} onChange={e => set("transfer_type", e.target.value)}>
                 <option value="Temporary Release">Temporary Release</option>
                 <option value="Final Release">Final Release</option>
               </select>
@@ -457,16 +407,13 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
             <div />
           </div>
 
-          {/* Dispatching */}
           <div className="grid grid-cols-2 gap-5">
             <SectionHead title="Dispatching Area" sub="Current location and transfer details" />
             <F label="From Site" required>
-              <input className={`${iCls} bg-slate-50 text-slate-500`}
-                value={form.from_site} readOnly />
+              <input className={`${iCls} bg-slate-50 text-slate-500`} value={form.from_site} readOnly />
             </F>
             <F label="From Cost Code">
-              <input className={iCls} value={form.from_cost_code}
-                onChange={e => set("from_cost_code", e.target.value)} />
+              <input className={iCls} value={form.from_cost_code} onChange={e => set("from_cost_code", e.target.value)} />
             </F>
             <F label="Transfer Date" required>
               <input className={iCls} type="datetime-local" value={form.transfer_date}
@@ -492,8 +439,7 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
               </select>
             </F>
             <F label="Transport Mode">
-              <select className={iCls} value={form.transport_mode}
-                onChange={e => set("transport_mode", e.target.value)}>
+              <select className={iCls} value={form.transport_mode} onChange={e => set("transport_mode", e.target.value)}>
                 <option value="">Select...</option>
                 {TRANSPORT_MODES.map(o => <option key={o}>{o}</option>)}
               </select>
@@ -522,9 +468,7 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
               <input type="checkbox" checked={form.history_file_dispatch}
                 onChange={e => set("history_file_dispatch", e.target.checked)}
                 className="w-4 h-4 accent-amber-500" />
-              <span className="text-sm font-medium text-slate-700">
-                Accompanying History File / Tyre Pass included
-              </span>
+              <span className="text-sm font-medium text-slate-700">Accompanying History File / Tyre Pass included</span>
             </label>
             <div className="col-span-2">
               <F label="Dispatch Remarks">
@@ -535,14 +479,13 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
             </div>
           </div>
 
-          {/* Receiving */}
+          {/* Receiving Area — uses allSites (unfiltered) */}
           <div className="grid grid-cols-2 gap-5">
-            <SectionHead title="Receiving Area" sub="Destination site — cost code auto-fills" color="blue" />
+            <SectionHead title="Receiving Area" sub="Destination site — all 117 sites available" color="blue" />
             <F label="To Site" required>
-              <select className={iCls} value={form.to_site}
-                onChange={e => handleToSiteChange(e.target.value)}>
+              <select className={iCls} value={form.to_site} onChange={e => handleToSiteChange(e.target.value)}>
                 <option value="">Select destination site...</option>
-                {sites
+                {allSites
                   .filter(s => s.name !== form.from_site)
                   .map(s => (
                     <option key={s.id || s.code} value={s.name}>
@@ -559,9 +502,7 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
-              ⚠️ {error}
-            </div>
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">⚠️ {error}</div>
           )}
         </div>
 
@@ -581,13 +522,10 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
 }
 
 // ─────────────────────────────────────────────────────────────
-// MAIN PAGE
-// ─────────────────────────────────────────────────────────────
-
-// ─────────────────────────────────────────────────────────────
 // TRANSFER HISTORY TAB
 // ─────────────────────────────────────────────────────────────
 function TransferHistoryTab() {
+  const { profile, hasFullAccess, isClerk, isSupervisor } = useAuth();
   const [allTransfers, setAllTransfers] = useState<any[]>([]);
   const [loading,      setLoading]      = useState(false);
   const [search,       setSearch]       = useState("");
@@ -595,17 +533,18 @@ function TransferHistoryTab() {
   const [filterYear,   setFilterYear]   = useState("");
   const [selected,     setSelected]     = useState<any>(null);
 
-  const iCls = "w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
-
-  // eslint-disable-next-line react-hooks/immutability
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { fetchAll(); }, []); // eslint-disable-line
 
   async function fetchAll() {
     setLoading(true);
-    const { data } = await dbu
-      .from("transfers")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const isRestricted = (isClerk || isSupervisor) && !hasFullAccess;
+    const assignedSites = profile?.assigned_sites || [];
+
+    let q = dbu.from("transfers").select("*").order("created_at", { ascending: false });
+    if (isRestricted && assignedSites.length > 0) {
+      q = q.or(`from_site.in.(${assignedSites.map((s:string) => `"${s}"`).join(",")}),to_site.in.(${assignedSites.map((s:string) => `"${s}"`).join(",")})`);
+    }
+    const { data } = await q;
     setAllTransfers(data || []);
     setLoading(false);
   }
@@ -618,10 +557,8 @@ function TransferHistoryTab() {
       t.from_site.toLowerCase().includes(q) ||
       t.to_site.toLowerCase().includes(q) ||
       (t.dispatching_officer||"").toLowerCase().includes(q);
-    const matchSite = !filterSite ||
-      t.from_site === filterSite || t.to_site === filterSite;
-    const matchYear = !filterYear ||
-      new Date(t.transfer_date).getFullYear().toString() === filterYear;
+    const matchSite = !filterSite || t.from_site === filterSite || t.to_site === filterSite;
+    const matchYear = !filterYear || new Date(t.transfer_date).getFullYear().toString() === filterYear;
     return matchQ && matchSite && matchYear;
   });
 
@@ -635,19 +572,10 @@ function TransferHistoryTab() {
   )].sort((a,b) => Number(b)-Number(a));
 
   const fmt = (d: string) => d
-    ? new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})
-    : "—";
-
-  const STATUS_STYLE: Record<string,string> = {
-    "Pending":    "bg-amber-100  text-amber-700",
-    "In Transit": "bg-blue-100   text-blue-700",
-    "Received":   "bg-emerald-100 text-emerald-700",
-    "Cancelled":  "bg-red-100    text-red-600",
-  };
+    ? new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "—";
 
   return (
     <div className="space-y-5">
-      {/* Search + Filters */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           <input placeholder="Search fleet no., site, officer..."
@@ -667,14 +595,12 @@ function TransferHistoryTab() {
         </p>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-auto max-h-[60vh]">
           <table className="w-full text-sm min-w-225">
             <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
               <tr>
-                {["Fleet No.","Equipment","Transfer Type","From","To","Date",
-                  "Dispatched By","Status","Actions"].map(h => (
+                {["Fleet No.","Equipment","Transfer Type","From","To","Date","Dispatched By","Status","Actions"].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -693,8 +619,8 @@ function TransferHistoryTab() {
                       t.transfer_type === "Final Release" ? "bg-red-50 text-red-600" : "bg-blue-50 text-blue-600"
                     }`}>{t.transfer_type}</span>
                   </td>
-                  <td className="px-4 py-3 text-slate-500 text-xs max-w-32.5 truncate">{t.from_site}</td>
-                  <td className="px-4 py-3 text-slate-500 text-xs max-w-32.5 truncate">{t.to_site}</td>
+                  <td className="px-4 py-3 text-slate-500 text-xs max-w-32 truncate">{t.from_site}</td>
+                  <td className="px-4 py-3 text-slate-500 text-xs max-w-32 truncate">{t.to_site}</td>
                   <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">{fmt(t.transfer_date)}</td>
                   <td className="px-4 py-3 text-slate-600 text-xs">{t.dispatching_officer}</td>
                   <td className="px-4 py-3">
@@ -705,13 +631,9 @@ function TransferHistoryTab() {
                   <td className="px-4 py-3">
                     <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => setSelected(t)}
-                        className="px-2.5 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs hover:bg-slate-200">
-                        Details
-                      </button>
+                        className="px-2.5 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs hover:bg-slate-200">Details</button>
                       <button onClick={() => printTransfer(t)}
-                        className="px-2.5 py-1.5 bg-amber-100 text-amber-700 rounded-lg text-xs hover:bg-amber-200">
-                        🖨 Print
-                      </button>
+                        className="px-2.5 py-1.5 bg-amber-100 text-amber-700 rounded-lg text-xs hover:bg-amber-200">🖨 Print</button>
                     </div>
                   </td>
                 </tr>
@@ -721,7 +643,6 @@ function TransferHistoryTab() {
         </div>
       </div>
 
-      {/* Detail Modal */}
       {selected && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl my-6 overflow-hidden">
@@ -733,87 +654,36 @@ function TransferHistoryTab() {
               <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-white text-2xl">×</button>
             </div>
             <div className="p-6 space-y-4">
-              {/* Equipment */}
               <div className="bg-slate-50 rounded-xl p-4">
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Equipment</p>
                 <div className="grid grid-cols-3 gap-3 text-xs">
-                  {[
-                    ["Fleet No.",    selected.equipment_code],
-                    ["Description",  selected.equipment_name||"—"],
-                    ["Category",     selected.machine_type||"—"],
-                    ["Make",         selected.machine_make||"—"],
-                    ["Model",        selected.machine_model||"—"],
-                    ["Reg. No.",     selected.reg_no||"—"],
-                  ].map(([l,v]) => (
-                    <div key={l}>
-                      <p className="text-slate-400">{l}</p>
-                      <p className="font-semibold text-slate-800 mt-0.5">{v}</p>
-                    </div>
+                  {[["Fleet No.",selected.equipment_code],["Description",selected.equipment_name||"—"],["Category",selected.machine_type||"—"],["Make",selected.machine_make||"—"],["Model",selected.machine_model||"—"],["Reg. No.",selected.reg_no||"—"]].map(([l,v])=>(
+                    <div key={l}><p className="text-slate-400">{l}</p><p className="font-semibold text-slate-800 mt-0.5">{v}</p></div>
                   ))}
                 </div>
               </div>
-              {/* Dispatching */}
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                 <p className="text-xs font-bold text-amber-600 uppercase tracking-wider mb-3">Dispatching Area</p>
                 <div className="grid grid-cols-3 gap-3 text-xs">
-                  {[
-                    ["From Site",       selected.from_site],
-                    ["Cost Code",       selected.from_cost_code||"—"],
-                    ["Transfer Date",   fmt(selected.transfer_date)],
-                    ["Expected Arrival",fmt(selected.expected_arrival_date)],
-                    ["Transport Mode",  selected.transport_mode||"—"],
-                    ["Condition",       selected.equipment_condition_dispatch||"—"],
-                    ["Dispatching Officer", selected.dispatching_officer],
-                    ["Plant Engineer",  selected.dispatching_plant_engineer||"—"],
-                    ["Speedometer",     selected.speedometer_dispatch||0],
-                    ["Fire Ext.",       selected.fire_extinguisher_dispatch||"—"],
-                    ["History File",    selected.history_file_dispatch?"Included":"Not Included"],
-                    ["Attachments",     selected.fleet_attachments||"—"],
-                  ].map(([l,v]) => (
-                    <div key={l}>
-                      <p className="text-slate-400">{l}</p>
-                      <p className="font-semibold text-slate-800 mt-0.5">{v}</p>
-                    </div>
+                  {[["From Site",selected.from_site],["Cost Code",selected.from_cost_code||"—"],["Transfer Date",fmt(selected.transfer_date)],["Expected Arrival",fmt(selected.expected_arrival_date)],["Transport Mode",selected.transport_mode||"—"],["Condition",selected.equipment_condition_dispatch||"—"],["Dispatching Officer",selected.dispatching_officer],["Plant Engineer",selected.dispatching_plant_engineer||"—"],["Speedometer",selected.speedometer_dispatch||0],["Fire Ext.",selected.fire_extinguisher_dispatch||"—"],["History File",selected.history_file_dispatch?"Included":"Not Included"],["Attachments",selected.fleet_attachments||"—"]].map(([l,v])=>(
+                    <div key={l}><p className="text-slate-400">{l}</p><p className="font-semibold text-slate-800 mt-0.5">{v}</p></div>
                   ))}
                 </div>
-                {selected.dispatch_remarks && (
-                  <div className="mt-3 pt-3 border-t border-amber-200">
-                    <p className="text-xs text-amber-600 font-semibold">Remarks:</p>
-                    <p className="text-xs text-slate-700 mt-1">{selected.dispatch_remarks}</p>
-                  </div>
-                )}
               </div>
-              {/* Receiving */}
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
                 <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-3">Receiving Area</p>
                 <div className="grid grid-cols-3 gap-3 text-xs">
-                  {[
-                    ["To Site",         selected.to_site],
-                    ["Cost Code",       selected.to_cost_code||"—"],
-                    ["Status",          selected.status],
-                    ["Receival Date",   fmt(selected.receival_date)],
-                    ["Condition",       selected.equipment_condition_receipt||"—"],
-                    ["Receiving Officer",selected.receiving_officer||"—"],
-                    ["Plant Engineer",  selected.receiving_plant_engineer||"—"],
-                    ["Speedometer",     selected.speedometer_receipt||"—"],
-                  ].map(([l,v]) => (
-                    <div key={l}>
-                      <p className="text-slate-400">{l}</p>
-                      <p className="font-semibold text-slate-800 mt-0.5">{v}</p>
-                    </div>
+                  {[["To Site",selected.to_site],["Cost Code",selected.to_cost_code||"—"],["Status",selected.status],["Receival Date",fmt(selected.receival_date)],["Condition",selected.equipment_condition_receipt||"—"],["Receiving Officer",selected.receiving_officer||"—"],["Plant Engineer",selected.receiving_plant_engineer||"—"],["Speedometer",selected.speedometer_receipt||"—"]].map(([l,v])=>(
+                    <div key={l}><p className="text-slate-400">{l}</p><p className="font-semibold text-slate-800 mt-0.5">{v}</p></div>
                   ))}
                 </div>
               </div>
             </div>
             <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-between">
               <button onClick={() => setSelected(null)}
-                className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-500 hover:bg-white">
-                Close
-              </button>
+                className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-500 hover:bg-white">Close</button>
               <button onClick={() => printTransfer(selected)}
-                className="px-6 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600">
-                🖨 Print Transfer Form
-              </button>
+                className="px-6 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600">🖨 Print Transfer Form</button>
             </div>
           </div>
         </div>
@@ -852,20 +722,15 @@ export default function TransferPage() {
 
   return (
     <div className="space-y-6 pb-10">
-
-      {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Transfers</h1>
           <p className="text-slate-500 mt-1 text-sm">
-            Manage equipment movement between sites. Use this for cross-site or cross-region transfers.
-            For local status changes, use the equipment detail page.
+            Manage equipment movement between sites.
           </p>
         </div>
         <div className="flex flex-wrap gap-3 shrink-0">
-          <button className="border border-slate-200 bg-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50">
-            ↓ Export
-          </button>
+          <button className="border border-slate-200 bg-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50">↓ Export</button>
           {canTransfer && (
             <button onClick={() => setModal(true)}
               className="bg-amber-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-600 shadow-sm shadow-amber-200">
@@ -875,163 +740,134 @@ export default function TransferPage() {
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit">
         {([["register","📋 Transfer Register"],["history","📜 Transfer History"]] as const).map(([key,label]) => (
           <button key={key} onClick={() => setTab(key)}
             className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
               tab === key ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-            }`}>
-            {label}
-          </button>
+            }`}>{label}</button>
         ))}
       </div>
 
       {tab === "history" ? <TransferHistoryTab /> : <>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label:"Total Transfers", value:counts.total,     bg:"bg-slate-900 text-white" },
+            { label:"Pending",         value:counts.pending,   bg:"bg-amber-500 text-white" },
+            { label:"In Transit",      value:counts.inTransit, bg:"bg-blue-500 text-white" },
+            { label:"Received",        value:counts.received,  bg:"bg-emerald-500 text-white" },
+          ].map(k => (
+            <div key={k.label} className={`${k.bg} rounded-2xl p-5`}>
+              <p className="text-3xl font-bold">{k.value}</p>
+              <p className="text-sm opacity-70 mt-1">{k.label}</p>
+            </div>
+          ))}
+        </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: "Total Transfers", value: counts.total,     bg: "bg-slate-900 text-white" },
-          { label: "Pending",         value: counts.pending,   bg: "bg-amber-500 text-white" },
-          { label: "In Transit",      value: counts.inTransit, bg: "bg-blue-500  text-white" },
-          { label: "Received",        value: counts.received,  bg: "bg-emerald-500 text-white" },
-        ].map(k => (
-          <div key={k.label} className={`${k.bg} rounded-2xl p-5`}>
-            <p className="text-3xl font-bold">{k.value}</p>
-            <p className="text-sm opacity-70 mt-1">{k.label}</p>
+        {counts.pending > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
+            <span className="text-2xl">⚠️</span>
+            <div>
+              <p className="font-bold text-amber-800 text-sm">
+                {counts.pending} transfer{counts.pending > 1?"s":""} awaiting receipt confirmation
+              </p>
+              <p className="text-amber-600 text-xs mt-0.5">Receiving sites need to confirm receipt to complete.</p>
+            </div>
           </div>
-        ))}
-      </div>
+        )}
 
-      {/* Alert */}
-      {counts.pending > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
-          <span className="text-2xl">⚠️</span>
-          <div>
-            <p className="font-bold text-amber-800 text-sm">
-              {counts.pending} transfer{counts.pending > 1 ? "s" : ""} awaiting receipt confirmation
-            </p>
-            <p className="text-amber-600 text-xs mt-0.5">
-              Receiving sites need to confirm receipt to complete.
-            </p>
+        <div className="bg-white rounded-2xl border border-slate-200 p-5">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <input placeholder="Search equipment, site..."
+              value={search} onChange={e => setSearch(e.target.value)}
+              className={iCls + " lg:col-span-2"} />
+            <select className={iCls} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+              <option value="">All Statuses</option>
+              {["Pending","In Transit","Received","Cancelled"].map(s => <option key={s}>{s}</option>)}
+            </select>
           </div>
         </div>
-      )}
 
-      {/* Filters */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-5">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <input placeholder="Search equipment, site..."
-            value={search} onChange={e => setSearch(e.target.value)}
-            className={iCls + " lg:col-span-2"} />
-          <select className={iCls} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-            <option value="">All Statuses</option>
-            {["Pending","In Transit","Received","Cancelled"].map(s => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-5 border-b border-slate-100">
-          <h2 className="font-bold text-slate-800 text-lg">Transfer Register</h2>
-          <p className="text-slate-400 text-sm">{filtered.length} record{filtered.length !== 1 ? "s" : ""}</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-100">
-              <tr>
-                {["Equipment","Type","From","To","Transfer Date",
-                  "Expected","Dispatched By","Status","Actions"].map(h => (
-                  <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {loading ? (
-                <tr><td colSpan={9} className="px-5 py-16 text-center text-slate-400">Loading transfers...</td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={9} className="px-5 py-16 text-center text-slate-400">
-                  {transfers.length === 0
-                    ? "No transfers yet. Click \"+ New Transfer\" to initiate one."
-                    : "No transfers match your filters."}
-                </td></tr>
-              ) : filtered.map(t => (
-                <tr key={t.id} className="hover:bg-slate-50 group">
-                  <td className="px-5 py-4">
-                    <p className="font-bold text-slate-800 font-mono text-xs">{t.equipment_code}</p>
-                    <p className="text-slate-500 text-xs mt-0.5 truncate max-w-35">{t.equipment_name}</p>
-                  </td>
-                  <td className="px-5 py-4">
-                    <span className={`px-2 py-1 rounded-lg text-xs font-medium ${
-                      t.transfer_type === "Final Release" ? "bg-red-50 text-red-600" : "bg-blue-50 text-blue-600"
-                    }`}>{t.transfer_type}</span>
-                  </td>
-                  <td className="px-5 py-4 text-slate-600 text-xs max-w-30 truncate">{t.from_site}</td>
-                  <td className="px-5 py-4 text-slate-600 text-xs max-w-30 truncate">{t.to_site}</td>
-                  <td className="px-5 py-4 text-slate-500 text-xs whitespace-nowrap">
-                    {new Date(t.transfer_date).toLocaleDateString("en-GB", {
-                      day:"2-digit", month:"short", year:"numeric",
-                    })}
-                  </td>
-                  <td className="px-5 py-4 text-slate-500 text-xs whitespace-nowrap">
-                    {t.expected_arrival_date
-                      ? new Date(t.expected_arrival_date).toLocaleDateString("en-GB", {
-                          day:"2-digit", month:"short", year:"numeric",
-                        })
-                      : "—"}
-                  </td>
-                  <td className="px-5 py-4 text-slate-600 text-xs">{t.dispatching_officer}</td>
-                  <td className="px-5 py-4">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_STYLE[t.status]}`}>
-                      {t.status}
-                    </span>
-                  </td>
-                  <td className="px-5 py-4">
-                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {(t.status === "Pending" || t.status === "In Transit") && (
-                        <button onClick={() => setReceiptItem(t)}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 font-medium whitespace-nowrap">
-                          Confirm Receipt
-                        </button>
-                      )}
-                      {t.status === "Pending" && (
-                        <button onClick={() => updateStatus(t.id, "In Transit")}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 font-medium whitespace-nowrap">
-                          In Transit
-                        </button>
-                      )}
-                      {t.status === "Pending" && canTransfer && (
-                        <button onClick={() => updateStatus(t.id, "Cancelled")}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 font-medium whitespace-nowrap">
-                          Cancel
-                        </button>
-                      )}
-                    </div>
-                  </td>
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-5 border-b border-slate-100">
+            <h2 className="font-bold text-slate-800 text-lg">Transfer Register</h2>
+            <p className="text-slate-400 text-sm">{filtered.length} record{filtered.length !== 1?"s":""}</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-100">
+                <tr>
+                  {["Equipment","Type","From","To","Transfer Date","Expected","Dispatched By","Status","Actions"].map(h => (
+                    <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {loading ? (
+                  <tr><td colSpan={9} className="px-5 py-16 text-center text-slate-400">Loading transfers...</td></tr>
+                ) : filtered.length === 0 ? (
+                  <tr><td colSpan={9} className="px-5 py-16 text-center text-slate-400">
+                    {transfers.length === 0 ? 'No transfers yet. Click "+ New Transfer" to initiate one.' : "No transfers match your filters."}
+                  </td></tr>
+                ) : filtered.map(t => (
+                  <tr key={t.id} className="hover:bg-slate-50 group">
+                    <td className="px-5 py-4">
+                      <p className="font-bold text-slate-800 font-mono text-xs">{t.equipment_code}</p>
+                      <p className="text-slate-500 text-xs mt-0.5 truncate max-w-35">{t.equipment_name}</p>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className={`px-2 py-1 rounded-lg text-xs font-medium ${
+                        t.transfer_type === "Final Release" ? "bg-red-50 text-red-600" : "bg-blue-50 text-blue-600"
+                      }`}>{t.transfer_type}</span>
+                    </td>
+                    <td className="px-5 py-4 text-slate-600 text-xs max-w-30 truncate">{t.from_site}</td>
+                    <td className="px-5 py-4 text-slate-600 text-xs max-w-30 truncate">{t.to_site}</td>
+                    <td className="px-5 py-4 text-slate-500 text-xs whitespace-nowrap">
+                      {new Date(t.transfer_date).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}
+                    </td>
+                    <td className="px-5 py-4 text-slate-500 text-xs whitespace-nowrap">
+                      {t.expected_arrival_date ? new Date(t.expected_arrival_date).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "—"}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600 text-xs">{t.dispatching_officer}</td>
+                    <td className="px-5 py-4">
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_STYLE[t.status]}`}>{t.status}</span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {(t.status === "Pending" || t.status === "In Transit") && (
+                          <button onClick={() => setReceiptItem(t)}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 font-medium whitespace-nowrap">
+                            Confirm Receipt
+                          </button>
+                        )}
+                        {t.status === "Pending" && (
+                          <button onClick={() => updateStatus(t.id, "In Transit")}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 font-medium whitespace-nowrap">
+                            In Transit
+                          </button>
+                        )}
+                        {t.status === "Pending" && canTransfer && (
+                          <button onClick={() => updateStatus(t.id, "Cancelled")}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 font-medium whitespace-nowrap">
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
-
-      </>
-      }
+      </>}
 
       <NewTransferModal open={modal} onClose={() => setModal(false)} />
       {receiptItem && (
         <ReceiptModal
           transfer={receiptItem}
           onClose={() => setReceiptItem(null)}
-          onConfirm={async (data) => {
-            await confirmReceipt(receiptItem.id, data as any);
-          }}
+          onConfirm={async (data) => { await confirmReceipt(receiptItem.id, data as any); }}
         />
       )}
     </div>

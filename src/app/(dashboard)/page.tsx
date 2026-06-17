@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-export const dynamic = 'force-dynamic';
-
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { dbu } from "@/lib/db";
@@ -162,7 +160,7 @@ function UtilizationChart({ range, onRangeChange }: {
 
       // Remove leading/trailing nulls for cleaner wave
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const trimmed = points.filter((_p, i) => {
+      const trimmed = points.filter(function (_p, i) {
         const hasData = points.some(p => p.utilization !== null);
         return hasData;
       });
@@ -331,48 +329,67 @@ export default function DashboardPage() {
       setLoading(true);
 
       try {
-        // ── All queries fire in parallel — nothing blocks anything ──
-        const [
-          authResult,
-          equipResult,
-          transResult,
-          maintResult,
-          siteResult,
-        ] = await Promise.all([
-          dbu.auth.getUser(),
-          // Equipment: two pages covers up to 2000 records — enough for Hartland
-          Promise.all([
-            dbu.from("equipment")
-              .select("id,fleet_number,operational_status,category,region,site")
-              .range(0, 999),
-            dbu.from("equipment")
-              .select("id,fleet_number,operational_status,category,region,site")
-              .range(1000, 1999),
-          ]),
-          dbu.from("transfers")
-            .select("*").order("created_at", { ascending: false }).limit(10),
-          dbu.from("maintenance")
-            .select("*").order("created_at", { ascending: false }).limit(10),
-          dbu.from("sites")
-            .select("*", { count: "exact", head: true }).eq("is_active", true),
-        ]);
-
-        // Profile
-        const user = authResult.data?.user;
+        // Load profile first to get role and assigned sites
+        const { data: { user } } = await dbu.auth.getUser();
+        let prof: any = null;
         if (user) {
-          const { data: prof } = await dbu
-            .from("profiles").select("*").eq("id", user.id).single();
+          const { data } = await dbu.from("profiles").select("*").eq("id", user.id).single();
+          prof = data;
           setProfile(prof);
         }
 
-        // Equipment — merge both pages, filter out nulls
-        const [page1, page2] = equipResult;
-        const allEquip = [
-          ...(page1.data || []),
-          ...(page2.data || []),
-        ];
-        setEquipment(allEquip);
+        // Determine if user is restricted
+        const roles: string[] = prof?.roles || [];
+        const assignedSites: string[] = prof?.assigned_sites || [];
+        const isRestricted = (roles.includes("plant_clerk") || roles.includes("site_supervisor")) &&
+          !roles.some((r: string) => ["plant_admin","plant_manager","plant_engineer","plant_director","super_admin"].includes(r));
 
+        // Build equipment queries with site filter if restricted
+        let equipQ1 = dbu.from("equipment")
+          .select("id,fleet_number,operational_status,category,region,site")
+          .range(0, 999);
+        let equipQ2 = dbu.from("equipment")
+          .select("id,fleet_number,operational_status,category,region,site")
+          .range(1000, 1999);
+
+        if (isRestricted && assignedSites.length > 0) {
+          equipQ1 = equipQ1.in("site", assignedSites);
+          equipQ2 = equipQ2.in("site", assignedSites);
+        }
+
+        // Build transfer query
+        let transQ = dbu.from("transfers")
+          .select("*").order("created_at", { ascending: false }).limit(10);
+        if (isRestricted && assignedSites.length > 0) {
+          transQ = transQ.or(
+            `from_site.in.(${assignedSites.map((s:string) => `"${s}"`).join(",")}),to_site.in.(${assignedSites.map((s:string) => `"${s}"`).join(",")})`
+          );
+        }
+
+        // Build maintenance query
+        let maintQ = dbu.from("maintenance")
+          .select("*").order("created_at", { ascending: false }).limit(10);
+        if (isRestricted && assignedSites.length > 0) {
+          maintQ = maintQ.in("site", assignedSites);
+        }
+
+        // Build site count query
+        let siteQ = dbu.from("sites")
+          .select("*", { count: "exact", head: true }).eq("is_active", true);
+        if (isRestricted && assignedSites.length > 0) {
+          siteQ = siteQ.in("name", assignedSites);
+        }
+
+        // Fire all in parallel
+        const [equipResult, transResult, maintResult, siteResult] = await Promise.all([
+          Promise.all([equipQ1, equipQ2]),
+          transQ,
+          maintQ,
+          siteQ,
+        ]);
+
+        const [page1, page2] = equipResult;
+        setEquipment([...(page1.data || []), ...(page2.data || [])]);
         setTransfers(transResult.data || []);
         setMaintenance(maintResult.data || []);
         setSiteCount(siteResult.count || 0);
@@ -380,7 +397,6 @@ export default function DashboardPage() {
       } catch (err) {
         console.error("Dashboard load error:", err);
       } finally {
-        // Always stop loading — sidebar never gets stuck
         setLoading(false);
       }
     }
