@@ -160,7 +160,7 @@ function UtilizationChart({ range, onRangeChange }: {
 
       // Remove leading/trailing nulls for cleaner wave
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const trimmed = points.filter(function (_p, i) {
+      const trimmed = points.filter(function (_p, i): boolean {
         const hasData = points.some(p => p.utilization !== null);
         return hasData;
       });
@@ -406,7 +406,7 @@ export default function DashboardPage() {
   const total    = equipment.length;
   const working  = equipment.filter(e => e.operational_status === "Working").length;
   const repair   = equipment.filter(e => ["Under Repair","Break Down"].includes(e.operational_status)).length;
-  const idle     = equipment.filter(e => ["Idle","Stand By"].includes(e.operational_status)).length;
+  const storage  = equipment.filter(e => ["Storage","Idle","Stand By"].includes(e.operational_status)).length;
   const scrapped = equipment.filter(e => e.operational_status === "Scrapped").length;
 
   const pendingTransfers = transfers.filter(t => t.status === "Pending").length;
@@ -465,11 +465,11 @@ export default function DashboardPage() {
 
       {/* Primary KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <KpiCard title="Total Fleet"     value={loading ? "..." : total}    sub="All equipment"      color="dark"  link="/equipment" />
-        <KpiCard title="Working"         value={loading ? "..." : working}  sub="Operational"        color="green" link="/equipment" />
-        <KpiCard title="Under Repair"    value={loading ? "..." : repair}   sub="Breakdown / repair" color="amber" link="/maintenance" />
-        <KpiCard title="Idle / Stand By" value={loading ? "..." : idle}     sub="Not deployed"       color="white" />
-        <KpiCard title="Scrapped"        value={loading ? "..." : scrapped} sub="Disposed assets"    color="white" />
+        <KpiCard title="Total Fleet"  value={loading ? "..." : total}    sub="All equipment"      color="dark"  link="/equipment" />
+        <KpiCard title="Working"      value={loading ? "..." : working}  sub="Operational"        color="green" link="/equipment" />
+        <KpiCard title="Under Repair" value={loading ? "..." : repair}   sub="Breakdown / repair" color="amber" link="/maintenance" />
+        <KpiCard title="Storage"      value={loading ? "..." : storage}  sub="In storage yards"   color="white" link="/equipment" />
+        <KpiCard title="Scrapped"     value={loading ? "..." : scrapped} sub="Disposed assets"    color="white" link="/equipment" />
       </div>
 
       {/* Secondary KPIs */}
