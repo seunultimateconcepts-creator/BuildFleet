@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-export const dynamic = 'force-dynamic';
-
 import { useEffect, useState } from "react";
 import { dbu } from "@/lib/db";
 
@@ -409,6 +407,28 @@ export default function UsersPage() {
     setLoading(false);
   }
 
+  async function handleDelete(user: any) {
+    if (!confirm(`Delete ${user.full_name || user.email}? This cannot be undone.`)) return;
+
+    try {
+      // Delete via API route (needs service role key)
+      const res = await fetch("/api/delete-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        alert(result.error || "Failed to delete user.");
+        return;
+      }
+      // Remove from local state immediately
+      setUsers(prev => prev.filter(u => u.id !== user.id));
+    } catch (e: any) {
+      alert(e.message || "Failed to delete user.");
+    }
+  }
+
   const roles: string[] = profile?.roles || [];
   const canManage = roles.some(r =>
     ["plant_manager","plant_director","plant_admin","super_admin"].includes(r)
@@ -537,10 +557,19 @@ export default function UsersPage() {
                   </td>
                   <td className="px-5 py-4">
                     {canManage && (
-                      <button onClick={() => setEditUser(u)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-medium hover:bg-slate-200 whitespace-nowrap">
-                        Edit
-                      </button>
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => setEditUser(u)}
+                          className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-medium hover:bg-slate-200 whitespace-nowrap">
+                          Edit
+                        </button>
+                        {/* Don't allow deleting yourself or super_admin */}
+                        {!(u.roles||[]).includes("super_admin") && (
+                          <button onClick={() => handleDelete(u)}
+                            className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 whitespace-nowrap">
+                            Delete
+                          </button>
+                        )}
+                      </div>
                     )}
                   </td>
                 </tr>
