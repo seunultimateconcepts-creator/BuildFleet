@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       email,
       {
         data: { full_name, staff_no, phone },
-        redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/login`,
+        redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/confirm`,
       }
     );
 
