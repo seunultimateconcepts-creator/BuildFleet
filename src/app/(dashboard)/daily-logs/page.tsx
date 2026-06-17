@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+ 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -11,74 +11,86 @@ const MONTHS = ["January","February","March","April","May","June",
   "July","August","September","October","November","December"];
 
 const FUEL_TYPES = ["AGO","PMS","DPK","HHK","Other"];
-const METER_UNITS = ["Hours","Km"];
+const METER_UNITS = ["Hours","Km"]; // No miles/odometer
 
 const iCls = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 const cellCls = "border border-slate-200 px-2 py-1 text-xs";
 
-type DayStatus = "A" | "I" | "N" | "";
+// S = Storage (was I = Idle), A = Working/Available, N = Breakdown
+type DayStatus = "A" | "S" | "N" | "";
 
 interface LogRow {
-  equipment_id:    string;
-  fleet_no:        string;
-  equipment_name:  string;
-  hire_rate:       number;
-  status:          DayStatus; // current status from equipment table
-  idle_hours:      number;
-  working_hours:   number;
-  breakdown_hours: number;
-  fuel_quantity:   number;
-  fuel_type:       string;
-  engine_oil:      number;
-  transmission_oil:number;
-  hydraulic_oil:   number;
-  other_oil:       number;
-  filter_issues:   string;
-  hr_km_reading:   number;
-  meter_unit:      string;
-  remarks:         string;
-  is_chargeable:   boolean;
-  existing_id?:    string; // if already saved
+  equipment_id:     string;
+  fleet_no:         string;
+  equipment_name:   string;
+  hire_rate:        number;
+  status:           DayStatus;
+  storage_hours:    number;   // was idle_hours
+  working_hours:    number;
+  breakdown_hours:  number;
+  fuel_quantity:    number;
+  fuel_type:        string;
+  engine_oil:       number;
+  transmission_oil: number;
+  hydraulic_oil:    number;
+  other_oil:        number;
+  filter_issues:    string;
+  hr_km_reading:    number;
+  meter_unit:       string;
+  remarks:          string;
+  is_chargeable:    boolean;  // true only when Working (A)
+  existing_id?:     string;
 }
 
 function emptyRow(eq: any): LogRow {
+  // Map equipment status to daily log status
+  const eqStatus = eq.operational_status;
+  const dayStatus: DayStatus =
+    eqStatus === "Working"    ? "A" :
+    eqStatus === "Storage"    ? "S" :
+    eqStatus === "Break Down" || eqStatus === "Under Repair" ? "N" : "";
+
   return {
-    equipment_id:    eq.id,
-    fleet_no:        eq.fleet_number,
-    equipment_name:  eq.name || "",
-    hire_rate:       eq.hire_rate || 0,
-    status:          eq.operational_status === "Working" ? "A" :
-                     eq.operational_status === "Idle" || eq.operational_status === "Stand By" ? "I" :
-                     eq.operational_status === "Under Repair" || eq.operational_status === "Break Down" ? "N" : "",
-    idle_hours:      0, working_hours: 0, breakdown_hours: 0,
-    fuel_quantity:   0, fuel_type: "AGO",
-    engine_oil:      0, transmission_oil: 0, hydraulic_oil: 0, other_oil: 0,
-    filter_issues:   "", hr_km_reading: 0, meter_unit: "Hours",
-    remarks:         "", is_chargeable: false,
+    equipment_id:     eq.id,
+    fleet_no:         eq.fleet_number,
+    equipment_name:   eq.name || "",
+    hire_rate:        eq.hire_rate || 0,
+    status:           dayStatus,
+    storage_hours:    dayStatus === "S" ? 8 : 0,
+    working_hours:    dayStatus === "A" ? 8 : 0,
+    breakdown_hours:  dayStatus === "N" ? 8 : 0,
+    fuel_quantity:    0, fuel_type: "AGO",
+    engine_oil:       0, transmission_oil: 0, hydraulic_oil: 0, other_oil: 0,
+    filter_issues:    "", hr_km_reading: 0, meter_unit: eq.meter_device || "Hours",
+    remarks:          "",
+    is_chargeable:    dayStatus === "A", // ONLY working = chargeable
   };
 }
 
 // ─────────────────────────────────────────────────────────────
-// PRINT FUNCTION
+// PRINT FUNCTION — PLT-02
 // ─────────────────────────────────────────────────────────────
 function printDailyLog(rows: LogRow[], site: string, costCode: string, date: string,
   clerk: string, admin: string, engineer: string) {
+
   const totals = rows.reduce((acc, r) => ({
-    idle:      acc.idle      + r.idle_hours,
-    working:   acc.working   + r.working_hours,
-    breakdown: acc.breakdown + r.breakdown_hours,
-    fuel:      acc.fuel      + r.fuel_quantity,
-    eo:        acc.eo        + r.engine_oil,
-    to:        acc.to        + r.transmission_oil,
-    ho:        acc.ho        + r.hydraulic_oil,
-    other:     acc.other     + r.other_oil,
-  }), {idle:0,working:0,breakdown:0,fuel:0,eo:0,to:0,ho:0,other:0});
+    storage:   acc.storage   + (r.storage_hours   || 0),
+    working:   acc.working   + (r.working_hours   || 0),
+    breakdown: acc.breakdown + (r.breakdown_hours || 0),
+    fuel:      acc.fuel      + (r.fuel_quantity   || 0),
+    eo:        acc.eo        + (r.engine_oil      || 0),
+    to:        acc.to        + (r.transmission_oil|| 0),
+    ho:        acc.ho        + (r.hydraulic_oil   || 0),
+    other:     acc.other     + (r.other_oil       || 0),
+  }), {storage:0,working:0,breakdown:0,fuel:0,eo:0,to:0,ho:0,other:0});
 
   const rowsHtml = rows.map((r,i) => `
     <tr>
       <td>${i+1}</td><td><b>${r.fleet_no}</b></td>
-      <td>${r.idle_hours||""}</td><td>${r.working_hours||""}</td><td>${r.breakdown_hours||""}</td>
-      <td><b>${r.idle_hours||0}/${r.working_hours||0}/${r.breakdown_hours||0}</b></td>
+      <td>${r.storage_hours||""}</td>
+      <td>${r.working_hours||""}</td>
+      <td>${r.breakdown_hours||""}</td>
+      <td><b>${r.storage_hours||0}/${r.working_hours||0}/${r.breakdown_hours||0}</b></td>
       <td>${r.fuel_quantity||""}</td><td>${r.fuel_type}</td>
       <td>${r.engine_oil||""}</td><td>${r.transmission_oil||""}</td>
       <td>${r.hydraulic_oil||""}</td><td>${r.other_oil||""}</td>
@@ -123,15 +135,16 @@ function printDailyLog(rows: LogRow[], site: string, costCode: string, date: str
     <thead>
       <tr>
         <th rowspan="2">S/No</th><th rowspan="2">Fleet No.</th>
-        <th colspan="3">Availability Hours</th><th rowspan="2">Availability<br>Status</th>
+        <th colspan="3">Availability Hours</th>
+        <th rowspan="2">Availability<br>Status</th>
         <th colspan="2">Fuel</th>
         <th colspan="4">Oil</th>
         <th rowspan="2">Filter<br>Issues</th>
-        <th colspan="2">Hour-Meter</th>
+        <th colspan="2">Hr Meter / Km</th>
         <th rowspan="2">Remarks</th>
       </tr>
       <tr>
-        <th>I (Idle)</th><th>A (Avail.)</th><th>N (Brkdn)</th>
+        <th>S (Storage)</th><th>A (Working)</th><th>N (Brkdn)</th>
         <th>Fuel Qty (Ltrs)</th><th>Fuel Type</th>
         <th>E.O (Ltr)</th><th>T.O (Ltr)</th><th>H.O (Ltr)</th><th>Other (Ltr)</th>
         <th>Hr/Km</th><th>Unit</th>
@@ -141,8 +154,8 @@ function printDailyLog(rows: LogRow[], site: string, costCode: string, date: str
       ${rowsHtml}
       <tr class="total-row">
         <td colspan="2"><b>Total:</b></td>
-        <td>${totals.idle}</td><td>${totals.working}</td><td>${totals.breakdown}</td>
-        <td>${totals.idle}/${totals.working}/${totals.breakdown}</td>
+        <td>${totals.storage}</td><td>${totals.working}</td><td>${totals.breakdown}</td>
+        <td>${totals.storage}/${totals.working}/${totals.breakdown}</td>
         <td>${totals.fuel}</td><td></td>
         <td>${totals.eo}</td><td>${totals.to}</td><td>${totals.ho}</td><td>${totals.other}</td>
         <td colspan="4"></td>
@@ -150,18 +163,15 @@ function printDailyLog(rows: LogRow[], site: string, costCode: string, date: str
     </tbody>
   </table>
   <div class="sig">
-    <div class="sig-box">
-      <b>REPORTING CLERK</b>
+    <div class="sig-box"><b>REPORTING CLERK</b>
       <p>Name: ${clerk}</p><p>Staff No.: ___________</p>
       <div class="sig-line">Signature:</div>
     </div>
-    <div class="sig-box">
-      <b>CHECK BY (PLANT ADMIN. OFFICER)</b>
+    <div class="sig-box"><b>CHECK BY (PLANT ADMIN. OFFICER)</b>
       <p>Name: ${admin}</p><p>Staff No.: ___________</p>
       <div class="sig-line">Signature:</div>
     </div>
-    <div class="sig-box">
-      <b>PLANT ENGINEER / SUPERVISOR (i/c)</b>
+    <div class="sig-box"><b>PLANT ENGINEER / SUPERVISOR (i/c)</b>
       <p>Name: ${engineer}</p><p>Staff No.: ___________</p>
       <div class="sig-line">Signature:</div>
     </div>
@@ -177,12 +187,12 @@ function printDailyLog(rows: LogRow[], site: string, costCode: string, date: str
 // EQUIPMENT HISTORY TAB
 // ─────────────────────────────────────────────────────────────
 function EquipmentHistoryTab({ userSite }: { userSite: string }) {
-  const [equipment,    setEquipment]    = useState<any[]>([]);
-  const [selectedEq,   setSelectedEq]   = useState("");
-  const [filterMonth,  setFilterMonth]  = useState(MONTHS[new Date().getMonth()]);
-  const [filterYear,   setFilterYear]   = useState(new Date().getFullYear());
-  const [logs,         setLogs]         = useState<any[]>([]);
-  const [loading,      setLoading]      = useState(false);
+  const [equipment,   setEquipment]   = useState<any[]>([]);
+  const [selectedEq,  setSelectedEq]  = useState("");
+  const [filterMonth, setFilterMonth] = useState(MONTHS[new Date().getMonth()]);
+  const [filterYear,  setFilterYear]  = useState(new Date().getFullYear());
+  const [logs,        setLogs]        = useState<any[]>([]);
+  const [loading,     setLoading]     = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -210,9 +220,9 @@ function EquipmentHistoryTab({ userSite }: { userSite: string }) {
 
   useEffect(() => { if (selectedEq) loadHistory(); }, [selectedEq, filterMonth, filterYear]); // eslint-disable-line
 
-  const workingDays  = logs.filter(l => l.is_chargeable).length;
-  const totalFuel    = logs.reduce((s,l) => s + (l.fuel_quantity||0), 0);
-  const totalCharge  = workingDays * (logs[0]?.hire_rate || 0);
+  const workingDays = logs.filter(l => l.is_chargeable).length;
+  const totalFuel   = logs.reduce((s,l) => s + (l.fuel_quantity||0), 0);
+  const totalCharge = workingDays * (logs[0]?.hire_rate || 0);
 
   return (
     <div className="space-y-5">
@@ -220,9 +230,7 @@ function EquipmentHistoryTab({ userSite }: { userSite: string }) {
         <select className={iCls} value={selectedEq} onChange={e => setSelectedEq(e.target.value)}>
           <option value="">Select equipment...</option>
           {equipment.map((e:any) => (
-            <option key={e.id} value={e.fleet_number}>
-              {e.fleet_number} — {e.name}
-            </option>
+            <option key={e.id} value={e.fleet_number}>{e.fleet_number} — {e.name}</option>
           ))}
         </select>
         <select className={iCls} value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
@@ -242,7 +250,7 @@ function EquipmentHistoryTab({ userSite }: { userSite: string }) {
           <div className="grid grid-cols-3 gap-4">
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 text-center">
               <p className="text-3xl font-bold text-emerald-700">{workingDays}</p>
-              <p className="text-sm text-emerald-600 mt-1 font-semibold">Working Days</p>
+              <p className="text-sm text-emerald-600 mt-1 font-semibold">Working Days (Chargeable)</p>
               <p className="text-xs text-emerald-500 mt-0.5">out of {logs.length} logged days</p>
             </div>
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center">
@@ -264,7 +272,7 @@ function EquipmentHistoryTab({ userSite }: { userSite: string }) {
               <table className="w-full text-xs">
                 <thead className="bg-slate-50 sticky top-0">
                   <tr>
-                    {["Date","Status","Idle Hrs","Working Hrs","Breakdown Hrs",
+                    {["Date","Status","Storage Hrs","Working Hrs","Breakdown Hrs",
                       "Fuel (L)","Chargeable","Remarks"].map(h => (
                       <th key={h} className={cellCls + " font-bold text-slate-500 uppercase"}>{h}</th>
                     ))}
@@ -278,14 +286,14 @@ function EquipmentHistoryTab({ userSite }: { userSite: string }) {
                       </td>
                       <td className={cellCls}>
                         <span className={`px-2 py-0.5 rounded-full font-semibold text-[10px] ${
-                          l.working_hours > 0 ? "bg-emerald-100 text-emerald-700" :
+                          l.working_hours > 0   ? "bg-emerald-100 text-emerald-700" :
                           l.breakdown_hours > 0 ? "bg-red-100 text-red-600" :
-                          "bg-amber-100 text-amber-700"
+                                                   "bg-slate-100 text-slate-600"
                         }`}>
-                          {l.working_hours > 0 ? "Working" : l.breakdown_hours > 0 ? "Breakdown" : "Idle"}
+                          {l.working_hours > 0 ? "Working" : l.breakdown_hours > 0 ? "Breakdown" : "Storage"}
                         </span>
                       </td>
-                      <td className={cellCls}>{l.idle_hours||"—"}</td>
+                      <td className={cellCls}>{l.idle_hours||l.storage_hours||"—"}</td>
                       <td className={cellCls}>{l.working_hours||"—"}</td>
                       <td className={cellCls}>{l.breakdown_hours||"—"}</td>
                       <td className={cellCls}>{l.fuel_quantity||"—"}</td>
@@ -317,22 +325,20 @@ function EquipmentHistoryTab({ userSite }: { userSite: string }) {
 // MAIN DAILY LOGS PAGE
 // ─────────────────────────────────────────────────────────────
 export default function DailyLogsPage() {
-  const [tab,        setTab]        = useState<"sheet"|"history">("sheet");
-  const [profile,    setProfile]    = useState<any>(null);
-  const [userSite,   setUserSite]   = useState("");
-  const [sites,      setSites]      = useState<any[]>([]);
-  const [equipment,  setEquipment]  = useState<any[]>([]);
-  const [rows,       setRows]       = useState<LogRow[]>([]);
-  const [logDate,    setLogDate]    = useState(new Date().toISOString().slice(0,10));
-  const [saving,     setSaving]     = useState(false);
-  const [saved,      setSaved]      = useState(false);
-  const [clerk,      setClerk]      = useState("");
-  const [adminOfficer, setAdminOfficer] = useState("");
-  const [engineer,   setEngineer]   = useState("");
-  const [existingLogs, setExistingLogs] = useState<any[]>([]);
+  const [tab,           setTab]           = useState<"sheet"|"history">("sheet");
+  const [profile,       setProfile]       = useState<any>(null);
+  const [userSite,      setUserSite]      = useState("");
+  const [sites,         setSites]         = useState<any[]>([]);
+  const [equipment,     setEquipment]     = useState<any[]>([]);
+  const [rows,          setRows]          = useState<LogRow[]>([]);
+  const [logDate,       setLogDate]       = useState(new Date().toISOString().slice(0,10));
+  const [saving,        setSaving]        = useState(false);
+  const [saved,         setSaved]         = useState(false);
+  const [clerk,         setClerk]         = useState("");
+  const [adminOfficer,  setAdminOfficer]  = useState("");
+  const [engineer,      setEngineer]      = useState("");
   const initialized = useRef(false);
 
-  // Load profile + determine site
   useEffect(() => {
     async function init() {
       const { data: { user } } = await dbu.auth.getUser();
@@ -344,34 +350,27 @@ export default function DailyLogsPage() {
 
       const roles: string[] = prof.roles || [];
       const isAdmin = roles.some((r:string) =>
-        ["plant_manager","plant_director","plant_admin","plant_engineer"].includes(r));
+        ["plant_manager","plant_director","plant_admin","plant_engineer","super_admin"].includes(r));
 
-      // Load all sites
       const { data: sitesData } = await dbu.from("sites").select("code,name,cost_code").order("name");
       setSites(sitesData || []);
 
-      // Set default site
       if (isAdmin) {
-        // Admin can see all sites — default to first assigned or first site
         const firstSite = prof.assigned_sites?.[0] || sitesData?.[0]?.name || "";
         setUserSite(firstSite);
       } else {
-        // Clerk sees only their assigned site
-        const assignedSite = prof.assigned_sites?.[0] || "";
-        setUserSite(assignedSite);
+        setUserSite(prof.assigned_sites?.[0] || "");
       }
     }
     if (!initialized.current) { initialized.current = true; init(); }
   }, []);
 
-  // Load equipment when site or date changes
   useEffect(() => {
     if (!userSite) return;
     loadEquipmentAndLogs();
   }, [userSite, logDate]); // eslint-disable-line
 
   async function loadEquipmentAndLogs() {
-    // Get all equipment at this site
     const { data: eq } = await dbu.from("equipment")
       .select("id,fleet_number,name,category,hire_rate,operational_status,meter_device")
       .eq("site", userSite)
@@ -381,15 +380,11 @@ export default function DailyLogsPage() {
     const equipList = eq || [];
     setEquipment(equipList);
 
-    // Check for existing logs for this date + site
     const { data: existing } = await dbu.from("daily_logs")
       .select("*")
       .eq("site", userSite)
       .eq("log_date", logDate);
 
-    setExistingLogs(existing || []);
-
-    // Build rows — merge existing data if available
     const builtRows: LogRow[] = equipList.map((e: any) => {
       const found = (existing || []).find((l: any) => l.fleet_no === e.fleet_number);
       if (found) {
@@ -398,8 +393,8 @@ export default function DailyLogsPage() {
           fleet_no:         e.fleet_number,
           equipment_name:   e.name || "",
           hire_rate:        found.hire_rate || e.hire_rate || 0,
-          status:           found.working_hours > 0 ? "A" : found.breakdown_hours > 0 ? "N" : found.idle_hours > 0 ? "I" : "",
-          idle_hours:       found.idle_hours || 0,
+          status:           found.working_hours > 0 ? "A" : found.breakdown_hours > 0 ? "N" : "S",
+          storage_hours:    found.idle_hours || found.storage_hours || 0,
           working_hours:    found.working_hours || 0,
           breakdown_hours:  found.breakdown_hours || 0,
           fuel_quantity:    found.fuel_quantity || 0,
@@ -427,26 +422,30 @@ export default function DailyLogsPage() {
     setRows(prev => {
       const updated = [...prev];
       updated[idx] = { ...updated[idx], [field]: value };
-      // Auto-set is_chargeable based on working_hours
+
+      // Working hours > 0 = chargeable. Storage and Breakdown = NOT chargeable
       if (field === "working_hours") {
         updated[idx].is_chargeable = Number(value) > 0;
       }
+
       if (field === "status") {
-        // Auto-fill hours based on status selection
         if (value === "A") {
+          // Working — chargeable
           updated[idx].working_hours   = 8;
-          updated[idx].idle_hours      = 0;
+          updated[idx].storage_hours   = 0;
           updated[idx].breakdown_hours = 0;
           updated[idx].is_chargeable   = true;
-        } else if (value === "I") {
-          updated[idx].idle_hours      = 8;
+        } else if (value === "S") {
+          // Storage — NOT chargeable (charge = 0)
+          updated[idx].storage_hours   = 8;
           updated[idx].working_hours   = 0;
           updated[idx].breakdown_hours = 0;
           updated[idx].is_chargeable   = false;
         } else if (value === "N") {
+          // Breakdown — NOT chargeable (charge = 0)
           updated[idx].breakdown_hours = 8;
           updated[idx].working_hours   = 0;
-          updated[idx].idle_hours      = 0;
+          updated[idx].storage_hours   = 0;
           updated[idx].is_chargeable   = false;
         }
       }
@@ -460,7 +459,7 @@ export default function DailyLogsPage() {
 
     const month = MONTHS[new Date(logDate).getMonth()];
     const year  = new Date(logDate).getFullYear();
-    const siteRec = sites.find(s => s.name === userSite);
+    const siteRec  = sites.find(s => s.name === userSite);
     const costCode = siteRec?.cost_code || siteRec?.code || "";
 
     for (const row of rows) {
@@ -469,17 +468,19 @@ export default function DailyLogsPage() {
         cost_code:        costCode,
         area_project:     userSite,
         log_date:         logDate,
-        month,
-        year,
+        month, year,
         log_type:         "Plant",
         equipment_id:     row.equipment_id,
         fleet_no:         row.fleet_no,
         equipment_name:   row.equipment_name,
         hire_rate:        row.hire_rate,
-        idle_hours:       row.idle_hours,
+        // Save storage hours as idle_hours for DB compatibility
+        idle_hours:       row.storage_hours,
         working_hours:    row.working_hours,
         breakdown_hours:  row.breakdown_hours,
-        availability_status: `${row.idle_hours}/${row.working_hours}/${row.breakdown_hours}`,
+        // S/A/N availability status
+        availability_status: row.status === "A" ? "A" : row.status === "N" ? "N" : "S",
+        // CHARGE LOGIC: Working = 1 (chargeable), Storage = 0, Breakdown = 0
         is_chargeable:    row.is_chargeable,
         fuel_quantity:    row.fuel_quantity,
         fuel_type:        row.fuel_type,
@@ -508,9 +509,8 @@ export default function DailyLogsPage() {
     await loadEquipmentAndLogs();
   }
 
-  // Totals
   const totals = rows.reduce((acc, r) => ({
-    idle:      acc.idle      + (r.idle_hours      || 0),
+    storage:   acc.storage   + (r.storage_hours   || 0),
     working:   acc.working   + (r.working_hours   || 0),
     breakdown: acc.breakdown + (r.breakdown_hours || 0),
     fuel:      acc.fuel      + (r.fuel_quantity   || 0),
@@ -518,34 +518,31 @@ export default function DailyLogsPage() {
     to:        acc.to        + (r.transmission_oil|| 0),
     ho:        acc.ho        + (r.hydraulic_oil   || 0),
     other:     acc.other     + (r.other_oil       || 0),
-  }), {idle:0,working:0,breakdown:0,fuel:0,eo:0,to:0,ho:0,other:0});
+  }), {storage:0,working:0,breakdown:0,fuel:0,eo:0,to:0,ho:0,other:0});
 
-  const workingCount  = rows.filter(r => r.is_chargeable).length;
-  const idleCount     = rows.filter(r => !r.is_chargeable && r.idle_hours > 0).length;
-  const breakdownCount= rows.filter(r => r.breakdown_hours > 0).length;
+  const workingCount   = rows.filter(r => r.is_chargeable).length;
+  const storageCount   = rows.filter(r => !r.is_chargeable && r.storage_hours > 0).length;
+  const breakdownCount = rows.filter(r => r.breakdown_hours > 0).length;
 
   const roles: string[] = profile?.roles || [];
   const isAdmin = roles.some((r:string) =>
-    ["plant_manager","plant_director","plant_admin","plant_engineer"].includes(r));
+    ["plant_manager","plant_director","plant_admin","plant_engineer","super_admin"].includes(r));
 
   const selectedDate = new Date(logDate).toLocaleDateString("en-GB",{
     weekday:"long", day:"numeric", month:"long", year:"numeric"
   });
 
-  const numInput = "w-12 border border-slate-200 rounded text-center text-xs p-0.5 focus:outline-none focus:ring-1 focus:ring-amber-400";
-const textInput = "w-20 border border-slate-200 rounded text-xs p-0.5 focus:outline-none focus:ring-1 focus:ring-amber-400";
+  const numInput  = "w-12 border border-slate-200 rounded text-center text-xs p-0.5 focus:outline-none focus:ring-1 focus:ring-amber-400";
+  const textInput = "w-20 border border-slate-200 rounded text-xs p-0.5 focus:outline-none focus:ring-1 focus:ring-amber-400";
+
   return (
     <div className="space-y-5 pb-10">
-
-      {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div>
           <p className="text-[11px] font-bold text-amber-500 uppercase tracking-widest mb-1">PLT-02</p>
           <h1 className="text-3xl font-bold text-slate-900">Daily Site Data Report</h1>
           <p className="text-slate-500 mt-1 text-sm">
-            {userSite
-              ? `Logging for: ${userSite}`
-              : "No site assigned to your profile yet."}
+            {userSite ? `Logging for: ${userSite}` : "No site assigned to your profile yet."}
           </p>
         </div>
         <div className="flex flex-wrap gap-3 shrink-0">
@@ -572,7 +569,6 @@ const textInput = "w-20 border border-slate-200 rounded text-xs p-0.5 focus:outl
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit">
         {[["sheet","📋 Log Sheet"],["history","📊 Equipment History"]].map(([key,label]) => (
           <button key={key} onClick={() => setTab(key as any)}
@@ -588,10 +584,8 @@ const textInput = "w-20 border border-slate-200 rounded text-xs p-0.5 focus:outl
         <EquipmentHistoryTab userSite={userSite} />
       ) : (
         <>
-          {/* Controls */}
           <div className="bg-white rounded-2xl border border-slate-200 p-5">
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-              {/* Site selector — admin sees all, clerk sees only their site */}
               <div>
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">Site</label>
                 {isAdmin ? (
@@ -607,23 +601,16 @@ const textInput = "w-20 border border-slate-200 rounded text-xs p-0.5 focus:outl
                   </div>
                 )}
               </div>
-
-              {/* Date */}
               <div>
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">Date</label>
-                <input type="date" className={iCls} value={logDate}
-                  onChange={e => setLogDate(e.target.value)} />
+                <input type="date" className={iCls} value={logDate} onChange={e => setLogDate(e.target.value)} />
               </div>
-
-              {/* Cost code display */}
               <div>
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">Cost Code</label>
                 <div className="border border-slate-200 rounded-xl px-4 py-2.5 text-sm bg-slate-50 font-mono text-slate-700">
                   {sites.find(s => s.name === userSite)?.cost_code || "—"}
                 </div>
               </div>
-
-              {/* Equipment count */}
               <div>
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">Equipment at Site</label>
                 <div className="border border-slate-200 rounded-xl px-4 py-2.5 text-sm bg-slate-50 font-bold text-amber-600">
@@ -633,10 +620,9 @@ const textInput = "w-20 border border-slate-200 rounded text-xs p-0.5 focus:outl
             </div>
           </div>
 
-          {/* Date display + KPIs */}
           {userSite && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-slate-900 text-white rounded-2xl p-4 lg:col-span-1">
+              <div className="bg-slate-900 text-white rounded-2xl p-4">
                 <p className="text-2xl font-bold">{equipment.length}</p>
                 <p className="text-xs opacity-70 mt-1">Total Equipment</p>
                 <p className="text-xs opacity-50 mt-0.5">{selectedDate}</p>
@@ -645,27 +631,24 @@ const textInput = "w-20 border border-slate-200 rounded text-xs p-0.5 focus:outl
                 <p className="text-2xl font-bold">{workingCount}</p>
                 <p className="text-xs opacity-70 mt-1">Working (Chargeable)</p>
               </div>
-              <div className="bg-amber-500 text-white rounded-2xl p-4">
-                <p className="text-2xl font-bold">{idleCount}</p>
-                <p className="text-xs opacity-70 mt-1">Idle</p>
+              <div className="bg-slate-500 text-white rounded-2xl p-4">
+                <p className="text-2xl font-bold">{storageCount}</p>
+                <p className="text-xs opacity-70 mt-1">Storage (Not Charged)</p>
               </div>
               <div className="bg-red-500 text-white rounded-2xl p-4">
                 <p className="text-2xl font-bold">{breakdownCount}</p>
-                <p className="text-xs opacity-70 mt-1">Breakdown</p>
+                <p className="text-xs opacity-70 mt-1">Breakdown (Not Charged)</p>
               </div>
             </div>
           )}
 
-          {/* PLT-02 Table */}
           {userSite && rows.length > 0 ? (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-bold text-slate-800 text-sm">PLANT - DAILY SITE DATA REPORT</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {userSite} · {selectedDate}
-                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">{userSite} · {selectedDate}</p>
                   </div>
                   <p className="text-xs text-slate-400 font-mono">
                     Cost Code: {sites.find(s=>s.name===userSite)?.cost_code || "—"}
@@ -673,24 +656,23 @@ const textInput = "w-20 border border-slate-200 rounded text-xs p-0.5 focus:outl
                 </div>
               </div>
 
-              <div className="overflow-x-auto flex flex-col-reverse">
-              <table className="w-full text-xs">
-                
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
                   <thead className="bg-slate-100 border-b border-slate-200">
                     <tr>
-                      <th className={cellCls + " w-8"} rowSpan={2}>S/No</th>
+                      <th className={cellCls + " w-8"}  rowSpan={2}>S/No</th>
                       <th className={cellCls + " w-24"} rowSpan={2}>Fleet No.</th>
                       <th className={cellCls} colSpan={3}>Availability Hours</th>
                       <th className={cellCls + " w-24"} rowSpan={2}>Status</th>
                       <th className={cellCls} colSpan={2}>Fuel</th>
                       <th className={cellCls} colSpan={4}>Oil (Ltrs)</th>
                       <th className={cellCls + " w-24"} rowSpan={2}>Filter Issues</th>
-                      <th className={cellCls} colSpan={2}>Hour-Meter</th>
+                      <th className={cellCls} colSpan={2}>Hr Meter / Km</th>
                       <th className={cellCls + " w-28"} rowSpan={2}>Remarks</th>
                     </tr>
                     <tr>
-                      <th className={cellCls + " w-10"}>I (Idle)</th>
-                      <th className={cellCls + " w-10"}>A (Avail.)</th>
+                      <th className={cellCls + " w-10"}>S (Storage)</th>
+                      <th className={cellCls + " w-10"}>A (Working)</th>
                       <th className={cellCls + " w-10"}>N (Brkdn)</th>
                       <th className={cellCls + " w-16"}>Qty (L)</th>
                       <th className={cellCls + " w-16"}>Type</th>
@@ -706,28 +688,30 @@ const textInput = "w-20 border border-slate-200 rounded text-xs p-0.5 focus:outl
                     {rows.map((row, idx) => (
                       <tr key={row.equipment_id}
                         className={`border-b border-slate-100 transition-colors ${
-                          row.is_chargeable ? "bg-emerald-50/40" :
+                          row.is_chargeable     ? "bg-emerald-50/40" :
                           row.breakdown_hours > 0 ? "bg-red-50/30" :
-                          row.idle_hours > 0 ? "bg-amber-50/30" : ""
+                          row.storage_hours > 0   ? "bg-slate-50/60" : ""
                         }`}>
                         <td className={cellCls + " text-center text-slate-400"}>{idx+1}</td>
                         <td className={cellCls}>
                           <span className="font-bold text-amber-600 font-mono">{row.fleet_no}</span>
                         </td>
 
-                        {/* I A N hours */}
+                        {/* S (Storage) hours */}
                         <td className={cellCls + " text-center"}>
                           <input type="number" className={numInput}
-                            value={row.idle_hours || ""}
-                            onChange={e => updateRow(idx,"idle_hours",parseFloat(e.target.value)||0)}
+                            value={row.storage_hours || ""}
+                            onChange={e => updateRow(idx,"storage_hours",parseFloat(e.target.value)||0)}
                             placeholder="0" min={0} />
                         </td>
+                        {/* A (Working) hours */}
                         <td className={cellCls + " text-center"}>
                           <input type="number" className={numInput + " border-emerald-300"}
                             value={row.working_hours || ""}
                             onChange={e => updateRow(idx,"working_hours",parseFloat(e.target.value)||0)}
                             placeholder="0" min={0} />
                         </td>
+                        {/* N (Breakdown) hours */}
                         <td className={cellCls + " text-center"}>
                           <input type="number" className={numInput + " border-red-200"}
                             value={row.breakdown_hours || ""}
@@ -735,15 +719,15 @@ const textInput = "w-20 border border-slate-200 rounded text-xs p-0.5 focus:outl
                             placeholder="0" min={0} />
                         </td>
 
-                        {/* Status badge */}
+                        {/* Status quick-select — S replaces I */}
                         <td className={cellCls + " text-center"}>
                           <select
-                            className="text-xs border border-slate-200 rounded px-1 py-0.5 w-20"
+                            className="text-xs border border-slate-200 rounded px-1 py-0.5 w-22"
                             value={row.status}
                             onChange={e => updateRow(idx,"status",e.target.value as DayStatus)}>
                             <option value="">—</option>
                             <option value="A">A - Working</option>
-                            <option value="I">I - Idle</option>
+                            <option value="S">S - Storage</option>
                             <option value="N">N - Breakdown</option>
                           </select>
                         </td>
@@ -781,7 +765,7 @@ const textInput = "w-20 border border-slate-200 rounded text-xs p-0.5 focus:outl
                             placeholder="—" />
                         </td>
 
-                        {/* Hr/Km */}
+                        {/* Hr/Km — no miles */}
                         <td className={cellCls + " text-center"}>
                           <input type="number" className={numInput}
                             value={row.hr_km_reading || ""}
@@ -808,14 +792,12 @@ const textInput = "w-20 border border-slate-200 rounded text-xs p-0.5 focus:outl
 
                     {/* Totals row */}
                     <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold">
-                      <td className={cellCls} colSpan={2}>
-                        <span className="text-slate-700">Total:</span>
-                      </td>
-                      <td className={cellCls + " text-center text-slate-700"}>{totals.idle}</td>
+                      <td className={cellCls} colSpan={2}><span className="text-slate-700">Total:</span></td>
+                      <td className={cellCls + " text-center text-slate-600"}>{totals.storage}</td>
                       <td className={cellCls + " text-center text-emerald-700"}>{totals.working}</td>
                       <td className={cellCls + " text-center text-red-600"}>{totals.breakdown}</td>
                       <td className={cellCls + " text-center text-slate-500 text-[10px]"}>
-                        {totals.idle}/{totals.working}/{totals.breakdown}
+                        {totals.storage}/{totals.working}/{totals.breakdown}
                       </td>
                       <td className={cellCls + " text-center"}>{totals.fuel}</td>
                       <td className={cellCls}></td>
@@ -850,7 +832,7 @@ const textInput = "w-20 border border-slate-200 rounded text-xs p-0.5 focus:outl
           ) : userSite ? (
             <div className="text-center py-20 bg-white rounded-2xl border border-slate-200 text-slate-400">
               <p className="text-lg font-semibold text-slate-600">No equipment at {userSite}</p>
-              <p className="text-sm mt-1">Equipment will appear here once assigned to this site via the Equipment page.</p>
+              <p className="text-sm mt-1">Equipment will appear here once assigned to this site.</p>
             </div>
           ) : (
             <div className="text-center py-20 bg-white rounded-2xl border border-slate-200 text-slate-400">
