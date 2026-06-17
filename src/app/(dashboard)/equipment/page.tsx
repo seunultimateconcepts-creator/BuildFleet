@@ -3,24 +3,24 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useEquipment } from "@/hooks/use-equipment";
 import { useAuth } from "@/hooks/use-auth";
-import { useSites } from "@/hooks/use-sites";
-import type { Equipment, OperationalStatus } from "@/types";
+import { dbu } from "@/lib/db";
+import type { Equipment } from "@/types";
 
-type OperationalStatusWithStorage = OperationalStatus | "Storage";
+type OperationalStatus = Equipment["operational_status"] | "Storage";
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS — Idle & Stand By removed, Storage added
 // ─────────────────────────────────────────────────────────────
-const ALL_STATUSES: OperationalStatusWithStorage[] = [
+const ALL_STATUSES: OperationalStatus[] = [
   "Working", "Under Repair", "Break Down", "Storage", "Scrapped",
 ];
 
 // Clerk can only set these 3
-const CLERK_STATUSES: OperationalStatusWithStorage[] = [
+const CLERK_STATUSES: OperationalStatus[] = [
   "Working", "Break Down", "Storage",
 ];
 
@@ -45,7 +45,7 @@ const CONDITION_STYLE: Record<string, string> = {
 const iCls = "w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 
 // Yard config — Storage replaces Idle/Stand By
-const YARD_CONFIG: Partial<Record<OperationalStatusWithStorage, { label: string; placeholder: string }>> = {
+const YARD_CONFIG: Partial<Record<OperationalStatus, { label: string; placeholder: string }>> = {
   "Break Down":   { label: "Breakdown / Repair Yard",    placeholder: "e.g. Central Workshop, Field Workshop" },
   "Under Repair": { label: "Repair Workshop / Location", placeholder: "e.g. Main Workshop, Contractor Yard" },
   "Storage":      { label: "Storage Yard / Location",    placeholder: "e.g. Yard (Storage) - Imeke, Central Yard" },
@@ -57,14 +57,22 @@ const YARD_CONFIG: Partial<Record<OperationalStatusWithStorage, { label: string;
 // ─────────────────────────────────────────────────────────────
 function StatusModal({ item, onClose, onSave, isClerk }: {
   item: Equipment; onClose: () => void;
-  onSave: (status: OperationalStatusWithStorage, yard: string) => Promise<void>;
+  onSave: (status: OperationalStatus, yard: string) => Promise<void>;
   isClerk: boolean;
 }) {
-  const { sites } = useSites();
-  const [status, setStatus] = useState<OperationalStatusWithStorage>(item.operational_status as OperationalStatusWithStorage);
-  const [yard,   setYard]   = useState<string>((item as any).current_yard || "");
-  const [saving, setSaving] = useState(false);
-  const [error,  setError]  = useState<string | null>(null);
+  const [allSites, setAllSites] = useState<any[]>([]);
+  const [status,   setStatus]   = useState<OperationalStatus>(item.operational_status);
+  const [yard,     setYard]     = useState<string>((item as any).current_yard || "");
+  const [saving,   setSaving]   = useState(false);
+  const [error,    setError]    = useState<string | null>(null);
+
+  // Always fetch ALL sites — not filtered by role
+  useEffect(() => {
+    dbu.from("sites")
+      .select("id,name,code,cost_code")
+      .order("code", { ascending: true })
+      .then(({ data }: { data: any[] | null }) => setAllSites(data || []));
+  }, []);
 
   // Clerks can only set 3 statuses
   const availableStatuses = isClerk ? CLERK_STATUSES : ALL_STATUSES;
@@ -82,7 +90,7 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
     onClose();
   }
 
-  function handleStatusChange(s: OperationalStatusWithStorage) {
+  function handleStatusChange(s: OperationalStatus) {
     setStatus(s);
     setError(null);
     if (!YARD_CONFIG[s]) setYard("");
@@ -133,7 +141,7 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
               onChange={e => { setYard(e.target.value); setError(null); }}>
               <option value="">— Select site / yard —</option>
               <optgroup label="Project Sites & Workshops">
-                {sites.slice().sort((a,b) => a.name.localeCompare(b.name)).map(s => (
+                {allSites.sort((a,b) => a.name.localeCompare(b.name)).map(s => (
                   <option key={s.id || s.code} value={s.name}>
                     {s.code ? `${s.code} — ` : ""}{s.name}
                   </option>
@@ -242,9 +250,14 @@ export default function EquipmentPage() {
       e.model.toLowerCase().includes(q) ||
       (e.reg_no||"").toLowerCase().includes(q) ||
       e.category.toLowerCase().includes(q);
+
+    // "Under Repair" KPI card should show both Under Repair AND Break Down
+    const matchSt = !filterSt ||
+      e.operational_status === filterSt ||
+      (filterSt === "Under Repair" && e.operational_status === "Break Down");
+
     return (
-      matchQ &&
-      (!filterSt     || e.operational_status === filterSt) &&
+      matchQ && matchSt &&
       (!filterCat    || e.category === filterCat) &&
       (!filterSite   || e.site === filterSite) &&
       (!filterRegion || e.region === filterRegion)
@@ -295,19 +308,27 @@ export default function EquipmentPage() {
         </div>
       </div>
 
-      {/* KPI Cards — Storage replaces Idle/Stand By */}
+      {/* KPI Cards — clickable to filter */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
-          { label: "Total Fleet",  value: counts.total,    bg: "bg-slate-900 text-white" },
-          { label: "Working",      value: counts.working,  bg: "bg-emerald-500 text-white" },
-          { label: "Under Repair", value: counts.repair,   bg: "bg-amber-500 text-white" },
-          { label: "Storage",      value: counts.storage,  bg: "bg-white border border-slate-200 text-slate-800" },
-          { label: "Scrapped",     value: counts.scrapped, bg: "bg-white border border-slate-200 text-slate-800" },
+          { label: "Total Fleet",  value: counts.total,    bg: "bg-slate-900 text-white",                          filter: "" },
+          { label: "Working",      value: counts.working,  bg: "bg-emerald-500 text-white",                        filter: "Working" },
+          { label: "Under Repair", value: counts.repair,   bg: "bg-amber-500 text-white",                          filter: "Under Repair" },
+          { label: "Storage",      value: counts.storage,  bg: "bg-white border border-slate-200 text-slate-800",  filter: "Storage" },
+          { label: "Scrapped",     value: counts.scrapped, bg: "bg-white border border-slate-200 text-slate-800",  filter: "Scrapped" },
         ].map(k => (
-          <div key={k.label} className={`${k.bg} rounded-2xl p-5`}>
+          <button
+            key={k.label}
+            onClick={() => setFilterSt(filterSt === k.filter ? "" : k.filter)}
+            className={`${k.bg} rounded-2xl p-5 text-left transition-all hover:scale-[1.02] hover:shadow-md ${
+              filterSt === k.filter ? "ring-4 ring-amber-400 ring-offset-2" : ""
+            }`}>
             <p className="text-3xl font-bold">{k.value}</p>
             <p className="text-sm opacity-70 mt-1">{k.label}</p>
-          </div>
+            {filterSt === k.filter && (
+              <p className="text-xs opacity-60 mt-1">← click to clear</p>
+            )}
+          </button>
         ))}
       </div>
 
