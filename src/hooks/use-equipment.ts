@@ -2,20 +2,33 @@
 "use client";
 import { useEffect, useState } from "react";
 import { dbu } from "@/lib/db";
+import { useAuth } from "@/hooks/use-auth";
 
 export function useEquipment() {
   const [equipment, setEquipment] = useState<any[]>([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
+  const { profile, hasFullAccess, isClerk, isSupervisor } = useAuth();
 
-  useEffect(() => { fetchEquipment(); }, []);
+  useEffect(() => {
+    if (profile) fetchEquipment();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
 
   async function fetchEquipment() {
     setLoading(true); setError(null);
-    const { data, error: err } = await dbu
-      .from("equipment")
-      .select("*")
-      .order("created_at", { ascending: false });
+
+    const isRestricted = (isClerk || isSupervisor) && !hasFullAccess;
+    const assignedSites = profile?.assigned_sites || [];
+
+    let query = dbu.from("equipment").select("*").order("fleet_number", { ascending: true });
+
+    // Filter by assigned sites for clerks and supervisors
+    if (isRestricted && assignedSites.length > 0) {
+      query = query.in("site", assignedSites);
+    }
+
+    const { data, error: err } = await query;
     if (err) { setError(err.message); setLoading(false); return; }
     setEquipment(data || []);
     setLoading(false);
@@ -66,7 +79,7 @@ export function useEquipment() {
       yard:         yard || null,
       performed_by: by,
     }]).then(({ error: hErr }: { error: any }) => {
-      if (hErr) console.warn("History log failed:", hErr.message);
+      if (hErr) console.warn("History log failed:", hErr?.message || hErr);
     });
 
     return { success: true };

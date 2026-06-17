@@ -2,22 +2,35 @@
 "use client";
 import { useEffect, useState } from "react";
 import { dbu } from "@/lib/db";
+import { useAuth } from "@/hooks/use-auth";
 
 export function useDailyLogs(filterMonth?:string, filterFleet?:string) {
   const [dailyLogs, setDailyLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string|null>(null);
+  const { profile, hasFullAccess, isClerk, isSupervisor } = useAuth();
 
-  useEffect(() => { fetchLogs(); }, [filterMonth,filterFleet]); // eslint-disable-line
+  useEffect(() => {
+    if (profile) fetchLogs();
+  }, [filterMonth, filterFleet, profile]); // eslint-disable-line
 
   async function fetchLogs() {
     setLoading(true);
-    let q = dbu.from("daily_logs").select("*").order("created_at",{ascending:false});
-    if (filterMonth) q=q.eq("month",filterMonth);
-    if (filterFleet) q=q.eq("fleet_no",filterFleet);
-    const {data,error:err} = await q;
+    const isRestricted = (isClerk || isSupervisor) && !hasFullAccess;
+    const assignedSites = profile?.assigned_sites || [];
+
+    let q = dbu.from("daily_logs").select("*").order("created_at", { ascending: false });
+    if (filterMonth) q = q.eq("month", filterMonth);
+    if (filterFleet) q = q.eq("fleet_no", filterFleet);
+
+    // Restrict clerks/supervisors to their assigned sites only
+    if (isRestricted && assignedSites.length > 0) {
+      q = q.in("site", assignedSites);
+    }
+
+    const { data, error: err } = await q;
     if (err) { setError(err.message); setLoading(false); return; }
-    setDailyLogs(data||[]); setLoading(false);
+    setDailyLogs(data || []); setLoading(false);
   }
 
   async function saveDraftLog(log:any) {
@@ -64,5 +77,13 @@ export function useDailyLogs(filterMonth?:string, filterFleet?:string) {
     await fetchLogs(); return {success:true};
   }
 
-  return { dailyLogs, plantLogs:dailyLogs.filter(l=>l.log_type==="Plant"), transportLogs:dailyLogs.filter(l=>l.log_type==="Transport"), thirdPartyLogs:dailyLogs.filter(l=>l.log_type==="Third Party"), pendingApproval:dailyLogs.filter(l=>l.approval_status==="Submitted"), draftLogs:dailyLogs.filter(l=>l.approval_status==="Draft"), loading, error, fetchLogs, saveDraftLog, submitLog, approveLog, rejectLog, deleteLog };
+  return {
+    dailyLogs,
+    plantLogs: dailyLogs.filter(l=>l.log_type==="Plant"),
+    transportLogs: dailyLogs.filter(l=>l.log_type==="Transport"),
+    thirdPartyLogs: dailyLogs.filter(l=>l.log_type==="Third Party"),
+    pendingApproval: dailyLogs.filter(l=>l.approval_status==="Submitted"),
+    draftLogs: dailyLogs.filter(l=>l.approval_status==="Draft"),
+    loading, error, fetchLogs, saveDraftLog, submitLog, approveLog, rejectLog, deleteLog
+  };
 }

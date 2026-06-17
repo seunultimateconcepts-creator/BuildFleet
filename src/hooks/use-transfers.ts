@@ -2,19 +2,33 @@
 "use client";
 import { useEffect, useState } from "react";
 import { dbu } from "@/lib/db";
+import { useAuth } from "@/hooks/use-auth";
 
 export function useTransfers() {
   const [transfers, setTransfers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string|null>(null);
+  const { profile, hasFullAccess, isClerk, isSupervisor } = useAuth();
 
-  useEffect(() => { fetchTransfers(); }, []);
+  useEffect(() => {
+    if (profile) fetchTransfers();
+  }, [profile]); // eslint-disable-line
 
   async function fetchTransfers() {
     setLoading(true);
-    const {data,error:err} = await dbu.from("transfers").select("*").order("created_at",{ascending:false});
+    const isRestricted = (isClerk || isSupervisor) && !hasFullAccess;
+    const assignedSites = profile?.assigned_sites || [];
+
+    let q = dbu.from("transfers").select("*").order("created_at", { ascending: false });
+
+    // Clerks/supervisors see only transfers FROM or TO their assigned sites
+    if (isRestricted && assignedSites.length > 0) {
+      q = q.or(`from_site.in.(${assignedSites.map(s=>`"${s}"`).join(",")}),to_site.in.(${assignedSites.map(s=>`"${s}"`).join(",")})`);
+    }
+
+    const { data, error: err } = await q;
     if (err) { setError(err.message); setLoading(false); return; }
-    setTransfers(data||[]); setLoading(false);
+    setTransfers(data || []); setLoading(false);
   }
 
   async function createTransfer(t:any) {
@@ -39,5 +53,10 @@ export function useTransfers() {
     await fetchTransfers(); return {success:true};
   }
 
-  return { transfers, pendingTransfers:transfers.filter(t=>t.status==="Pending"), inTransitTransfers:transfers.filter(t=>t.status==="In Transit"), loading, error, fetchTransfers, createTransfer, confirmReceipt, updateStatus };
+  return {
+    transfers,
+    pendingTransfers: transfers.filter(t=>t.status==="Pending"),
+    inTransitTransfers: transfers.filter(t=>t.status==="In Transit"),
+    loading, error, fetchTransfers, createTransfer, confirmReceipt, updateStatus
+  };
 }

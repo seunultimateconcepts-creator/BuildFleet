@@ -2,19 +2,33 @@
 "use client";
 import { useEffect, useState } from "react";
 import { dbu } from "@/lib/db";
+import { useAuth } from "@/hooks/use-auth";
 
 export function useMaintenance() {
   const [maintenance, setMaintenance] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string|null>(null);
+  const { profile, hasFullAccess, isClerk, isSupervisor } = useAuth();
 
-  useEffect(() => { fetchMaintenance(); }, []);
+  useEffect(() => {
+    if (profile) fetchMaintenance();
+  }, [profile]); // eslint-disable-line
 
   async function fetchMaintenance() {
     setLoading(true);
-    const {data,error:err} = await dbu.from("maintenance").select("*").order("created_at",{ascending:false});
+    const isRestricted = (isClerk || isSupervisor) && !hasFullAccess;
+    const assignedSites = profile?.assigned_sites || [];
+
+    let q = dbu.from("maintenance").select("*").order("created_at", { ascending: false });
+
+    // Restrict clerks/supervisors to their assigned sites only
+    if (isRestricted && assignedSites.length > 0) {
+      q = q.in("site", assignedSites);
+    }
+
+    const { data, error: err } = await q;
     if (err) { setError(err.message); setLoading(false); return; }
-    setMaintenance(data||[]); setLoading(false);
+    setMaintenance(data || []); setLoading(false);
   }
 
   async function addMaintenance(r:any) {
@@ -38,5 +52,10 @@ export function useMaintenance() {
     await fetchMaintenance(); return {success:true};
   }
 
-  return { maintenance, pendingMaintenance:maintenance.filter(m=>m.status==="Pending"), inProgressMaintenance:maintenance.filter(m=>m.status==="In Progress"), loading, error, fetchMaintenance, addMaintenance, updateMaintenanceStatus };
+  return {
+    maintenance,
+    pendingMaintenance: maintenance.filter(m=>m.status==="Pending"),
+    inProgressMaintenance: maintenance.filter(m=>m.status==="In Progress"),
+    loading, error, fetchMaintenance, addMaintenance, updateMaintenanceStatus
+  };
 }
