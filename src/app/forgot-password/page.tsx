@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { dbu } from "@/lib/db";
 
+export const dynamic = 'force-dynamic';
+
 export default function ForgotPasswordPage() {
   const [email,   setEmail]   = useState("");
   const [loading, setLoading] = useState(false);

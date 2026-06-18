@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { dbu } from "@/lib/db";
 
+export const dynamic = 'force-dynamic';
+
 // ─────────────────────────────────────────────────────────────
 // Background images — plant & fleet related (Unsplash, no auth)
 // ─────────────────────────────────────────────────────────────
