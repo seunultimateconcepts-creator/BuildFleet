@@ -8,19 +8,20 @@ import Link from "next/link";
 import { useEquipment } from "@/hooks/use-equipment";
 import { useAuth } from "@/hooks/use-auth";
 import { dbu } from "@/lib/db";
-import type { Equipment } from "@/types";
-
-type OperationalStatus = Equipment["operational_status"] | "Storage";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import type { Equipment, OperationalStatus } from "@/types";
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS — Idle & Stand By removed, Storage added
 // ─────────────────────────────────────────────────────────────
-const ALL_STATUSES: OperationalStatus[] = [
+const ALL_STATUSES = [
   "Working", "Under Repair", "Break Down", "Storage", "Scrapped",
-];
+] as const;
+
+type EquipmentStatus = (typeof ALL_STATUSES)[number];
 
 // Clerk can only set these 3
-const CLERK_STATUSES: OperationalStatus[] = [
+const CLERK_STATUSES: EquipmentStatus[] = [
   "Working", "Break Down", "Storage",
 ];
 
@@ -44,12 +45,12 @@ const CONDITION_STYLE: Record<string, string> = {
 
 const iCls = "w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 
-// Yard config — Storage replaces Idle/Stand By
-const YARD_CONFIG: Partial<Record<OperationalStatus, { label: string; placeholder: string }>> = {
-  "Break Down":   { label: "Breakdown / Repair Yard",    placeholder: "e.g. Central Workshop, Field Workshop" },
-  "Under Repair": { label: "Repair Workshop / Location", placeholder: "e.g. Main Workshop, Contractor Yard" },
-  "Storage":      { label: "Storage Yard / Location",    placeholder: "e.g. Yard (Storage) - Imeke, Central Yard" },
-  "Scrapped":     { label: "Disposal / Scrap Location",  placeholder: "e.g. Scrap Yard, Disposal Site" },
+// Yard config — maps status to site_type filter and label
+const YARD_CONFIG: Partial<Record<EquipmentStatus, { label: string; siteTypes: string[] }>> = {
+  "Break Down":   { label: "Repair Yard",                    siteTypes: ["Repair Yard"] },
+  "Under Repair": { label: "Workshop",                       siteTypes: ["Central Workshop","Regional Workshop","Field Workshop"] },
+  "Storage":      { label: "Storage Yard",                   siteTypes: ["Storage Yard"] },
+  "Scrapped":     { label: "Disposal / Scrap Location",      siteTypes: [] }, // all sites
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -57,22 +58,37 @@ const YARD_CONFIG: Partial<Record<OperationalStatus, { label: string; placeholde
 // ─────────────────────────────────────────────────────────────
 function StatusModal({ item, onClose, onSave, isClerk }: {
   item: Equipment; onClose: () => void;
-  onSave: (status: OperationalStatus, yard: string) => Promise<void>;
+  onSave: (status: EquipmentStatus, yard: string) => Promise<void>;
   isClerk: boolean;
 }) {
-  const [allSites, setAllSites] = useState<any[]>([]);
-  const [status,   setStatus]   = useState<OperationalStatus>(item.operational_status);
-  const [yard,     setYard]     = useState<string>((item as any).current_yard || "");
-  const [saving,   setSaving]   = useState(false);
-  const [error,    setError]    = useState<string | null>(null);
+  const [allSites,      setAllSites]      = useState<any[]>([]);
+  const [filteredYards, setFilteredYards] = useState<any[]>([]);
+  const [status,        setStatus]        = useState<EquipmentStatus>(item.operational_status as EquipmentStatus);
+  const [yard,          setYard]          = useState<string>((item as any).current_yard || "");
+  const [saving,        setSaving]        = useState(false);
+  const [error,         setError]         = useState<string | null>(null);
 
-  // Always fetch ALL sites — not filtered by role
+  // Fetch ALL sites once
   useEffect(() => {
     dbu.from("sites")
-      .select("id,name,code,cost_code")
+      .select("id,name,code,site_type,cost_code")
       .order("code", { ascending: true })
       .then(({ data }: { data: any[] | null }) => setAllSites(data || []));
   }, []);
+
+  // Filter yards based on selected status
+  useEffect(() => {
+    const config = YARD_CONFIG[status];
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!config) { setFilteredYards([]); return; }
+    if (config.siteTypes.length === 0) {
+      setFilteredYards(allSites); // Scrapped — show all
+    } else {
+      setFilteredYards(allSites.filter(s => config.siteTypes.includes(s.site_type)));
+    }
+     
+    setYard(""); // reset yard when status changes
+  }, [status, allSites]);
 
   // Clerks can only set 3 statuses
   const availableStatuses = isClerk ? CLERK_STATUSES : ALL_STATUSES;
@@ -90,7 +106,7 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
     onClose();
   }
 
-  function handleStatusChange(s: OperationalStatus) {
+  function handleStatusChange(s: EquipmentStatus) {
     setStatus(s);
     setError(null);
     if (!YARD_CONFIG[s]) setYard("");
@@ -137,16 +153,17 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
               {yardConfig!.label} <span className="text-red-400">*</span>
             </label>
+            <p className="text-xs text-slate-400 mb-2">
+              {filteredYards.length} {yardConfig!.label.toLowerCase()}s available
+            </p>
             <select className={iCls} value={yard}
               onChange={e => { setYard(e.target.value); setError(null); }}>
-              <option value="">— Select site / yard —</option>
-              <optgroup label="Project Sites & Workshops">
-                {allSites.sort((a,b) => a.name.localeCompare(b.name)).map(s => (
-                  <option key={s.id || s.code} value={s.name}>
-                    {s.code ? `${s.code} — ` : ""}{s.name}
-                  </option>
-                ))}
-              </optgroup>
+              <option value="">— Select {yardConfig!.label} —</option>
+              {filteredYards.map(s => (
+                <option key={s.id || s.code} value={s.name}>
+                  {s.code ? `${s.code} — ` : ""}{s.name}
+                </option>
+              ))}
             </select>
             <p className="text-xs text-slate-400 mt-1.5">
               Select where this equipment is located.

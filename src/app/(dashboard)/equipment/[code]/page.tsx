@@ -32,11 +32,11 @@ const HISTORY_ICONS: Record<string, string> = {
   "Deleted":               "❌",
 };
 
-const YARD_CONFIG: Partial<Record<string, { label: string }>> = {
-  "Break Down":   { label: "Breakdown / Repair Yard" },
-  "Under Repair": { label: "Repair Workshop / Location" },
-  "Storage":      { label: "Storage Yard / Location" },
-  "Scrapped":     { label: "Disposal / Scrap Location" },
+const YARD_CONFIG: Partial<Record<string, { label: string; siteTypes: string[] }>> = {
+  "Break Down":   { label: "Repair Yard",               siteTypes: ["Repair Yard"] },
+  "Under Repair": { label: "Workshop",                  siteTypes: ["Central Workshop","Regional Workshop","Field Workshop"] },
+  "Storage":      { label: "Storage Yard",              siteTypes: ["Storage Yard"] },
+  "Scrapped":     { label: "Disposal / Scrap Location", siteTypes: [] },
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -47,24 +47,38 @@ function StatusModal({ equip, isClerk, onClose, onSave }: {
   onClose: () => void;
   onSave: (status: string, yard: string) => Promise<void>;
 }) {
-  const [allSites, setAllSites] = useState<any[]>([]);
-  const [status,   setStatus]   = useState<string>(equip.operational_status || "Working");
-  const [yard,     setYard]     = useState<string>(equip.current_yard || "");
-  const [search,   setSearch]   = useState("");
-  const [saving,   setSaving]   = useState(false);
-  const [error,    setError]    = useState("");
+  const [allSites,      setAllSites]      = useState<any[]>([]);
+  const [filteredYards, setFilteredYards] = useState<any[]>([]);
+  const [status,        setStatus]        = useState<string>(equip.operational_status || "Working");
+  const [yard,          setYard]          = useState<string>(equip.current_yard || "");
+  const [search,        setSearch]        = useState("");
+  const [saving,        setSaving]        = useState(false);
+  const [error,         setError]         = useState("");
 
   const availableStatuses = isClerk ? CLERK_STATUSES : ALL_STATUSES;
   const yardConfig = YARD_CONFIG[status];
   const needsYard  = !!yardConfig;
 
-  // Always fetch ALL sites — never filtered by role
+  // Always fetch ALL sites with site_type
   useEffect(() => {
     dbu.from("sites")
-      .select("id,name,code,region,type")
+      .select("id,name,code,region,site_type")
       .order("code", { ascending: true })
       .then(({ data }: { data: any[] | null }) => setAllSites(data || []));
   }, []);
+
+  // Filter yards based on selected status
+  useEffect(() => {
+    const config = YARD_CONFIG[status];
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!config) { setFilteredYards([]); return; }
+    const base = config.siteTypes.length === 0
+      ? allSites
+      : allSites.filter(s => config.siteTypes.includes(s.site_type));
+    setFilteredYards(base);
+    setYard("");
+    setSearch("");
+  }, [status, allSites]);
 
   const filteredSites = allSites.filter(s =>
     !search ||
@@ -76,6 +90,7 @@ function StatusModal({ equip, isClerk, onClose, onSave }: {
   // Show same region sites first
   const sameRegion = filteredSites.filter(s => s.region === equip.region);
   const otherSites = filteredSites.filter(s => s.region !== equip.region);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const sortedSites = [...sameRegion, ...otherSites];
 
   async function handleSave() {
@@ -144,48 +159,47 @@ function StatusModal({ equip, isClerk, onClose, onSave }: {
                   {yardConfig!.label} <span className="text-red-400">*</span>
                 </label>
                 <p className="text-xs text-slate-400">
-                  {equip.region} sites shown first
+                  {filteredYards.length} {yardConfig!.label.toLowerCase()}s available
+                  {equip.region ? ` · ${equip.region} shown first` : ""}
                 </p>
               </div>
               <input
-                placeholder="Search site name, code or region..."
+                placeholder={`Search ${yardConfig!.label.toLowerCase()}...`}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
               />
               <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-                {/* Option: stay at current site */}
-                <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                  yard === "" ? "border-amber-400 bg-amber-50" : "border-slate-200 hover:bg-slate-50"
-                }`}>
-                  <input type="radio" name="yard" value=""
-                    checked={yard === ""} onChange={() => setYard("")}
-                    className="accent-amber-500" />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-700">Current site</p>
-                    <p className="text-xs text-slate-400">{equip.site}</p>
-                  </div>
-                </label>
-                {sortedSites.length === 0 ? (
-                  <p className="text-sm text-slate-400 text-center py-4">No sites match.</p>
-                ) : sortedSites.map(s => (
-                  <label key={s.id || s.code}
-                    className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                      yard === s.name ? "border-amber-400 bg-amber-50" : "border-slate-200 hover:bg-slate-50"
-                    }`}>
-                    <input type="radio" name="yard" value={s.name}
-                      checked={yard === s.name} onChange={() => setYard(s.name)}
-                      className="accent-amber-500" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-700 truncate">{s.name}</p>
-                      <p className="text-xs text-slate-400">
-                        {s.code}
-                        {s.region && ` · ${s.region}`}
-                        {s.region === equip.region && <span className="ml-1.5 text-amber-500 font-semibold">★ Same region</span>}
-                      </p>
-                    </div>
-                  </label>
-                ))}
+                {(() => {
+                  const searched = filteredYards.filter(s =>
+                    !search ||
+                    s.name.toLowerCase().includes(search.toLowerCase()) ||
+                    s.code.toLowerCase().includes(search.toLowerCase())
+                  );
+                  const sameRegion = searched.filter(s => s.region === equip.region);
+                  const others     = searched.filter(s => s.region !== equip.region);
+                  const sorted     = [...sameRegion, ...others];
+                  return sorted.length === 0 ? (
+                    <p className="text-sm text-slate-400 text-center py-4">No {yardConfig!.label.toLowerCase()}s found.</p>
+                  ) : sorted.map(s => (
+                    <label key={s.id || s.code}
+                      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                        yard === s.name ? "border-amber-400 bg-amber-50" : "border-slate-200 hover:bg-slate-50"
+                      }`}>
+                      <input type="radio" name="yard" value={s.name}
+                        checked={yard === s.name} onChange={() => setYard(s.name)}
+                        className="accent-amber-500" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-700 truncate">{s.name}</p>
+                        <p className="text-xs text-slate-400">
+                          {s.code}
+                          {s.region && ` · ${s.region}`}
+                          {s.region === equip.region && <span className="ml-1.5 text-amber-500 font-semibold">★ Same region</span>}
+                        </p>
+                      </div>
+                    </label>
+                  ));
+                })()}
               </div>
             </div>
           )}

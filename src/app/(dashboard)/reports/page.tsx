@@ -322,12 +322,12 @@ function BreakdownReportTab() {
   const [filterSite,   setFilterSite]   = useState("");
   const [workshops,    setWorkshops]    = useState<any[]>([]); // only workshops
 
-  // Load ONLY workshops — Central, Regional, Field
+  // Load ONLY Repair Yards for the breakdown report filter
   useEffect(() => {
     dbu.from("sites")
-      .select("name,code,site_type")
-      .in("site_type", ["Central Workshop","Regional Workshop","Field Workshop"])
-      .order("site_type")
+      .select("name,code,site_type,region")
+      .eq("site_type", "Repair Yard")
+      .order("code")
       .then(({ data }: { data: any[] | null }) => setWorkshops(data || []));
   }, []);
 
@@ -362,10 +362,14 @@ function BreakdownReportTab() {
     return acc;
   }, {});
 
-  // Group workshops by type for the dropdown
-  const centralWorkshops  = workshops.filter(s => s.site_type === "Central Workshop");
-  const regionalWorkshops = workshops.filter(s => s.site_type === "Regional Workshop");
-  const fieldWorkshops    = workshops.filter(s => s.site_type === "Field Workshop");
+  // Group repair yards by region for display
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const yardsByRegion = workshops.reduce((acc:any, s:any) => {
+    const r = s.region || "Other";
+    if (!acc[r]) acc[r] = [];
+    acc[r].push(s);
+    return acc;
+  }, {});
 
   function exportCSV() {
     const headers = ["S/NO","Fleet No.","Equipment","Site","Issue","Reported Date",
@@ -403,25 +407,13 @@ function BreakdownReportTab() {
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">
-              Workshop (Repair Yards only)
+              Repair Yard (optional)
             </label>
             <select className={iCls+" w-64"} value={filterSite} onChange={e=>setFilterSite(e.target.value)}>
-              <option value="">All Workshops</option>
-              {centralWorkshops.length > 0 && (
-                <optgroup label="🏭 Central Workshop">
-                  {centralWorkshops.map(s => <option key={s.name} value={s.name}>{s.code} — {s.name}</option>)}
-                </optgroup>
-              )}
-              {regionalWorkshops.length > 0 && (
-                <optgroup label="🔧 Regional Workshops">
-                  {regionalWorkshops.map(s => <option key={s.name} value={s.name}>{s.code} — {s.name}</option>)}
-                </optgroup>
-              )}
-              {fieldWorkshops.length > 0 && (
-                <optgroup label="⚙️ Field Workshops">
-                  {fieldWorkshops.map(s => <option key={s.name} value={s.name}>{s.code} — {s.name}</option>)}
-                </optgroup>
-              )}
+              <option value="">All Repair Yards</option>
+              {workshops.map(s => (
+                <option key={s.name} value={s.name}>{s.code} — {s.name}</option>
+              ))}
             </select>
           </div>
           <button onClick={generate} disabled={loading}
@@ -434,15 +426,10 @@ function BreakdownReportTab() {
             </button>
           )}
         </div>
-        {/* Workshop legend */}
-        <div className="mt-3 flex flex-wrap gap-2">
-          <span className="text-xs text-slate-400">
-            Showing {workshops.length} workshops:
-          </span>
-          <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full">1 Central</span>
-          <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full">{regionalWorkshops.length} Regional</span>
-          <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full">{fieldWorkshops.length} Field</span>
-        </div>
+        {/* Repair yard count */}
+        <p className="text-xs text-slate-400 mt-3">
+          {workshops.length} repair yards available across all regions
+        </p>
       </div>
 
       {generated && records.length === 0 && (
