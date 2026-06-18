@@ -9,8 +9,8 @@ import { dbu } from "@/lib/db";
 const BG_IMAGES = [
   "https://images.unsplash.com/photo-1581094794329-c8112a89af12?w=1400&q=80", // construction site equipment
   "https://images.unsplash.com/photo-1652396669401-db1bc4c4457d?q=80&w=774&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", // heavy excavator
-  "https://images.unsplash.com/photo-1590496793929-36417d3117de?w=1400&q=80", // bulldozer construction
-  "https://unsplash.com/photos/yellow-and-black-heavy-equipment-on-brown-field-during-daytime-N1LBcqLP9ec", // fleet trucks road
+  "https://images.unsplash.com/photo-1647735282077-c12699af40be?q=80&w=870&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", // bulldozer construction
+  "https://images.unsplash.com/photo-1629807473015-41699c4471b5?q=80&w=870&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", // fleet trucks road
 ];
 
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
