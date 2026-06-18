@@ -317,7 +317,9 @@ function BreakdownReportTab() {
   const [records,      setRecords]      = useState<any[]>([]);
   const [loading,      setLoading]      = useState(false);
   const [generated,    setGenerated]    = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [filterMonth,  setFilterMonth]  = useState(MONTHS[new Date().getMonth()]);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [filterYear,   setFilterYear]   = useState(new Date().getFullYear());
   const [filterSite,   setFilterSite]   = useState("");
   const [workshops,    setWorkshops]    = useState<any[]>([]); // only workshops
@@ -333,18 +335,27 @@ function BreakdownReportTab() {
 
   async function generate() {
     setLoading(true);
+
+    // Query equipment currently at repair yards
+    // (Break Down or Under Repair status at a Repair Yard site)
     let q = dbu
-      .from("maintenance")
-      .select("*")
-      .eq("maintenance_type", "Breakdown")
-      .order("created_at", { ascending: false });
+      .from("equipment")
+      .select("id,fleet_number,name,category,site,region,operational_status,current_yard,assessment,make,model")
+      .in("operational_status", ["Break Down","Under Repair"])
+      .order("fleet_number");
 
-    if (filterSite) q = q.eq("site", filterSite);
-
-    const monthIdx = MONTHS.indexOf(filterMonth);
-    const from = new Date(filterYear, monthIdx, 1).toISOString();
-    const to   = new Date(filterYear, monthIdx + 1, 0, 23, 59, 59).toISOString();
-    q = q.gte("created_at", from).lte("created_at", to);
+    // Filter by specific repair yard if selected
+    if (filterSite) {
+      q = q.or(`site.eq.${filterSite},current_yard.eq.${filterSite}`);
+    } else {
+      // Show all equipment at any repair yard
+      const repairYardNames = workshops.map(s => s.name);
+      if (repairYardNames.length > 0) {
+        q = q.or(
+          `site.in.(${repairYardNames.map(n=>`"${n}"`).join(",")}),current_yard.in.(${repairYardNames.map(n=>`"${n}"`).join(",")})`
+        );
+      }
+    }
 
     const { data } = await q;
     setRecords(data || []);
@@ -352,9 +363,8 @@ function BreakdownReportTab() {
     setLoading(false);
   }
 
-  const totalDowntime = records.reduce((s, r) => s + (Number(r.downtime_hours) || 0), 0);
-  const resolved  = records.filter(r => r.status === "Completed").length;
-  const pending   = records.filter(r => r.status !== "Completed").length;
+  const breakDown   = records.filter(r => r.operational_status === "Break Down").length;
+  const underRepair = records.filter(r => r.operational_status === "Under Repair").length;
 
   const byCat = records.reduce((acc:any, r:any) => {
     const c = r.category || "Unknown";
@@ -362,29 +372,25 @@ function BreakdownReportTab() {
     return acc;
   }, {});
 
-  // Group repair yards by region for display
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const yardsByRegion = workshops.reduce((acc:any, s:any) => {
-    const r = s.region || "Other";
-    if (!acc[r]) acc[r] = [];
-    acc[r].push(s);
+  const byRegion = records.reduce((acc:any, r:any) => {
+    const reg = r.region || "Unknown";
+    acc[reg] = (acc[reg]||0) + 1;
     return acc;
   }, {});
 
   function exportCSV() {
-    const headers = ["S/NO","Fleet No.","Equipment","Site","Issue","Reported Date",
-      "Status","Technician","Job Order No.","Cost (₦)"];
+    const headers = ["S/NO","Fleet No.","Description","Category","Make","Model",
+      "Repair Yard","Region","Status","Condition"];
     const rows = records.map((r:any, i:number) => [
-      String(i+1), r.equipment_code||"", r.equipment_name||"",
-      r.site||"", r.issue||"",
-      new Date(r.created_at).toLocaleDateString("en-GB"),
-      r.status||"", r.technician||"", r.job_order_no||"",
-      String(r.cost||0),
+      String(i+1), r.fleet_number||"", r.name||"",
+      r.category||"", r.make||"", r.model||"",
+      r.current_yard||r.site||"", r.region||"",
+      r.operational_status||"", r.assessment||"",
     ]);
     const csv = [headers,...rows].map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
-    a.download = `Breakdown_Report_${filterMonth}_${filterYear}.csv`;
+    a.download = `Breakdown_Report_${new Date().toISOString().slice(0,10)}.csv`;
     a.click();
   }
 
@@ -394,31 +400,19 @@ function BreakdownReportTab() {
         <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Generate Breakdown Report</p>
         <div className="flex flex-wrap items-end gap-4">
           <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">Month</label>
-            <select className={iCls+" w-40"} value={filterMonth} onChange={e=>setFilterMonth(e.target.value)}>
-              {MONTHS.map(m=><option key={m}>{m}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">Year</label>
-            <select className={iCls+" w-28"} value={filterYear} onChange={e=>setFilterYear(parseInt(e.target.value))}>
-              {[2024,2025,2026,2027].map(y=><option key={y}>{y}</option>)}
-            </select>
-          </div>
-          <div>
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">
               Repair Yard (optional)
             </label>
-            <select className={iCls+" w-64"} value={filterSite} onChange={e=>setFilterSite(e.target.value)}>
-              <option value="">All Repair Yards</option>
+            <select className={iCls+" w-72"} value={filterSite} onChange={e=>setFilterSite(e.target.value)}>
+              <option value="">All Repair Yards ({workshops.length})</option>
               {workshops.map(s => (
                 <option key={s.name} value={s.name}>{s.code} — {s.name}</option>
               ))}
             </select>
           </div>
           <button onClick={generate} disabled={loading}
-            className="px-6 py-2.5 bg-slate-800 text-white rounded-xl text-sm font-bold hover:bg-slate-900 disabled:opacity-50">
-            {loading?"Generating...":"⚠️ Generate"}
+            className="px-6 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50">
+            {loading ? "Loading..." : "⚠️ Generate Report"}
           </button>
           {generated && records.length > 0 && (
             <button onClick={exportCSV} className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 ml-auto">
@@ -426,32 +420,31 @@ function BreakdownReportTab() {
             </button>
           )}
         </div>
-        {/* Repair yard count */}
         <p className="text-xs text-slate-400 mt-3">
-          {workshops.length} repair yards available across all regions
+          Shows all equipment currently at repair yards (Break Down or Under Repair status) · {workshops.length} repair yards across all regions
         </p>
       </div>
 
       {generated && records.length === 0 && (
         <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
           <p className="text-3xl mb-3">✅</p>
-          <p className="text-lg font-semibold text-slate-600">No breakdowns for {filterMonth} {filterYear}</p>
-          <p className="text-sm text-slate-400 mt-1">{filterSite ? `at ${filterSite}` : "across all workshops"}</p>
+          <p className="text-lg font-semibold text-slate-600">No equipment at repair yards</p>
+          <p className="text-sm text-slate-400 mt-1">{filterSite ? `at ${filterSite}` : "across all repair yards"}</p>
         </div>
       )}
 
       {generated && records.length > 0 && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-red-600 text-white rounded-2xl p-5"><p className="text-3xl font-bold">{records.length}</p><p className="text-sm opacity-70 mt-1">Total Breakdowns</p></div>
-            <div className="bg-amber-500 text-white rounded-2xl p-5"><p className="text-3xl font-bold">{pending}</p><p className="text-sm opacity-70 mt-1">Pending / In Progress</p></div>
-            <div className="bg-emerald-600 text-white rounded-2xl p-5"><p className="text-3xl font-bold">{resolved}</p><p className="text-sm opacity-70 mt-1">Resolved</p></div>
-            <div className="bg-slate-900 text-white rounded-2xl p-5"><p className="text-3xl font-bold">{totalDowntime.toFixed(0)}h</p><p className="text-sm opacity-70 mt-1">Total Downtime</p></div>
+            <div className="bg-red-600 text-white rounded-2xl p-5"><p className="text-3xl font-bold">{records.length}</p><p className="text-sm opacity-70 mt-1">Total at Repair Yards</p></div>
+            <div className="bg-orange-500 text-white rounded-2xl p-5"><p className="text-3xl font-bold">{breakDown}</p><p className="text-sm opacity-70 mt-1">Break Down</p></div>
+            <div className="bg-amber-500 text-white rounded-2xl p-5"><p className="text-3xl font-bold">{underRepair}</p><p className="text-sm opacity-70 mt-1">Under Repair</p></div>
+            <div className="bg-slate-900 text-white rounded-2xl p-5"><p className="text-3xl font-bold">{Object.keys(byRegion).length}</p><p className="text-sm opacity-70 mt-1">Regions Affected</p></div>
           </div>
 
           {Object.keys(byCat).length > 0 && (
             <div className="bg-white rounded-2xl border border-slate-200 p-5">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Breakdowns by Category</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">By Category</p>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(byCat).sort((a:any,b:any)=>b[1]-a[1]).map(([cat,count]:any) => (
                   <span key={cat} className="px-3 py-1.5 bg-red-50 border border-red-100 rounded-xl text-xs font-semibold text-red-700">
@@ -464,14 +457,16 @@ function BreakdownReportTab() {
 
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="font-bold text-slate-800">Breakdown Records — {filterMonth} {filterYear}</h3>
-              <span className="text-sm text-slate-400">{records.length} records</span>
+              <h3 className="font-bold text-slate-800">
+                Equipment at Repair Yards {filterSite ? `— ${filterSite}` : "(All)"}
+              </h3>
+              <span className="text-sm text-slate-400">{records.length} equipment</span>
             </div>
             <div className="overflow-auto max-h-[60vh]">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
                   <tr>
-                    {["#","Fleet No.","Equipment","Workshop","Issue","Reported","Status","Technician","Job Order","Cost"].map(h=>(
+                    {["#","Fleet No.","Description","Category","Make/Model","Repair Yard","Region","Status","Condition"].map(h=>(
                       <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -480,25 +475,21 @@ function BreakdownReportTab() {
                   {records.map((r:any, i:number) => (
                     <tr key={r.id} className="hover:bg-red-50/20">
                       <td className="px-5 py-3 text-slate-400 text-xs">{i+1}</td>
-                      <td className="px-5 py-3 font-bold text-amber-600 font-mono text-xs">{r.equipment_code||"—"}</td>
-                      <td className="px-5 py-3 text-slate-700 max-w-40 truncate">{r.equipment_name||"—"}</td>
-                      <td className="px-5 py-3 text-slate-500 text-xs max-w-32 truncate">{r.site||"—"}</td>
-                      <td className="px-5 py-3 text-slate-600 max-w-48 truncate" title={r.issue}>{r.issue||"—"}</td>
-                      <td className="px-5 py-3 text-slate-500 text-xs whitespace-nowrap">
-                        {new Date(r.created_at).toLocaleDateString("en-GB")}
+                      <td className="px-5 py-3 font-bold text-amber-600 font-mono text-xs">{r.fleet_number}</td>
+                      <td className="px-5 py-3 text-slate-700 max-w-40 truncate">{r.name||"—"}</td>
+                      <td className="px-5 py-3 text-slate-500 text-xs whitespace-nowrap">{r.category||"—"}</td>
+                      <td className="px-5 py-3 text-xs">
+                        <div className="text-slate-700">{r.make||"—"}</div>
+                        <div className="text-slate-400">{r.model||""}</div>
                       </td>
+                      <td className="px-5 py-3 text-slate-500 text-xs max-w-36 truncate">{r.current_yard || r.site||"—"}</td>
+                      <td className="px-5 py-3 text-slate-400 text-xs whitespace-nowrap">{r.region||"—"}</td>
                       <td className="px-5 py-3">
                         <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                          r.status==="Completed"   ? "bg-emerald-100 text-emerald-700" :
-                          r.status==="In Progress" ? "bg-blue-100 text-blue-700" :
-                                                      "bg-red-100 text-red-700"
-                        }`}>{r.status||"Pending"}</span>
+                          r.operational_status==="Break Down" ? "bg-orange-100 text-orange-700" : "bg-amber-100 text-amber-700"
+                        }`}>{r.operational_status}</span>
                       </td>
-                      <td className="px-5 py-3 text-slate-500 text-xs">{r.technician||"—"}</td>
-                      <td className="px-5 py-3 text-slate-400 text-xs font-mono">{r.job_order_no||"—"}</td>
-                      <td className="px-5 py-3 text-slate-600 text-xs whitespace-nowrap">
-                        {r.cost ? `₦${Number(r.cost).toLocaleString()}` : "—"}
-                      </td>
+                      <td className="px-5 py-3 text-slate-500 text-xs">{r.assessment||"—"}</td>
                     </tr>
                   ))}
                 </tbody>
