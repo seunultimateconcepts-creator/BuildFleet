@@ -8,9 +8,9 @@ import { dbu } from "@/lib/db";
 // ─────────────────────────────────────────────────────────────
 const BG_IMAGES = [
   "https://images.unsplash.com/photo-1581094794329-c8112a89af12?w=1400&q=80", // construction site equipment
-  "https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=1400&q=80", // heavy excavator
+  "https://images.unsplash.com/photo-1652396669401-db1bc4c4457d?q=80&w=774&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", // heavy excavator
   "https://images.unsplash.com/photo-1590496793929-36417d3117de?w=1400&q=80", // bulldozer construction
-  "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1400&q=80", // fleet trucks road
+  "https://unsplash.com/photos/yellow-and-black-heavy-equipment-on-brown-field-during-daytime-N1LBcqLP9ec", // fleet trucks road
 ];
 
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
