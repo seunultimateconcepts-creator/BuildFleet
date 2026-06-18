@@ -11,8 +11,16 @@ const MONTHS = ["January","February","March","April","May","June",
 
 const iCls = "w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 
+const STATUS_STYLE: Record<string,string> = {
+  "Working":      "bg-emerald-100 text-emerald-700",
+  "Under Repair": "bg-amber-100   text-amber-700",
+  "Break Down":   "bg-orange-100  text-orange-700",
+  "Storage":      "bg-slate-100   text-slate-600",
+  "Scrapped":     "bg-red-100     text-red-600",
+};
+
 // ─────────────────────────────────────────────────────────────
-// RENTAL LIST TAB (unchanged)
+// RENTAL LIST TAB
 // ─────────────────────────────────────────────────────────────
 function RentalListTab() {
   const [logs,        setLogs]        = useState<any[]>([]);
@@ -161,7 +169,7 @@ function RentalListTab() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// FLEET UTILIZATION TAB (while loop fixed)
+// FLEET UTILIZATION TAB — Storage replaces Idle/Stand By
 // ─────────────────────────────────────────────────────────────
 function UtilizationTab() {
   const [equipment, setEquipment] = useState<any[]>([]);
@@ -169,7 +177,6 @@ function UtilizationTab() {
 
   useEffect(() => {
     async function load() {
-      // Parallel pages — no while loop
       const [p1, p2] = await Promise.all([
         dbu.from("equipment").select("fleet_number,name,category,site,region,operational_status,assessment").range(0,999),
         dbu.from("equipment").select("fleet_number,name,category,site,region,operational_status,assessment").range(1000,1999),
@@ -180,20 +187,20 @@ function UtilizationTab() {
     load();
   }, []);
 
-  const total    = equipment.length;
-  const working  = equipment.filter(e => e.operational_status === "Working").length;
-  const repair   = equipment.filter(e => ["Under Repair","Break Down"].includes(e.operational_status)).length;
-  const idle     = equipment.filter(e => ["Idle","Stand By"].includes(e.operational_status)).length;
-  const scrapped = equipment.filter(e => e.operational_status === "Scrapped").length;
+  const total       = equipment.length;
+  const working     = equipment.filter(e => e.operational_status === "Working").length;
+  const repair      = equipment.filter(e => ["Under Repair","Break Down"].includes(e.operational_status)).length;
+  const storage     = equipment.filter(e => ["Storage","Idle","Stand By"].includes(e.operational_status)).length;
+  const scrapped    = equipment.filter(e => e.operational_status === "Scrapped").length;
   const utilization = total > 0 ? Math.round((working/total)*100) : 0;
 
   const byRegion = equipment.reduce((acc:any,e:any) => {
     const r = e.region||"Unknown";
-    if (!acc[r]) acc[r]={total:0,working:0,repair:0,idle:0};
+    if (!acc[r]) acc[r]={total:0,working:0,repair:0,storage:0};
     acc[r].total++;
     if (e.operational_status==="Working") acc[r].working++;
     else if (["Under Repair","Break Down"].includes(e.operational_status)) acc[r].repair++;
-    else if (["Idle","Stand By"].includes(e.operational_status)) acc[r].idle++;
+    else if (["Storage","Idle","Stand By"].includes(e.operational_status)) acc[r].storage++;
     return acc;
   },{});
 
@@ -211,9 +218,9 @@ function UtilizationTab() {
       ["HARTLAND NIGERIA LIMITED — FLEET UTILIZATION REPORT"],
       [`Generated: ${new Date().toLocaleDateString("en-GB")}`],[],
       ["OVERALL SUMMARY"],["Total Fleet",total],["Working",working,`${utilization}%`],
-      ["Under Repair / Breakdown",repair],["Idle / Stand By",idle],["Scrapped",scrapped],[],
-      ["BY REGION"],["Region","Total","Working","Under Repair","Idle","Utilization %"],
-      ...Object.entries(byRegion).map(([r,v]:any)=>[r,v.total,v.working,v.repair,v.idle,`${Math.round((v.working/v.total)*100)}%`]),[],
+      ["Under Repair / Breakdown",repair],["Storage",storage],["Scrapped",scrapped],[],
+      ["BY REGION"],["Region","Total","Working","Under Repair","Storage","Utilization %"],
+      ...Object.entries(byRegion).map(([r,v]:any)=>[r,v.total,v.working,v.repair,v.storage,`${Math.round((v.working/v.total)*100)}%`]),[],
       ["BY CATEGORY"],["Category","Total","Working","Utilization %"],
       ...topCats.map(([c,v])=>[c,v.total,v.working,`${Math.round((v.working/v.total)*100)}%`]),
     ];
@@ -230,17 +237,31 @@ function UtilizationTab() {
         <button onClick={exportReport} className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700">↓ Export Report</button>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        {[{label:"Total Fleet",value:total,bg:"bg-slate-900 text-white"},{label:"Working",value:`${working} (${utilization}%)`,bg:"bg-emerald-600 text-white"},{label:"Under Repair",value:repair,bg:"bg-amber-500 text-white"},{label:"Idle / Stand By",value:idle,bg:"bg-blue-500 text-white"},{label:"Scrapped",value:scrapped,bg:"bg-red-100 text-red-700"}].map(k=>(
-          <div key={k.label} className={`${k.bg} rounded-2xl p-5`}><p className="text-2xl font-bold">{loading?"...":k.value}</p><p className="text-sm opacity-70 mt-1">{k.label}</p></div>
+        {[
+          {label:"Total Fleet",        value:total,                    bg:"bg-slate-900 text-white"},
+          {label:"Working",            value:`${working} (${utilization}%)`, bg:"bg-emerald-600 text-white"},
+          {label:"Under Repair",       value:repair,                   bg:"bg-amber-500 text-white"},
+          {label:"Storage",            value:storage,                  bg:"bg-slate-500 text-white"},
+          {label:"Scrapped",           value:scrapped,                 bg:"bg-red-100 text-red-700"},
+        ].map(k=>(
+          <div key={k.label} className={`${k.bg} rounded-2xl p-5`}>
+            <p className="text-2xl font-bold">{loading?"...":k.value}</p>
+            <p className="text-sm opacity-70 mt-1">{k.label}</p>
+          </div>
         ))}
       </div>
       <div className="bg-white rounded-2xl border border-slate-200 p-5">
-        <div className="flex items-center justify-between mb-3"><p className="font-bold text-slate-800">Overall Fleet Utilization</p><p className="text-3xl font-bold text-amber-600">{utilization}%</p></div>
-        <div className="h-4 bg-slate-100 rounded-full overflow-hidden"><div className="h-full bg-amber-400 rounded-full" style={{width:`${utilization}%`}}/></div>
+        <div className="flex items-center justify-between mb-3">
+          <p className="font-bold text-slate-800">Overall Fleet Utilization</p>
+          <p className="text-3xl font-bold text-amber-600">{utilization}%</p>
+        </div>
+        <div className="h-4 bg-slate-100 rounded-full overflow-hidden">
+          <div className="h-full bg-amber-400 rounded-full" style={{width:`${utilization}%`}}/>
+        </div>
         <div className="flex gap-6 mt-3 text-xs text-slate-500">
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-500 inline-block"/>Working: {working}</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-500 inline-block"/>Repair: {repair}</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-blue-400 inline-block"/>Idle: {idle}</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-slate-400 inline-block"/>Storage: {storage}</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-400 inline-block"/>Scrapped: {scrapped}</span>
         </div>
       </div>
@@ -248,7 +269,9 @@ function UtilizationTab() {
         <div className="px-6 py-4 border-b border-slate-100"><h3 className="font-bold text-slate-800">Utilization by Region</h3></div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-100"><tr>{["Region","Total","Working","Under Repair","Idle","Utilization"].map(h=><th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">{h}</th>)}</tr></thead>
+            <thead className="bg-slate-50 border-b border-slate-100">
+              <tr>{["Region","Total","Working","Under Repair","Storage","Utilization"].map(h=><th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">{h}</th>)}</tr>
+            </thead>
             <tbody className="divide-y divide-slate-50">
               {loading?<tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400">Loading...</td></tr>
               :Object.entries(byRegion).sort((a:any,b:any)=>b[1].total-a[1].total).map(([region,v]:any)=>{
@@ -258,7 +281,7 @@ function UtilizationTab() {
                   <td className="px-5 py-3 font-bold text-slate-700">{v.total}</td>
                   <td className="px-5 py-3 text-emerald-700 font-semibold">{v.working}</td>
                   <td className="px-5 py-3 text-amber-600">{v.repair}</td>
-                  <td className="px-5 py-3 text-blue-600">{v.idle}</td>
+                  <td className="px-5 py-3 text-slate-500">{v.storage}</td>
                   <td className="px-5 py-3"><div className="flex items-center gap-2"><div className="h-2 w-20 bg-slate-100 rounded-full overflow-hidden"><div className="h-full bg-amber-400 rounded-full" style={{width:`${pct}%`}}/></div><span className="text-xs font-bold text-slate-700">{pct}%</span></div></td>
                 </tr>);
               })}
@@ -288,21 +311,24 @@ function UtilizationTab() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// BREAKDOWN REPORT TAB
+// BREAKDOWN REPORT TAB — workshops only in site filter
 // ─────────────────────────────────────────────────────────────
 function BreakdownReportTab() {
-  const [records,     setRecords]     = useState<any[]>([]);
-  const [loading,     setLoading]     = useState(false);
-  const [generated,   setGenerated]   = useState(false);
-  const [filterMonth, setFilterMonth] = useState(MONTHS[new Date().getMonth()]);
-  const [filterYear,  setFilterYear]  = useState(new Date().getFullYear());
-  const [filterSite,  setFilterSite]  = useState("");
-  const [sites,       setSites]       = useState<string[]>([]);
+  const [records,      setRecords]      = useState<any[]>([]);
+  const [loading,      setLoading]      = useState(false);
+  const [generated,    setGenerated]    = useState(false);
+  const [filterMonth,  setFilterMonth]  = useState(MONTHS[new Date().getMonth()]);
+  const [filterYear,   setFilterYear]   = useState(new Date().getFullYear());
+  const [filterSite,   setFilterSite]   = useState("");
+  const [workshops,    setWorkshops]    = useState<any[]>([]); // only workshops
 
+  // Load ONLY workshops — Central, Regional, Field
   useEffect(() => {
-    dbu.from("sites").select("name").order("name").then(({ data }: { data: Array<{ name: string }> | null }) => {
-      setSites((data||[]).map((s:any) => s.name));
-    });
+    dbu.from("sites")
+      .select("name,code,site_type")
+      .in("site_type", ["Central Workshop","Regional Workshop","Field Workshop"])
+      .order("site_type")
+      .then(({ data }: { data: any[] | null }) => setWorkshops(data || []));
   }, []);
 
   async function generate() {
@@ -313,10 +339,8 @@ function BreakdownReportTab() {
       .eq("maintenance_type", "Breakdown")
       .order("created_at", { ascending: false });
 
-    // Filter by site if selected
     if (filterSite) q = q.eq("site", filterSite);
 
-    // Filter by month/year using created_at
     const monthIdx = MONTHS.indexOf(filterMonth);
     const from = new Date(filterYear, monthIdx, 1).toISOString();
     const to   = new Date(filterYear, monthIdx + 1, 0, 23, 59, 59).toISOString();
@@ -329,28 +353,29 @@ function BreakdownReportTab() {
   }
 
   const totalDowntime = records.reduce((s, r) => s + (Number(r.downtime_hours) || 0), 0);
-  const resolved   = records.filter(r => r.status === "Completed").length;
-  const pending    = records.filter(r => r.status !== "Completed").length;
+  const resolved  = records.filter(r => r.status === "Completed").length;
+  const pending   = records.filter(r => r.status !== "Completed").length;
 
-  // Group by equipment category for summary
   const byCat = records.reduce((acc:any, r:any) => {
     const c = r.category || "Unknown";
     acc[c] = (acc[c]||0) + 1;
     return acc;
   }, {});
 
+  // Group workshops by type for the dropdown
+  const centralWorkshops  = workshops.filter(s => s.site_type === "Central Workshop");
+  const regionalWorkshops = workshops.filter(s => s.site_type === "Regional Workshop");
+  const fieldWorkshops    = workshops.filter(s => s.site_type === "Field Workshop");
+
   function exportCSV() {
-    const headers = ["S/NO","Fleet No.","Equipment","Category","Site","Issue","Reported Date",
-      "Status","Downtime (hrs)","Technician","Resolution"];
+    const headers = ["S/NO","Fleet No.","Equipment","Site","Issue","Reported Date",
+      "Status","Technician","Job Order No.","Cost (₦)"];
     const rows = records.map((r:any, i:number) => [
       String(i+1), r.equipment_code||"", r.equipment_name||"",
-      r.category||"", r.site||"",
-      r.issue||"",
+      r.site||"", r.issue||"",
       new Date(r.created_at).toLocaleDateString("en-GB"),
-      r.status||"",
-      String(r.downtime_hours||0),
-      r.assigned_to||"",
-      r.resolution||"",
+      r.status||"", r.technician||"", r.job_order_no||"",
+      String(r.cost||0),
     ]);
     const csv = [headers,...rows].map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
     const a = document.createElement("a");
@@ -361,7 +386,6 @@ function BreakdownReportTab() {
 
   return (
     <div className="space-y-5">
-      {/* Controls */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5">
         <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Generate Breakdown Report</p>
         <div className="flex flex-wrap items-end gap-4">
@@ -378,10 +402,26 @@ function BreakdownReportTab() {
             </select>
           </div>
           <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">Site (optional)</label>
-            <select className={iCls+" w-56"} value={filterSite} onChange={e=>setFilterSite(e.target.value)}>
-              <option value="">All Sites</option>
-              {sites.map(s=><option key={s}>{s}</option>)}
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">
+              Workshop (Repair Yards only)
+            </label>
+            <select className={iCls+" w-64"} value={filterSite} onChange={e=>setFilterSite(e.target.value)}>
+              <option value="">All Workshops</option>
+              {centralWorkshops.length > 0 && (
+                <optgroup label="🏭 Central Workshop">
+                  {centralWorkshops.map(s => <option key={s.name} value={s.name}>{s.code} — {s.name}</option>)}
+                </optgroup>
+              )}
+              {regionalWorkshops.length > 0 && (
+                <optgroup label="🔧 Regional Workshops">
+                  {regionalWorkshops.map(s => <option key={s.name} value={s.name}>{s.code} — {s.name}</option>)}
+                </optgroup>
+              )}
+              {fieldWorkshops.length > 0 && (
+                <optgroup label="⚙️ Field Workshops">
+                  {fieldWorkshops.map(s => <option key={s.name} value={s.name}>{s.code} — {s.name}</option>)}
+                </optgroup>
+              )}
             </select>
           </div>
           <button onClick={generate} disabled={loading}
@@ -394,19 +434,27 @@ function BreakdownReportTab() {
             </button>
           )}
         </div>
+        {/* Workshop legend */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <span className="text-xs text-slate-400">
+            Showing {workshops.length} workshops:
+          </span>
+          <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full">1 Central</span>
+          <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full">{regionalWorkshops.length} Regional</span>
+          <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full">{fieldWorkshops.length} Field</span>
+        </div>
       </div>
 
       {generated && records.length === 0 && (
         <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
           <p className="text-3xl mb-3">✅</p>
-          <p className="text-lg font-semibold text-slate-600">No breakdowns recorded for {filterMonth} {filterYear}</p>
-          <p className="text-sm text-slate-400 mt-1">{filterSite ? `at ${filterSite}` : "across all sites"}</p>
+          <p className="text-lg font-semibold text-slate-600">No breakdowns for {filterMonth} {filterYear}</p>
+          <p className="text-sm text-slate-400 mt-1">{filterSite ? `at ${filterSite}` : "across all workshops"}</p>
         </div>
       )}
 
       {generated && records.length > 0 && (
         <>
-          {/* KPIs */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-red-600 text-white rounded-2xl p-5"><p className="text-3xl font-bold">{records.length}</p><p className="text-sm opacity-70 mt-1">Total Breakdowns</p></div>
             <div className="bg-amber-500 text-white rounded-2xl p-5"><p className="text-3xl font-bold">{pending}</p><p className="text-sm opacity-70 mt-1">Pending / In Progress</p></div>
@@ -414,7 +462,6 @@ function BreakdownReportTab() {
             <div className="bg-slate-900 text-white rounded-2xl p-5"><p className="text-3xl font-bold">{totalDowntime.toFixed(0)}h</p><p className="text-sm opacity-70 mt-1">Total Downtime</p></div>
           </div>
 
-          {/* By category summary */}
           {Object.keys(byCat).length > 0 && (
             <div className="bg-white rounded-2xl border border-slate-200 p-5">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Breakdowns by Category</p>
@@ -428,7 +475,6 @@ function BreakdownReportTab() {
             </div>
           )}
 
-          {/* Table */}
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <h3 className="font-bold text-slate-800">Breakdown Records — {filterMonth} {filterYear}</h3>
@@ -438,7 +484,7 @@ function BreakdownReportTab() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
                   <tr>
-                    {["#","Fleet No.","Equipment","Site","Issue","Reported","Status","Downtime","Technician"].map(h=>(
+                    {["#","Fleet No.","Equipment","Workshop","Issue","Reported","Status","Technician","Job Order","Cost"].map(h=>(
                       <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -456,15 +502,16 @@ function BreakdownReportTab() {
                       </td>
                       <td className="px-5 py-3">
                         <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                          r.status==="Completed" ? "bg-emerald-100 text-emerald-700"
-                          : r.status==="In Progress" ? "bg-blue-100 text-blue-700"
-                          : "bg-red-100 text-red-700"
+                          r.status==="Completed"   ? "bg-emerald-100 text-emerald-700" :
+                          r.status==="In Progress" ? "bg-blue-100 text-blue-700" :
+                                                      "bg-red-100 text-red-700"
                         }`}>{r.status||"Pending"}</span>
                       </td>
-                      <td className="px-5 py-3 text-slate-600 text-xs font-mono">
-                        {r.downtime_hours ? `${r.downtime_hours}h` : "—"}
+                      <td className="px-5 py-3 text-slate-500 text-xs">{r.technician||"—"}</td>
+                      <td className="px-5 py-3 text-slate-400 text-xs font-mono">{r.job_order_no||"—"}</td>
+                      <td className="px-5 py-3 text-slate-600 text-xs whitespace-nowrap">
+                        {r.cost ? `₦${Number(r.cost).toLocaleString()}` : "—"}
                       </td>
-                      <td className="px-5 py-3 text-slate-500 text-xs">{r.assigned_to||"—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -478,16 +525,16 @@ function BreakdownReportTab() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// MASTER PLANT LIST TAB
+// MASTER PLANT LIST TAB — Storage replaces Idle/Stand By
 // ─────────────────────────────────────────────────────────────
 function MasterPlantListTab() {
-  const [equipment,    setEquipment]    = useState<any[]>([]);
-  const [commissioning,setCommissioning]= useState<any[]>([]);
-  const [loading,      setLoading]      = useState(true);
-  const [search,       setSearch]       = useState("");
-  const [filterCat,    setFilterCat]    = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterSite,   setFilterSite]   = useState("");
+  const [equipment,     setEquipment]     = useState<any[]>([]);
+  const [commissioning, setCommissioning] = useState<any[]>([]);
+  const [loading,       setLoading]       = useState(true);
+  const [search,        setSearch]        = useState("");
+  const [filterCat,     setFilterCat]     = useState("");
+  const [filterStatus,  setFilterStatus]  = useState("");
+  const [filterSite,    setFilterSite]    = useState("");
 
   useEffect(() => {
     async function load() {
@@ -496,15 +543,13 @@ function MasterPlantListTab() {
         dbu.from("equipment").select("*").range(1000, 1999),
         dbu.from("commissioning").select("fleet_number,date_commissioned,serial_no,supplier,purchase_cost,landed_cost,insurance_company,policy_cover_no,insurance_expiry,opening_hour_meter,opening_kilometer,plant_engineer,plant_manager").range(0,1999),
       ]);
-      const allEquip = [...(e1.data||[]), ...(e2.data||[])];
-      setEquipment(allEquip);
+      setEquipment([...(e1.data||[]), ...(e2.data||[])]);
       setCommissioning(comm.data||[]);
       setLoading(false);
     }
     load();
   }, []);
 
-  // Merge commissioning data into equipment by fleet_number
   const commMap = commissioning.reduce((acc:any, c:any) => {
     acc[c.fleet_number] = c; return acc;
   }, {});
@@ -526,7 +571,7 @@ function MasterPlantListTab() {
   });
 
   const categories = [...new Set(equipment.map(e=>e.category))].filter(Boolean).sort();
-  const statuses   = ["Working","Under Repair","Idle","Break Down","Stand By","Scrapped"];
+  const statuses   = ["Working","Under Repair","Break Down","Storage","Scrapped"];
   const sites      = [...new Set(equipment.map(e=>e.site))].filter(Boolean).sort();
 
   function exportMasterList() {
@@ -538,9 +583,9 @@ function MasterPlantListTab() {
       "Comm. Date","Date Received","Supplier",
       "Purchase Cost (₦)","Landed Cost (₦)",
       "Insurance Co.","Policy No.","Insurance Expiry",
-      "Opening Hour Meter","Opening KM",
+      "Opening Hour Meter","Opening KM Reading",
       "Plant Engineer","Plant Manager",
-      "Current Hour Meter","Current KM","Hire Rate (₦)",
+      "Current Hour Meter","Current KM Reading","Hire Rate (₦)",
     ];
     const rows = filtered.map((e:any, i:number) => [
       String(i+1), e.fleet_number||"", e.name||"", e.category||"",
@@ -550,11 +595,11 @@ function MasterPlantListTab() {
       e.meter_device||"", e.site||"", e.region||"", e.cost_code||"",
       e.operational_status||"", e.assessment||"", e.current_yard||"",
       e.date_commissioned ? new Date(e.date_commissioned).toLocaleDateString("en-GB") : "",
-      e.date_received ? new Date(e.date_received).toLocaleDateString("en-GB") : "",
+      e.date_received     ? new Date(e.date_received).toLocaleDateString("en-GB") : "",
       e.supplier||"",
       String(e.purchase_cost||0), String(e.landed_cost||0),
       e.insurance_company||"", e.policy_cover_no||"",
-      e.insurance_expiry ? new Date(e.insurance_expiry).toLocaleDateString("en-GB") : "",
+      e.insurance_expiry  ? new Date(e.insurance_expiry).toLocaleDateString("en-GB") : "",
       String(e.opening_hour_meter||0), String(e.opening_kilometer||0),
       e.plant_engineer||"", e.plant_manager||"",
       String(e.current_hour_meter||0), String(e.current_kilometer||0),
@@ -567,36 +612,24 @@ function MasterPlantListTab() {
     a.click();
   }
 
-  const STATUS_STYLE: Record<string,string> = {
-    "Working":      "bg-emerald-100 text-emerald-700",
-    "Under Repair": "bg-amber-100 text-amber-700",
-    "Idle":         "bg-slate-100 text-slate-600",
-    "Scrapped":     "bg-red-100 text-red-600",
-    "Break Down":   "bg-orange-100 text-orange-700",
-    "Stand By":     "bg-blue-100 text-blue-700",
-  };
-
   return (
     <div className="space-y-5">
-      {/* Header + export */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
             <p className="font-bold text-slate-800">Master Plant List / Commissioning Register</p>
             <p className="text-xs text-slate-400 mt-0.5">
-              Complete equipment register merged with commissioning data — {loading ? "loading..." : `${filtered.length} of ${equipment.length} records`}
+              {loading ? "loading..." : `${filtered.length} of ${equipment.length} records`}
             </p>
           </div>
           <button onClick={exportMasterList} disabled={loading}
-            className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2">
+            className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 disabled:opacity-50">
             ↓ Export Master List
           </button>
         </div>
-        {/* Filters */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <input placeholder="Search fleet no., name, make, serial..."
-            value={search} onChange={e=>setSearch(e.target.value)}
-            className={iCls+" lg:col-span-1"} />
+            value={search} onChange={e=>setSearch(e.target.value)} className={iCls} />
           <select className={iCls} value={filterCat} onChange={e=>setFilterCat(e.target.value)}>
             <option value="">All Categories</option>
             {categories.map(c=><option key={c}>{c}</option>)}
@@ -612,7 +645,6 @@ function MasterPlantListTab() {
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
         <div className="overflow-auto max-h-[65vh]">
           <table className="w-full text-sm">
@@ -720,8 +752,6 @@ export default function ReportsPage() {
           Rental list, fleet utilization, breakdown analysis and master plant register.
         </p>
       </div>
-
-      {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit flex-wrap">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -732,7 +762,6 @@ export default function ReportsPage() {
           </button>
         ))}
       </div>
-
       {tab === "rental"      && <RentalListTab />}
       {tab === "utilization" && <UtilizationTab />}
       {tab === "breakdown"   && <BreakdownReportTab />}
