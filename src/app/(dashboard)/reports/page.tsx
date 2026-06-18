@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -317,9 +318,7 @@ function BreakdownReportTab() {
   const [records,      setRecords]      = useState<any[]>([]);
   const [loading,      setLoading]      = useState(false);
   const [generated,    setGenerated]    = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [filterMonth,  setFilterMonth]  = useState(MONTHS[new Date().getMonth()]);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [filterYear,   setFilterYear]   = useState(new Date().getFullYear());
   const [filterSite,   setFilterSite]   = useState("");
   const [workshops,    setWorkshops]    = useState<any[]>([]); // only workshops
@@ -336,25 +335,19 @@ function BreakdownReportTab() {
   async function generate() {
     setLoading(true);
 
-    // Query equipment currently at repair yards
-    // (Break Down or Under Repair status at a Repair Yard site)
+    const repairYardNames = workshops.map(s => s.name);
+
     let q = dbu
       .from("equipment")
       .select("id,fleet_number,name,category,site,region,operational_status,current_yard,assessment,make,model")
       .in("operational_status", ["Break Down","Under Repair"])
       .order("fleet_number");
 
-    // Filter by specific repair yard if selected
+    // Filter by specific repair yard or all repair yards
     if (filterSite) {
-      q = q.or(`site.eq.${filterSite},current_yard.eq.${filterSite}`);
-    } else {
-      // Show all equipment at any repair yard
-      const repairYardNames = workshops.map(s => s.name);
-      if (repairYardNames.length > 0) {
-        q = q.or(
-          `site.in.(${repairYardNames.map(n=>`"${n}"`).join(",")}),current_yard.in.(${repairYardNames.map(n=>`"${n}"`).join(",")})`
-        );
-      }
+      q = q.eq("site", filterSite);
+    } else if (repairYardNames.length > 0) {
+      q = q.in("site", repairYardNames);
     }
 
     const { data } = await q;
