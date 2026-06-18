@@ -1,14 +1,36 @@
 "use client";
 
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "../../components/dashboard/sidebar";
 import Header from "../../components/dashboard/header";
 import { dbu } from "@/lib/db";
 
+const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Idle logout — sign out after 1hr of inactivity
+  const resetIdleTimer = useCallback(() => {
+    if (idleTimer.current) clearTimeout(idleTimer.current);
+    idleTimer.current = setTimeout(async () => {
+      await dbu.auth.signOut();
+      router.replace("/login");
+    }, IDLE_TIMEOUT_MS);
+  }, [router]);
+
+  useEffect(() => {
+    const events = ["mousemove","keydown","click","touchstart","scroll"];
+    events.forEach(e => window.addEventListener(e, resetIdleTimer));
+    resetIdleTimer();
+    return () => {
+      events.forEach(e => window.removeEventListener(e, resetIdleTimer));
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+    };
+  }, [resetIdleTimer]);
 
   useEffect(() => {
     async function checkAuth() {
@@ -21,7 +43,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     }
     checkAuth();
 
-    // Listen for auth changes
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: { subscription } } = dbu.auth.onAuthStateChange((event: string, session: any) => {
       if (event === "SIGNED_OUT" || !session) {
