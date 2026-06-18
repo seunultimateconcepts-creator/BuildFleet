@@ -143,13 +143,14 @@ function EquipmentSearch({ equipment, value, onChange }: {
   );
 }
 
-function ReceiptModal({ transfer, onClose, onConfirm }: {
-  transfer: Transfer; onClose: () => void;
+function ReceiptModal({ transfer, profile, onClose, onConfirm }: {
+  transfer: Transfer; profile: any; onClose: () => void;
   onConfirm: (data: Partial<Transfer>) => Promise<void>;
 }) {
   const [form, setForm] = useState({
     receival_date: new Date().toISOString().slice(0, 16),
-    receiving_officer: "", receiving_plant_engineer: "",
+    receiving_officer: profile?.full_name || "",
+    receiving_plant_engineer: "",
     equipment_condition_receipt: "", history_file_receipt: false,
     speedometer_receipt: 0, fire_extinguisher_receipt: "", receipt_remarks: "",
   });
@@ -258,7 +259,7 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
     dbu.from("sites")
       .select("id,name,code,cost_code")
       .order("code", { ascending: true })
-      .then(({ data }: { data: any[] | null }) => setAllSites(data || []));
+      .then(({ data }: { data: any }) => setAllSites(data || []));
   }, [open]);
 
   const [saving, setSaving] = useState(false);
@@ -270,7 +271,7 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
     from_site: "", from_cost_code: "",
     transfer_date: new Date().toISOString().slice(0, 16),
     expected_arrival_date: "",
-    dispatching_officer: profile?.full_name || "",
+    dispatching_officer: "",
     dispatching_plant_engineer: "",
     to_site: "", to_cost_code: "",
     equipment_condition_dispatch: "", transport_mode: "",
@@ -278,6 +279,14 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
     speedometer_dispatch: 0, fire_extinguisher_dispatch: "",
     fleet_attachments: "", dispatch_remarks: "",
   });
+
+  // Auto-fill dispatching officer when profile loads or modal opens
+  useEffect(() => {
+    if (profile?.full_name && open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setForm(p => ({ ...p, dispatching_officer: p.dispatching_officer || profile.full_name }));
+    }
+  }, [profile, open]);
 
   function set(k: string, v: any) { setForm(p => ({ ...p, [k]: v })); }
 
@@ -694,7 +703,6 @@ function TransferHistoryTab() {
 
 export default function TransferPage() {
   const { transfers, loading, updateStatus, confirmReceipt } = useTransfers();
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { profile, canTransfer } = useAuth();
 
   const [tab,          setTab]          = useState<'register'|'history'>('register');
@@ -866,6 +874,7 @@ export default function TransferPage() {
       {receiptItem && (
         <ReceiptModal
           transfer={receiptItem}
+          profile={profile}
           onClose={() => setReceiptItem(null)}
           onConfirm={async (data) => { await confirmReceipt(receiptItem.id, data as any); }}
         />

@@ -612,7 +612,7 @@ function NewJobOrderModal({ open, onClose, onSave, profile }: {
   const [form, setForm] = useState({
     equipment_id: "", equipment_code: "", equipment_name: "",
     maintenance_type: "Breakdown",
-    issue: "", reported_by: profile?.full_name || "",
+    issue: "", reported_by: "",
     reported_date: new Date().toISOString().slice(0,10),
     technician: "",
     // eslint-disable-next-line react-hooks/purity
@@ -622,6 +622,14 @@ function NewJobOrderModal({ open, onClose, onSave, profile }: {
     engine_no: "", engine_model: "", engine_make: "", chassis_no: "",
     machine_make: "", machine_model: "", reg_no: "",
   });
+
+  // Auto-fill reported_by when profile loads or modal opens
+  useEffect(() => {
+    if (profile?.full_name && open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setForm(p => ({ ...p, reported_by: p.reported_by || profile.full_name }));
+    }
+  }, [profile, open]);
 
   useEffect(() => {
     if (!open) return;
