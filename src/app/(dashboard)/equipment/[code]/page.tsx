@@ -1,6 +1,8 @@
+/* eslint-disable react-hooks/set-state-in-effect */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
-export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -29,6 +31,7 @@ const HISTORY_ICONS: Record<string, string> = {
   "Maintenance Completed": "✅",
   "Log Submitted":         "📋",
   "Moved to Scrap":        "🗑️",
+  "Allocation Changed":    "👤",
   "Deleted":               "❌",
 };
 
@@ -70,7 +73,6 @@ function StatusModal({ equip, isClerk, onClose, onSave }: {
   // Filter yards based on selected status
   useEffect(() => {
     const config = YARD_CONFIG[status];
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!config) { setFilteredYards([]); return; }
     const base = config.siteTypes.length === 0
       ? allSites
@@ -90,7 +92,6 @@ function StatusModal({ equip, isClerk, onClose, onSave }: {
   // Show same region sites first
   const sameRegion = filteredSites.filter(s => s.region === equip.region);
   const otherSites = filteredSites.filter(s => s.region !== equip.region);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const sortedSites = [...sameRegion, ...otherSites];
 
   async function handleSave() {
@@ -272,6 +273,12 @@ export default function EquipmentDetailPage() {
   const [activeTab,   setActiveTab]   = useState<"overview"|"history"|"maintenance"|"logs">("overview");
   const [statusModal, setStatusModal] = useState(false);
 
+  // Allocation state
+  const [allocModal,   setAllocModal]   = useState(false);
+  const [allocName,    setAllocName]    = useState("");
+  const [allocPos,     setAllocPos]     = useState("");
+  const [allocSaving,  setAllocSaving]  = useState(false);
+
   useEffect(() => {
     if (!code) return;
     const fleetCode = decodeURIComponent(code);
@@ -333,12 +340,41 @@ export default function EquipmentDetailPage() {
     setEquip({ ...equip, operational_status: "Scrapped", assessment: "Scrapped" });
   }
 
-  async function handleDelete() {
+  async function handleAllocationSave() {
+    if (!equip) return;
+    setAllocSaving(true);
+    const prev = equip.allocated_to || "Unallocated";
+    await dbu.from("equipment").update({
+      allocated_to:       allocName || null,
+      allocated_position: allocPos  || null,
+    }).eq("id", equip.id);
+
+    await dbu.from("equipment_history").insert([{
+      equipment_id: equip.id,
+      fleet_number: equip.fleet_number,
+      action_type:  "Allocation Changed",
+      performed_by: profile?.full_name || "User",
+      remarks: allocName
+        ? `Allocated to: ${allocName} (${allocPos || "No position"}) — previously: ${prev}`
+        : `Allocation removed — previously: ${prev}`,
+    }]);
+
+    const { data: newHist } = await dbu.from("equipment_history").select("*")
+      .eq("equipment_id", equip.id).order("created_at", { ascending: false });
+    setEquip({ ...equip, allocated_to: allocName || null, allocated_position: allocPos || null });
+    setHistory(newHist || []);
+    setAllocSaving(false);
+    setAllocModal(false);
+  }
+
+  async function handleDeleteEquipment() {
     if (!equip) return;
     if (!confirm(`Permanently delete ${equip.fleet_number}? This cannot be undone.`)) return;
     await dbu.from("equipment_history").insert([{
-      equipment_id: equip.id, fleet_number: equip.fleet_number,
-      action_type: "Deleted", performed_by: profile?.full_name || "User",
+      equipment_id: equip.id,
+      fleet_number: equip.fleet_number,
+      action_type: "Deleted",
+      performed_by: profile?.full_name || "User",
       remarks: "Equipment permanently deleted",
     }]);
     await dbu.from("equipment").delete().eq("id", equip.id);
@@ -409,6 +445,12 @@ export default function EquipmentDetailPage() {
               {equip.current_yard && (
                 <p className="text-xs text-amber-600 mt-0.5">🏗 Currently at: {equip.current_yard}</p>
               )}
+              {equip.allocated_to && (
+                <p className="text-xs text-blue-600 mt-0.5">
+                  👤 Allocated to: <strong>{equip.allocated_to}</strong>
+                  {equip.allocated_position && ` — ${equip.allocated_position}`}
+                </p>
+              )}
             </div>
           </div>
 
@@ -438,7 +480,7 @@ export default function EquipmentDetailPage() {
                   </button>
                 )}
                 {canDelete && (
-                  <button onClick={handleDelete}
+                  <button onClick={handleDeleteEquipment}
                     className="px-4 py-2.5 rounded-xl bg-red-100 text-red-700 text-sm font-semibold hover:bg-red-200">
                     ✕ Delete
                   </button>
@@ -503,6 +545,23 @@ export default function EquipmentDetailPage() {
                 <button onClick={() => setStatusModal(true)}
                   className="w-full mt-3 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600">
                   Update Status / Location
+                </button>
+              )}
+            </Section>
+
+            {/* Allocation Section */}
+            <Section title="Equipment Allocation">
+              <InfoRow label="Allocated To" value={equip.allocated_to} />
+              <InfoRow label="Position"     value={equip.allocated_position} />
+              {canSeeStatus && (
+                <button
+                  onClick={() => {
+                    setAllocName(equip.allocated_to || "");
+                    setAllocPos(equip.allocated_position || "");
+                    setAllocModal(true);
+                  }}
+                  className="w-full mt-3 py-2.5 rounded-xl bg-blue-500 text-white text-sm font-bold hover:bg-blue-600">
+                  {equip.allocated_to ? "Update Allocation" : "Allocate Equipment"}
                 </button>
               )}
             </Section>
@@ -668,6 +727,68 @@ export default function EquipmentDetailPage() {
           onClose={() => setStatusModal(false)}
           onSave={handleStatusSave}
         />
+      )}
+
+      {/* Allocation Modal */}
+      {allocModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <h3 className="font-bold text-slate-800 text-lg mb-1">Equipment Allocation</h3>
+            <p className="text-slate-500 text-xs mb-5">
+              {equip.fleet_number} — {equip.name}
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Allocated To (Name)
+                </label>
+                <input
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="e.g. John Adeyemi"
+                  value={allocName}
+                  onChange={e => setAllocName(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Position / Role
+                </label>
+                <input
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="e.g. Operator, Driver, Supervisor"
+                  value={allocPos}
+                  onChange={e => setAllocPos(e.target.value)}
+                />
+              </div>
+
+              {equip.allocated_to && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-700">
+                  Currently allocated to: <strong>{equip.allocated_to}</strong>
+                  {equip.allocated_position && ` — ${equip.allocated_position}`}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setAllocModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-500 hover:bg-slate-50">
+                Cancel
+              </button>
+              {equip.allocated_to && (
+                <button
+                  onClick={() => { setAllocName(""); setAllocPos(""); }}
+                  className="px-4 py-2.5 rounded-xl bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100">
+                  Clear
+                </button>
+              )}
+              <button onClick={handleAllocationSave} disabled={allocSaving}
+                className="flex-1 py-2.5 rounded-xl bg-blue-500 text-white text-sm font-bold hover:bg-blue-600 disabled:opacity-50">
+                {allocSaving ? "Saving..." : "Save Allocation"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
