@@ -9,14 +9,14 @@ import { useAuth } from "@/hooks/use-auth";
 
 const iCls = "w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 
-const TYPE_STYLE: Record<string, { bg: string; badge: string; icon: string }> = {
-  "Central Workshop":  { bg: "bg-red-50    border-red-200",    badge: "bg-red-100    text-red-700",    icon: "🏭" },
-  "Regional Workshop": { bg: "bg-orange-50 border-orange-200", badge: "bg-orange-100 text-orange-700", icon: "🔧" },
-  "Field Workshop":    { bg: "bg-amber-50  border-amber-200",  badge: "bg-amber-100  text-amber-700",  icon: "⚙️" },
-  "Repair Yard":       { bg: "bg-blue-50   border-blue-200",   badge: "bg-blue-100   text-blue-700",   icon: "🔩" },
-  "Storage Yard":      { bg: "bg-slate-50  border-slate-200",  badge: "bg-slate-100  text-slate-600",  icon: "📦" },
-  "Project":           { bg: "bg-emerald-50 border-emerald-200",badge: "bg-emerald-100 text-emerald-700",icon: "🏗️" },
-  "Office":            { bg: "bg-purple-50 border-purple-200", badge: "bg-purple-100 text-purple-700", icon: "🏢" },
+const TYPE_STYLE: Record<string, { header: string; row: string; badge: string; icon: string }> = {
+  "Central Workshop":  { header: "bg-red-600 text-white",     row: "bg-red-50    hover:bg-red-100",    badge: "bg-red-100    text-red-700",    icon: "🏭" },
+  "Regional Workshop": { header: "bg-orange-500 text-white",  row: "bg-orange-50 hover:bg-orange-100", badge: "bg-orange-100 text-orange-700", icon: "🔧" },
+  "Field Workshop":    { header: "bg-amber-500 text-white",   row: "bg-amber-50  hover:bg-amber-100",  badge: "bg-amber-100  text-amber-700",  icon: "⚙️" },
+  "Repair Yard":       { header: "bg-blue-600 text-white",    row: "bg-blue-50   hover:bg-blue-100",   badge: "bg-blue-100   text-blue-700",   icon: "🔩" },
+  "Storage Yard":      { header: "bg-slate-600 text-white",   row: "bg-slate-50  hover:bg-slate-100",  badge: "bg-slate-100  text-slate-600",  icon: "📦" },
+  "Project":           { header: "bg-emerald-600 text-white", row: "bg-emerald-50 hover:bg-emerald-100",badge: "bg-emerald-100 text-emerald-700",icon: "🏗️" },
+  "Office":            { header: "bg-purple-600 text-white",  row: "bg-purple-50 hover:bg-purple-100", badge: "bg-purple-100 text-purple-700", icon: "🏢" },
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -312,26 +312,28 @@ export default function SitesPage() {
             if (!typeSites || typeSites.length === 0) return null;
             const style = TYPE_STYLE[type] || TYPE_STYLE["Project"];
             return (
-              <div key={type} className={`rounded-2xl border ${style.bg} overflow-hidden`}>
-                <div className="px-6 py-4 flex items-center gap-3 border-b border-current border-opacity-20">
+              <div key={type} className="rounded-2xl overflow-hidden shadow-sm border border-slate-200">
+                {/* Coloured header */}
+                <div className={`px-6 py-4 flex items-center gap-3 ${style.header}`}>
                   <span className="text-xl">{style.icon}</span>
                   <div>
-                    <h3 className="font-bold text-slate-800">{type}</h3>
-                    <p className="text-xs text-slate-500">{typeSites.length} sites</p>
+                    <h3 className="font-bold">{type}</h3>
+                    <p className="text-xs opacity-75">{typeSites.length} sites</p>
                   </div>
                 </div>
-                <div className="overflow-x-auto">
+                {/* White table body — always light, always readable */}
+                <div className="bg-white overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-white/60 border-b border-white/40">
+                    <thead className="bg-slate-50 border-b border-slate-100">
                       <tr>
                         {["New Code","Old Code","Site Name","Region","Cost Code","Status",""].map(h => (
                           <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/30">
+                    <tbody className="divide-y divide-slate-50">
                       {typeSites.map((s: any) => (
-                        <tr key={s.id} className="hover:bg-white/40 group transition-colors">
+                        <tr key={s.id} className={`group transition-colors ${style.row}`}>
                           <td className="px-5 py-3">
                             <div className="flex items-center gap-2">
                               <span className="font-bold text-slate-800 font-mono">{s.code}</span>
@@ -342,12 +344,12 @@ export default function SitesPage() {
                           </td>
                           <td className="px-5 py-3">
                             {s.legacy_code && s.legacy_code !== "NEW" ? (
-                              <span className="font-mono text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+                              <span className="font-mono text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
                                 {s.legacy_code}
                               </span>
-                            ) : s.legacy_code === "NEW" ? (
+                            ) : (
                               <span className="text-xs text-slate-300 italic">—</span>
-                            ) : null}
+                            )}
                           </td>
                           <td className="px-5 py-3 font-medium text-slate-700 max-w-72 truncate">{s.name}</td>
                           <td className="px-5 py-3 text-slate-500 text-xs whitespace-nowrap">{s.region}</td>
@@ -418,7 +420,7 @@ export default function SitesPage() {
                       </td>
                       <td className="px-5 py-3 font-medium text-slate-700 max-w-64 truncate">{s.name}</td>
                       <td className="px-5 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${style.badge}`}>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${style.badge || "bg-slate-100 text-slate-600"}`}>
                           {style.icon} {s.site_type}
                         </span>
                       </td>
