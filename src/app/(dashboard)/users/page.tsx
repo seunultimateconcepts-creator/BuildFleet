@@ -7,9 +7,10 @@ import { dbu } from "@/lib/db";
 const ROLES = [
   { value: "plant_director",  label: "Plant Director",  color: "bg-indigo-100 text-indigo-700", desc: "Highest level — oversight, view only" },
   { value: "plant_manager",   label: "Plant Manager",   color: "bg-purple-100 text-purple-700", desc: "Approves transfers & maintenance completion" },
-  { value: "plant_engineer",  label: "Plant Engineer",  color: "bg-blue-100 text-blue-700",     desc: "Technical approvals, completes maintenance jobs" },
+  { value: "plant_engineer",  label: "Plant Engineer",  color: "bg-blue-100 text-blue-700",     desc: "Technical approvals, completes maintenance jobs, approves workshop transfers" },
   { value: "plant_admin",     label: "Plant Admin",     color: "bg-amber-100 text-amber-700",   desc: "Full access — users, reports, rental list, everything" },
-  { value: "site_supervisor", label: "Site Supervisor", color: "bg-teal-100 text-teal-700",     desc: "View site equipment, daily logs, initiate & confirm transfers" },
+  { value: "plant_officer",   label: "Plant Officer",   color: "bg-cyan-100 text-cyan-700",     desc: "Senior clerk — monitors all transfers, job orders, tires, commissioning across all sites" },
+  { value: "site_supervisor", label: "Site Supervisor", color: "bg-teal-100 text-teal-700",     desc: "View site equipment, daily logs, initiate & confirm transfers, approves site transfers" },
   { value: "plant_clerk",     label: "Plant Clerk",     color: "bg-slate-100 text-slate-600",   desc: "Daily logs, initiate transfers, confirm incoming transfers" },
 ];
 

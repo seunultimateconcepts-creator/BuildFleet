@@ -1,3 +1,5 @@
+/* eslint-disable react-hooks/set-state-in-effect */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -13,10 +15,12 @@ import { useAuth } from "@/hooks/use-auth";
 import type { Transfer, TransferType } from "@/types";
 
 const STATUS_STYLE: Record<string, string> = {
-  "Pending":    "bg-amber-100  text-amber-700",
-  "In Transit": "bg-blue-100   text-blue-700",
-  "Received":   "bg-emerald-100 text-emerald-700",
-  "Cancelled":  "bg-red-100    text-red-600",
+  "Pending Approval": "bg-orange-100 text-orange-700",
+  "Pending":          "bg-amber-100  text-amber-700",
+  "In Transit":       "bg-blue-100   text-blue-700",
+  "Received":         "bg-emerald-100 text-emerald-700",
+  "Rejected":         "bg-red-100    text-red-600",
+  "Cancelled":        "bg-slate-100  text-slate-500",
 };
 
 const TRANSPORT_MODES  = ["Own Power","Low Loader","Flatbed Truck","Crane Truck","Other"];
@@ -50,7 +54,6 @@ function SectionHead({ title, sub, color = "slate" }: {
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function EquipmentSearch({ equipment, value, onChange }: {
   equipment: any[]; value: string; onChange: (id: string, equip: any) => void;
 }) {
@@ -247,7 +250,6 @@ function ReceiptModal({ transfer, profile, onClose, onConfirm }: {
 function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { createTransfer } = useTransfers();
   const { equipment }      = useEquipment();
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { sites }          = useSites(); // filtered by role — for from_site context
   const { profile }        = useAuth();
   const [allSites, setAllSites] = useState<any[]>([]); // ALL sites — for to_site dropdown
@@ -259,7 +261,7 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
     dbu.from("sites")
       .select("id,name,code,cost_code")
       .order("code", { ascending: true })
-      .then(({ data }: { data: any }) => setAllSites(data || []));
+      .then(({ data }: { data: any[] | null }) => setAllSites(data || []));
   }, [open]);
 
   const [saving, setSaving] = useState(false);
@@ -283,7 +285,6 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
   // Auto-fill dispatching officer when profile loads or modal opens
   useEffect(() => {
     if (profile?.full_name && open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm(p => ({ ...p, dispatching_officer: p.dispatching_officer || profile.full_name }));
     }
   }, [profile, open]);
@@ -316,6 +317,22 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
     }
     setSaving(true); setError(null);
 
+    // Determine who needs to approve based on from_site type
+    const fromSiteRecord = allSites.find((s: any) => s.name === form.from_site);
+    const isWorkshop = fromSiteRecord?.site_type?.includes("Workshop");
+
+    // Find approver — plant_engineer for workshops, site_supervisor for projects
+    const approverRole = isWorkshop ? "plant_engineer" : "site_supervisor";
+    const { data: approvers } = await dbu
+      .from("profiles")
+      .select("id,full_name,email,assigned_sites,roles")
+      .contains("roles", [approverRole]);
+
+    // Find approver assigned to from_site
+    const approver = approvers?.find((p: any) =>
+      (p.assigned_sites || []).includes(form.from_site)
+    ) || approvers?.[0]; // fallback to first approver of that role
+
     const result = await createTransfer({
       equipment_id: form.equipment_id,
       equipment_code: selectedEquip?.fleet_number || "",
@@ -339,11 +356,33 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
       fire_extinguisher_dispatch: form.fire_extinguisher_dispatch,
       fleet_attachments: form.fleet_attachments,
       dispatch_remarks: form.dispatch_remarks,
+      // Approval fields
+      approval_status: "Pending Approval",
+      initiated_by: profile?.full_name || "",
+      initiated_by_email: profile?.email || "",
     } as any);
 
-    setSaving(false);
-    if (!result.success) { setError(result.error || "Transfer failed."); return; }
+    if (!result.success) { setError(result.error || "Transfer failed."); setSaving(false); return; }
 
+    // Notify approver (in-app + email)
+    if (approver) {
+      await fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to_user_id: approver.id,
+          to_email: approver.email,
+          to_name: approver.full_name,
+          title: "Transfer Approval Required",
+          message: `${form.dispatching_officer} initiated a transfer of ${selectedEquip?.fleet_number} (${selectedEquip?.name}) from ${form.from_site} to ${form.to_site}. Please review and approve or reject.`,
+          type: "warning",
+          link: "/transfer",
+          send_email: true,
+        }),
+      }).catch(() => null);
+    }
+
+    setSaving(false);
     onClose();
     printTransfer({
       ...(result.data || {}),
@@ -366,7 +405,7 @@ function NewTransferModal({ open, onClose }: { open: boolean; onClose: () => voi
       history_file_dispatch: form.history_file_dispatch,
       fleet_attachments: form.fleet_attachments,
       dispatch_remarks: form.dispatch_remarks,
-      status: "Pending",
+      status: "Pending Approval",
     });
   }
 
@@ -705,11 +744,108 @@ export default function TransferPage() {
   const { transfers, loading, updateStatus, confirmReceipt } = useTransfers();
   const { profile, canTransfer } = useAuth();
 
-  const [tab,          setTab]          = useState<'register'|'history'>('register');
-  const [modal,        setModal]        = useState(false);
-  const [receiptItem,  setReceiptItem]  = useState<Transfer | null>(null);
-  const [filterStatus, setFilterStatus] = useState("");
-  const [search,       setSearch]       = useState("");
+  const [tab,           setTab]           = useState<'register'|'history'>('register');
+  const [modal,         setModal]         = useState(false);
+  const [receiptItem,   setReceiptItem]   = useState<Transfer | null>(null);
+  const [filterStatus,  setFilterStatus]  = useState("");
+  const [search,        setSearch]        = useState("");
+  const [approvalModal, setApprovalModal] = useState<Transfer | null>(null);
+  const [approvalNote,  setApprovalNote]  = useState("");
+  const [approving,     setApproving]     = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [showBell,      setShowBell]      = useState(false);
+
+  const roles: string[] = profile?.roles || [];
+  const isApprover = roles.some(r =>
+    ["plant_engineer","site_supervisor","plant_manager","plant_director","super_admin"].includes(r)
+  );
+
+  // Load unread notifications for current user
+  useEffect(() => {
+    if (!profile?.id) return;
+    dbu.from("notifications")
+      .select("*")
+      .eq("user_id", profile.id)
+      .eq("read", false)
+      .order("created_at", { ascending: false })
+      .then(({ data }: { data: any[] | null }) => setNotifications(data || []));
+  }, [profile]);
+
+  async function markAllRead() {
+    if (!profile?.id) return;
+    await dbu.from("notifications").update({ read: true }).eq("user_id", profile.id);
+    setNotifications([]);
+  }
+
+  async function handleApprove(transfer: Transfer) {
+    setApproving(true);
+    // Update transfer
+    await dbu.from("transfers").update({
+      approval_status: "Approved",
+      status: "Pending",
+      approved_by: profile?.full_name,
+      approved_at: new Date().toISOString(),
+      approval_note: approvalNote || null,
+    }).eq("id", transfer.id);
+
+    // Notify initiator
+    if ((transfer as any).initiated_by_email) {
+      await fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to_email: (transfer as any).initiated_by_email,
+          to_name: (transfer as any).initiated_by,
+          title: "Transfer Approved ✅",
+          message: `Your transfer of ${transfer.equipment_code} from ${transfer.from_site} to ${transfer.to_site} has been approved by ${profile?.full_name}.`,
+          type: "success",
+          link: "/transfer",
+          send_email: true,
+        }),
+      }).catch(() => null);
+    }
+
+    setApproving(false);
+    setApprovalModal(null);
+    setApprovalNote("");
+    window.location.reload();
+  }
+
+  async function handleReject(transfer: Transfer) {
+    if (!approvalNote.trim()) {
+      alert("Please add a reason for rejection."); return;
+    }
+    setApproving(true);
+    await dbu.from("transfers").update({
+      approval_status: "Rejected",
+      status: "Cancelled",
+      approved_by: profile?.full_name,
+      approved_at: new Date().toISOString(),
+      approval_note: approvalNote,
+    }).eq("id", transfer.id);
+
+    // Notify initiator of rejection
+    if ((transfer as any).initiated_by_email) {
+      await fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to_email: (transfer as any).initiated_by_email,
+          to_name: (transfer as any).initiated_by,
+          title: "Transfer Rejected ❌",
+          message: `Your transfer of ${transfer.equipment_code} from ${transfer.from_site} to ${transfer.to_site} was rejected by ${profile?.full_name}. Reason: ${approvalNote}`,
+          type: "error",
+          link: "/transfer",
+          send_email: true,
+        }),
+      }).catch(() => null);
+    }
+
+    setApproving(false);
+    setApprovalModal(null);
+    setApprovalNote("");
+    window.location.reload();
+  }
 
   const filtered = transfers.filter(t => {
     const q = search.toLowerCase();
@@ -722,10 +858,10 @@ export default function TransferPage() {
   });
 
   const counts = {
-    total:     transfers.length,
-    pending:   transfers.filter(t => t.status === "Pending").length,
-    inTransit: transfers.filter(t => t.status === "In Transit").length,
-    received:  transfers.filter(t => t.status === "Received").length,
+    total:           transfers.length,
+    pendingApproval: transfers.filter(t => (t as any).approval_status === "Pending Approval").length,
+    inTransit:       transfers.filter(t => t.status === "In Transit").length,
+    received:        transfers.filter(t => t.status === "Received").length,
   };
 
   return (
@@ -733,11 +869,58 @@ export default function TransferPage() {
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Transfers</h1>
-          <p className="text-slate-500 mt-1 text-sm">
-            Manage equipment movement between sites.
-          </p>
+          <p className="text-slate-500 mt-1 text-sm">Manage equipment movement between sites.</p>
         </div>
-        <div className="flex flex-wrap gap-3 shrink-0">
+        <div className="flex flex-wrap gap-3 shrink-0 items-center">
+
+          {/* Notification Bell */}
+          <div className="relative">
+            <button onClick={() => setShowBell(b => !b)}
+              className="relative p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+              </svg>
+              {notifications.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {notifications.length}
+                </span>
+              )}
+            </button>
+            {showBell && (
+              <div className="absolute right-0 top-12 w-80 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                  <p className="font-bold text-slate-800 text-sm">Notifications</p>
+                  {notifications.length > 0 && (
+                    <button onClick={markAllRead}
+                      className="text-xs text-amber-500 hover:text-amber-600 font-medium">
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-72 overflow-y-auto divide-y divide-slate-50">
+                  {notifications.length === 0 ? (
+                    <p className="px-4 py-8 text-center text-slate-400 text-sm">No new notifications</p>
+                  ) : notifications.map(n => (
+                    <div key={n.id} className={`px-4 py-3 ${
+                      n.type === "warning" ? "bg-amber-50" :
+                      n.type === "success" ? "bg-emerald-50" :
+                      n.type === "error"   ? "bg-red-50" : "bg-white"
+                    }`}>
+                      <p className="font-semibold text-slate-800 text-xs">{n.title}</p>
+                      <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">{n.message}</p>
+                      <p className="text-slate-300 text-[10px] mt-1">
+                        {new Date(n.created_at).toLocaleDateString("en-GB",{
+                          day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"
+                        })}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           <button className="border border-slate-200 bg-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50">↓ Export</button>
           {canTransfer && (
             <button onClick={() => setModal(true)}
@@ -760,10 +943,10 @@ export default function TransferPage() {
       {tab === "history" ? <TransferHistoryTab /> : <>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label:"Total Transfers", value:counts.total,     bg:"bg-slate-900 text-white" },
-            { label:"Pending",         value:counts.pending,   bg:"bg-amber-500 text-white" },
-            { label:"In Transit",      value:counts.inTransit, bg:"bg-blue-500 text-white" },
-            { label:"Received",        value:counts.received,  bg:"bg-emerald-500 text-white" },
+            { label:"Total Transfers",   value:counts.total,           bg:"bg-slate-900 text-white" },
+            { label:"Pending Approval",  value:counts.pendingApproval, bg:"bg-orange-500 text-white" },
+            { label:"In Transit",        value:counts.inTransit,       bg:"bg-blue-500 text-white" },
+            { label:"Received",          value:counts.received,        bg:"bg-emerald-500 text-white" },
           ].map(k => (
             <div key={k.label} className={`${k.bg} rounded-2xl p-5`}>
               <p className="text-3xl font-bold">{k.value}</p>
@@ -772,14 +955,17 @@ export default function TransferPage() {
           ))}
         </div>
 
-        {counts.pending > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
-            <span className="text-2xl">⚠️</span>
+        {/* Approval needed banner for approvers */}
+        {isApprover && counts.pendingApproval > 0 && (
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center gap-3">
+            <span className="text-2xl">🔔</span>
             <div>
-              <p className="font-bold text-amber-800 text-sm">
-                {counts.pending} transfer{counts.pending > 1?"s":""} awaiting receipt confirmation
+              <p className="font-bold text-orange-800 text-sm">
+                {counts.pendingApproval} transfer{counts.pendingApproval > 1 ? "s" : ""} waiting for your approval
               </p>
-              <p className="text-amber-600 text-xs mt-0.5">Receiving sites need to confirm receipt to complete.</p>
+              <p className="text-orange-600 text-xs mt-0.5">
+                Review and approve or reject before equipment can move.
+              </p>
             </div>
           </div>
         )}
@@ -791,7 +977,9 @@ export default function TransferPage() {
               className={iCls + " lg:col-span-2"} />
             <select className={iCls} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
               <option value="">All Statuses</option>
-              {["Pending","In Transit","Received","Cancelled"].map(s => <option key={s}>{s}</option>)}
+              {["Pending Approval","Pending","In Transit","Received","Rejected","Cancelled"].map(s => (
+                <option key={s}>{s}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -799,13 +987,13 @@ export default function TransferPage() {
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-6 py-5 border-b border-slate-100">
             <h2 className="font-bold text-slate-800 text-lg">Transfer Register</h2>
-            <p className="text-slate-400 text-sm">{filtered.length} record{filtered.length !== 1?"s":""}</p>
+            <p className="text-slate-400 text-sm">{filtered.length} record{filtered.length !== 1 ? "s" : ""}</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-100">
                 <tr>
-                  {["Equipment","Type","From","To","Transfer Date","Expected","Dispatched By","Status","Actions"].map(h => (
+                  {["Equipment","Type","From","To","Transfer Date","Dispatched By","Approval","Status","Actions"].map(h => (
                     <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -815,60 +1003,150 @@ export default function TransferPage() {
                   <tr><td colSpan={9} className="px-5 py-16 text-center text-slate-400">Loading transfers...</td></tr>
                 ) : filtered.length === 0 ? (
                   <tr><td colSpan={9} className="px-5 py-16 text-center text-slate-400">
-                    {transfers.length === 0 ? 'No transfers yet. Click "+ New Transfer" to initiate one.' : "No transfers match your filters."}
+                    {transfers.length === 0 ? 'No transfers yet.' : "No transfers match your filters."}
                   </td></tr>
-                ) : filtered.map(t => (
-                  <tr key={t.id} className="hover:bg-slate-50 group">
-                    <td className="px-5 py-4">
-                      <p className="font-bold text-slate-800 font-mono text-xs">{t.equipment_code}</p>
-                      <p className="text-slate-500 text-xs mt-0.5 truncate max-w-35">{t.equipment_name}</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className={`px-2 py-1 rounded-lg text-xs font-medium ${
-                        t.transfer_type === "Final Release" ? "bg-red-50 text-red-600" : "bg-blue-50 text-blue-600"
-                      }`}>{t.transfer_type}</span>
-                    </td>
-                    <td className="px-5 py-4 text-slate-600 text-xs max-w-30 truncate">{t.from_site}</td>
-                    <td className="px-5 py-4 text-slate-600 text-xs max-w-30 truncate">{t.to_site}</td>
-                    <td className="px-5 py-4 text-slate-500 text-xs whitespace-nowrap">
-                      {new Date(t.transfer_date).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}
-                    </td>
-                    <td className="px-5 py-4 text-slate-500 text-xs whitespace-nowrap">
-                      {t.expected_arrival_date ? new Date(t.expected_arrival_date).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "—"}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600 text-xs">{t.dispatching_officer}</td>
-                    <td className="px-5 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_STYLE[t.status]}`}>{t.status}</span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {(t.status === "Pending" || t.status === "In Transit") && (
-                          <button onClick={() => setReceiptItem(t)}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 font-medium whitespace-nowrap">
-                            Confirm Receipt
-                          </button>
+                ) : filtered.map(t => {
+                  const isPendingApproval = (t as any).approval_status === "Pending Approval";
+                  const isApproved        = (t as any).approval_status === "Approved" || !(t as any).approval_status;
+                  return (
+                    <tr key={t.id} className={`hover:bg-slate-50 group ${isPendingApproval ? "bg-orange-50/30" : ""}`}>
+                      <td className="px-5 py-4">
+                        <p className="font-bold text-slate-800 font-mono text-xs">{t.equipment_code}</p>
+                        <p className="text-slate-500 text-xs mt-0.5 truncate max-w-35">{t.equipment_name}</p>
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className={`px-2 py-1 rounded-lg text-xs font-medium ${
+                          t.transfer_type === "Final Release" ? "bg-red-50 text-red-600" : "bg-blue-50 text-blue-600"
+                        }`}>{t.transfer_type}</span>
+                      </td>
+                      <td className="px-5 py-4 text-slate-600 text-xs max-w-30 truncate">{t.from_site}</td>
+                      <td className="px-5 py-4 text-slate-600 text-xs max-w-30 truncate">{t.to_site}</td>
+                      <td className="px-5 py-4 text-slate-500 text-xs whitespace-nowrap">
+                        {new Date(t.transfer_date).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}
+                      </td>
+                      <td className="px-5 py-4 text-slate-600 text-xs">{t.dispatching_officer}</td>
+                      <td className="px-5 py-4">
+                        {isPendingApproval ? (
+                          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">
+                            ⏳ Awaiting
+                          </span>
+                        ) : (t as any).approval_status === "Rejected" ? (
+                          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-600">
+                            ✗ Rejected
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                            ✓ Approved
+                          </span>
                         )}
-                        {t.status === "Pending" && (
-                          <button onClick={() => updateStatus(t.id, "In Transit")}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 font-medium whitespace-nowrap">
-                            In Transit
-                          </button>
-                        )}
-                        {t.status === "Pending" && canTransfer && (
-                          <button onClick={() => updateStatus(t.id, "Cancelled")}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 font-medium whitespace-nowrap">
-                            Cancel
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_STYLE[t.status] || "bg-slate-100 text-slate-500"}`}>
+                          {t.status}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity flex-wrap">
+
+                          {/* APPROVER ACTIONS */}
+                          {isApprover && isPendingApproval && (
+                            <button onClick={() => { setApprovalModal(t); setApprovalNote(""); }}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-orange-100 text-orange-700 hover:bg-orange-200 font-medium whitespace-nowrap">
+                              Review
+                            </button>
+                          )}
+
+                          {/* CONFIRM RECEIPT — only after approval */}
+                          {isApproved && (t.status === "Pending" || t.status === "In Transit") && (
+                            <button onClick={() => setReceiptItem(t)}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 font-medium whitespace-nowrap">
+                              Confirm Receipt
+                            </button>
+                          )}
+
+                          {/* IN TRANSIT — only after approval */}
+                          {isApproved && t.status === "Pending" && (
+                            <button onClick={() => updateStatus(t.id, "In Transit")}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 font-medium whitespace-nowrap">
+                              In Transit
+                            </button>
+                          )}
+
+                          {/* CANCEL */}
+                          {t.status === "Pending" && canTransfer && (
+                            <button onClick={() => updateStatus(t.id, "Cancelled")}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 font-medium whitespace-nowrap">
+                              Cancel
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
       </>}
+
+      {/* Approval Modal */}
+      {approvalModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-5 bg-slate-900">
+              <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-0.5">Transfer Review</p>
+              <h3 className="font-bold text-white text-lg">Approve or Reject Transfer</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-slate-50 rounded-xl p-4 text-sm space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Equipment</span>
+                  <span className="font-bold text-amber-600">{approvalModal.equipment_code}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">From</span>
+                  <span className="font-medium text-slate-700 text-right max-w-48 truncate">{approvalModal.from_site}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">To</span>
+                  <span className="font-medium text-slate-700 text-right max-w-48 truncate">{approvalModal.to_site}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Initiated By</span>
+                  <span className="font-medium text-slate-700">{(approvalModal as any).initiated_by || approvalModal.dispatching_officer}</span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Note / Reason (required for rejection)
+                </label>
+                <textarea
+                  value={approvalNote}
+                  onChange={e => setApprovalNote(e.target.value)}
+                  placeholder="Add a note or reason..."
+                  rows={3}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex gap-3">
+              <button onClick={() => setApprovalModal(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-500 hover:bg-white">
+                Cancel
+              </button>
+              <button onClick={() => handleReject(approvalModal)} disabled={approving}
+                className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-bold hover:bg-red-600 disabled:opacity-50">
+                {approving ? "..." : "✗ Reject"}
+              </button>
+              <button onClick={() => handleApprove(approvalModal)} disabled={approving}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-bold hover:bg-emerald-600 disabled:opacity-50">
+                {approving ? "..." : "✓ Approve"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <NewTransferModal open={modal} onClose={() => setModal(false)} />
       {receiptItem && (
