@@ -129,20 +129,28 @@ export default function LoginPage() {
                   <stop offset="100%" stopColor="#00BFFF"/>
                 </linearGradient>
               </defs>
-              <g transform="translate(46,50)">
-                {/* Arc: bottom-left → over top → bottom-right. Gap at bottom-right like UTL */}
-                <path d="M-32,22 A38,38 0 1,1 32,22"
-                  fill="none" stroke="url(#g)" strokeWidth="2.5" strokeLinecap="round"/>
-                {/* Lines: nearly vertical bottom to top, slight rightward lean */}
-                <line x1="-20" y1="20" x2="-13" y2="-34" stroke="url(#g)" strokeWidth="2" strokeLinecap="round"/>
-                <line x1="-7"  y1="24" x2="2"   y2="-36" stroke="url(#g)" strokeWidth="2" strokeLinecap="round"/>
-                <line x1="7"   y1="24" x2="18"  y2="-34" stroke="url(#g)" strokeWidth="2" strokeLinecap="round"/>
-                <line x1="20"  y1="20" x2="30"  y2="-24" stroke="url(#g)" strokeWidth="2" strokeLinecap="round"/>
-                {/* Dots at TOP of lines only */}
-                <circle cx="-13" cy="-34" r="3.5" fill="#7ED321"/>
-                <circle cx="2"   cy="-36" r="3.5" fill="#55D430"/>
-                <circle cx="18"  cy="-34" r="3.5" fill="#00C9A7"/>
-                <circle cx="30"  cy="-24" r="4"   fill="#00BFFF"/>
+              {/* UTL logo precisely traced — arc: top-left→left→bottom→bottom-right, gap at top-right */}
+              <g transform="translate(8,5) scale(0.85)">
+                <path d="M22,10 A44,44 0 1,0 88,72"
+                  fill="none" stroke="url(#g)" strokeWidth="4.5" strokeLinecap="round"/>
+                <line x1="22" y1="74" x2="30" y2="22" stroke="url(#g)" strokeWidth="3.5" strokeLinecap="round"/>
+                <circle cx="30" cy="22" r="5.5" fill="#7ED321"/>
+                <circle cx="26" cy="48" r="4"   fill="#7ED321"/>
+                <line x1="34" y1="78" x2="44" y2="24" stroke="url(#g)" strokeWidth="3.5" strokeLinecap="round"/>
+                <circle cx="44" cy="24" r="5.5" fill="#44D430"/>
+                <circle cx="39" cy="51" r="4"   fill="#44D430"/>
+                <line x1="46" y1="80" x2="58" y2="28" stroke="url(#g)" strokeWidth="3.5" strokeLinecap="round"/>
+                <circle cx="58" cy="28" r="5.5" fill="#00E5A0"/>
+                <circle cx="52" cy="54" r="4"   fill="#00E5A0"/>
+                <line x1="58" y1="80" x2="72" y2="34" stroke="url(#g)" strokeWidth="3.5" strokeLinecap="round"/>
+                <circle cx="72" cy="34" r="5.5" fill="#00BFDF"/>
+                <circle cx="65" cy="57" r="4"   fill="#00BFDF"/>
+                <line x1="68" y1="78" x2="82" y2="44" stroke="url(#g)" strokeWidth="3.5" strokeLinecap="round"/>
+                <circle cx="82" cy="44" r="5.5" fill="#1A8FD4"/>
+                <circle cx="75" cy="61" r="4"   fill="#1A8FD4"/>
+                <line x1="76" y1="72" x2="88" y2="54" stroke="url(#g)" strokeWidth="3.5" strokeLinecap="round"/>
+                <circle cx="88" cy="54" r="5.5" fill="#1A6FC4"/>
+                <circle cx="82" cy="63" r="4"   fill="#1A6FC4"/>
               </g>
 
               {/* BuildFleet text */}

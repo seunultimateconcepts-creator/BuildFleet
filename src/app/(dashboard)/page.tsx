@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -48,7 +49,7 @@ function ActivityItem({ icon, title, sub, time }: {
     <div className="flex items-start gap-4 py-3 border-b border-slate-50 last:border-0">
       <span className="text-xl mt-0.5 shrink-0">{icon}</span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-slate-800 truncate">{title}</p>
+        <p className="text-sm font-semibold text-slate-800 dark:text-white truncate">{title}</p>
         <p className="text-xs text-slate-400 mt-0.5 truncate">{sub}</p>
       </div>
       <span className="text-xs text-slate-400 whitespace-nowrap shrink-0">{time}</span>
@@ -72,12 +73,12 @@ function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-lg px-4 py-3 text-xs">
-      <p className="font-bold text-slate-700 mb-2">{label}</p>
+      <p className="font-bold text-slate-700 dark:text-slate-200 mb-2">{label}</p>
       {payload.map((p: any) => (
         <div key={p.dataKey} className="flex items-center gap-2 mb-1">
           <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />
           <span className="text-slate-500">{p.name}:</span>
-          <span className="font-bold text-slate-800">
+          <span className="font-bold text-slate-800 dark:text-white">
             {p.dataKey === "utilization" ? `${p.value}%` : `${p.value}h`}
           </span>
         </div>
@@ -159,8 +160,7 @@ function UtilizationChart({ range, onRangeChange }: {
       }
 
       // Remove leading/trailing nulls for cleaner wave
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const trimmed = points.filter(function (_p, i): boolean {
+      const trimmed = points.filter((_p, i) => {
         const hasData = points.some(p => p.utilization !== null);
         return hasData;
       });
@@ -183,7 +183,7 @@ function UtilizationChart({ range, onRangeChange }: {
       {/* Chart header */}
       <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
         <div>
-          <h2 className="font-bold text-slate-800">Plant Utilization Overview</h2>
+          <h2 className="font-bold text-slate-800 dark:text-white">Plant Utilization Overview</h2>
           <p className="text-slate-400 text-xs mt-0.5">
             Working hours vs total logged hours across all sites
           </p>
@@ -450,10 +450,10 @@ export default function DashboardPage() {
       <div className="flex items-start justify-between">
         <div>
           <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-1">Overview</p>
-          <h1 className="text-3xl font-bold text-slate-900">
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
             {profile ? `Welcome, ${profile.full_name.split(" ")[0]}` : "Dashboard"}
           </h1>
-          <p className="text-slate-500 mt-1 text-sm">
+          <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">
             {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
           </p>
         </div>
@@ -534,7 +534,7 @@ export default function DashboardPage() {
         {/* Recent Activity */}
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 overflow-hidden">
           <div className="px-6 py-5 border-b border-slate-100">
-            <h2 className="font-bold text-slate-800">Recent Activity</h2>
+            <h2 className="font-bold text-slate-800 dark:text-white">Recent Activity</h2>
             <p className="text-slate-400 text-xs mt-0.5">Latest transfers and maintenance events</p>
           </div>
           <div className="px-6 py-2">
@@ -566,7 +566,7 @@ export default function DashboardPage() {
                 <div key={cat}>
                   <div className="flex items-center justify-between text-xs mb-1">
                     <span className="text-slate-600 truncate max-w-35">{cat}</span>
-                    <span className="font-bold text-slate-800">{count}</span>
+                    <span className="font-bold text-slate-800 dark:text-white">{count}</span>
                   </div>
                   <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                     <div

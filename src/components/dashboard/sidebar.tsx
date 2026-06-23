@@ -1,5 +1,4 @@
 "use client";
-export const dynamic = 'force-dynamic';
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -98,44 +97,40 @@ const navItems = [
 
 function BuildFleetLogo() {
   return (
-    <svg
-      width="208"
-      height="72"
-      viewBox="0 0 290 100"
+    <svg width="208" height="72" viewBox="0 0 290 80"
       xmlns="http://www.w3.org/2000/svg"
-      aria-label="BuildFleet — Enterprise Fleet Management"
-    >
+      aria-label="BuildFleet — Enterprise Fleet Management">
       <defs>
-        <linearGradient id="utlg" x1="0%" y1="100%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#7ED321" />
-          <stop offset="50%" stopColor="#00C9A7" />
-          <stop offset="100%" stopColor="#00BFFF" />
+        <linearGradient id="utlg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%"   stopColor="#7ED321"/>
+          <stop offset="35%"  stopColor="#00E5A0"/>
+          <stop offset="65%"  stopColor="#00BFDF"/>
+          <stop offset="100%" stopColor="#1A6FC4"/>
         </linearGradient>
       </defs>
 
-      {/* Circuit globe — U shape opening upward like UTL logo */}
-      <g transform="translate(36,46)">
-        {/* Arc opens at bottom — like a U bowl facing up */}
-        <path d="M-28,20 A30,30 0 1,1 28,20"
-          fill="none" stroke="url(#utlg)" strokeWidth="2.2" strokeLinecap="round"/>
-
-        {/* Diagonal lines — bottom-left to top-right */}
-        <line x1="-18" y1="16" x2="-6"  y2="-28" stroke="url(#utlg)" strokeWidth="1.8" strokeLinecap="round"/>
-        <line x1="-8"  y1="22" x2="5"   y2="-30" stroke="url(#utlg)" strokeWidth="1.8" strokeLinecap="round"/>
-        <line x1="2"   y1="24" x2="16"  y2="-29" stroke="url(#utlg)" strokeWidth="1.8" strokeLinecap="round"/>
-        <line x1="12"  y1="22" x2="26"  y2="-23" stroke="url(#utlg)" strokeWidth="1.8" strokeLinecap="round"/>
-
-        {/* Dots at TOP of lines */}
-        <circle cx="-6"  cy="-28" r="3"   fill="#7ED321"/>
-        <circle cx="5"   cy="-30" r="3"   fill="#55D430"/>
-        <circle cx="16"  cy="-29" r="3"   fill="#00C9A7"/>
-        <circle cx="26"  cy="-23" r="3.5" fill="#00BFFF"/>
-
-        {/* Dots at BOTTOM of lines */}
-        <circle cx="-18" cy="16"  r="2.2" fill="#7ED321"/>
-        <circle cx="-8"  cy="22"  r="2.2" fill="#55D430"/>
-        <circle cx="2"   cy="24"  r="2.2" fill="#00C9A7"/>
-        <circle cx="12"  cy="22"  r="2.2" fill="#00BFFF"/>
+      {/* UTL logo — precisely traced: arc top-left→left→bottom→bottom-right, gap at top-right */}
+      <g transform="translate(2,0) scale(0.68)">
+        <path d="M22,10 A44,44 0 1,0 88,72"
+          fill="none" stroke="url(#utlg)" strokeWidth="4.5" strokeLinecap="round"/>
+        <line x1="22" y1="74" x2="30" y2="22" stroke="url(#utlg)" strokeWidth="3.5" strokeLinecap="round"/>
+        <circle cx="30" cy="22" r="5.5" fill="#7ED321"/>
+        <circle cx="26" cy="48" r="4"   fill="#7ED321"/>
+        <line x1="34" y1="78" x2="44" y2="24" stroke="url(#utlg)" strokeWidth="3.5" strokeLinecap="round"/>
+        <circle cx="44" cy="24" r="5.5" fill="#44D430"/>
+        <circle cx="39" cy="51" r="4"   fill="#44D430"/>
+        <line x1="46" y1="80" x2="58" y2="28" stroke="url(#utlg)" strokeWidth="3.5" strokeLinecap="round"/>
+        <circle cx="58" cy="28" r="5.5" fill="#00E5A0"/>
+        <circle cx="52" cy="54" r="4"   fill="#00E5A0"/>
+        <line x1="58" y1="80" x2="72" y2="34" stroke="url(#utlg)" strokeWidth="3.5" strokeLinecap="round"/>
+        <circle cx="72" cy="34" r="5.5" fill="#00BFDF"/>
+        <circle cx="65" cy="57" r="4"   fill="#00BFDF"/>
+        <line x1="68" y1="78" x2="82" y2="44" stroke="url(#utlg)" strokeWidth="3.5" strokeLinecap="round"/>
+        <circle cx="82" cy="44" r="5.5" fill="#1A8FD4"/>
+        <circle cx="75" cy="61" r="4"   fill="#1A8FD4"/>
+        <line x1="76" y1="72" x2="88" y2="54" stroke="url(#utlg)" strokeWidth="3.5" strokeLinecap="round"/>
+        <circle cx="88" cy="54" r="5.5" fill="#1A6FC4"/>
+        <circle cx="82" cy="63" r="4"   fill="#1A6FC4"/>
       </g>
 
       {/* BuildFleet wordmark */}

@@ -1,22 +1,45 @@
-<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+<svg width="32" height="32" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="fg" x1="0%" y1="100%" x2="100%" y2="0%">
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#7ED321"/>
-      <stop offset="50%" stop-color="#00C9A7"/>
-      <stop offset="100%" stop-color="#00BFFF"/>
+      <stop offset="35%" stop-color="#00E5A0"/>
+      <stop offset="65%" stop-color="#00BFDF"/>
+      <stop offset="100%" stop-color="#1A6FC4"/>
     </linearGradient>
   </defs>
-  <circle cx="16" cy="16" r="15" fill="#0A0C14"/>
-  <!-- Arc: bottom-left → over top → bottom-right (gap at bottom-right) -->
-  <path d="M5,21 A12,12 0 1,1 27,21" fill="none" stroke="url(#fg)" stroke-width="2" stroke-linecap="round"/>
-  <!-- Lines: bottom to top, slightly rightward -->
-  <line x1="8"  y1="20" x2="10" y2="7"  stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round"/>
-  <line x1="12" y1="22" x2="15" y2="6"  stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round"/>
-  <line x1="16" y1="23" x2="20" y2="6"  stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round"/>
-  <line x1="20" y1="21" x2="25" y2="10" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round"/>
-  <!-- Dots at TOP of lines -->
-  <circle cx="10" cy="7"  r="1.8" fill="#7ED321"/>
-  <circle cx="15" cy="6"  r="1.8" fill="#55D430"/>
-  <circle cx="20" cy="6"  r="1.8" fill="#00C9A7"/>
-  <circle cx="25" cy="10" r="2.2" fill="#00BFFF"/>
+  <circle cx="50" cy="50" r="48" fill="#0A0C14"/>
+  <!--
+    Arc: starts top-left, goes LEFT side down, across BOTTOM, ends bottom-right
+    Gap is at TOP-RIGHT
+    Start: top-left area (~20, 8)
+    End: bottom-right area (~88, 72)
+    Large arc=1, sweep=1 (clockwise)
+  -->
+  <path d="M22,10 A44,44 0 1,0 88,72"
+    fill="none" stroke="url(#g)" stroke-width="4.5" stroke-linecap="round"/>
+  <!-- 6 lines: diagonal bottom-left to top-right, each with 2 dots -->
+  <!-- Line 1 - leftmost (lime) -->
+  <line x1="22" y1="74" x2="30" y2="22" stroke="url(#g)" stroke-width="3.5" stroke-linecap="round"/>
+  <circle cx="30" cy="22" r="5.5" fill="#7ED321"/>
+  <circle cx="26" cy="48" r="4"   fill="#7ED321"/>
+  <!-- Line 2 -->
+  <line x1="34" y1="78" x2="44" y2="24" stroke="url(#g)" stroke-width="3.5" stroke-linecap="round"/>
+  <circle cx="44" cy="24" r="5.5" fill="#44D430"/>
+  <circle cx="39" cy="51" r="4"   fill="#44D430"/>
+  <!-- Line 3 -->
+  <line x1="46" y1="80" x2="58" y2="28" stroke="url(#g)" stroke-width="3.5" stroke-linecap="round"/>
+  <circle cx="58" cy="28" r="5.5" fill="#00E5A0"/>
+  <circle cx="52" cy="54" r="4"   fill="#00E5A0"/>
+  <!-- Line 4 -->
+  <line x1="58" y1="80" x2="72" y2="34" stroke="url(#g)" stroke-width="3.5" stroke-linecap="round"/>
+  <circle cx="72" cy="34" r="5.5" fill="#00BFDF"/>
+  <circle cx="65" cy="57" r="4"   fill="#00BFDF"/>
+  <!-- Line 5 -->
+  <line x1="68" y1="78" x2="82" y2="44" stroke="url(#g)" stroke-width="3.5" stroke-linecap="round"/>
+  <circle cx="82" cy="44" r="5.5" fill="#1A8FD4"/>
+  <circle cx="75" cy="61" r="4"   fill="#1A8FD4"/>
+  <!-- Line 6 - rightmost (blue) -->
+  <line x1="76" y1="72" x2="88" y2="54" stroke="url(#g)" stroke-width="3.5" stroke-linecap="round"/>
+  <circle cx="88" cy="54" r="5.5" fill="#1A6FC4"/>
+  <circle cx="82" cy="63" r="4"   fill="#1A6FC4"/>
 </svg>
