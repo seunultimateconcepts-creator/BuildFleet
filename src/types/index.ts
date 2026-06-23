@@ -15,6 +15,7 @@ export type UserRole =
   | "plant_engineer"
   | "plant_admin"
   | "site_supervisor"
+  | "Plant_Officer"
   | "plant_clerk";
 
 export type UserProfile = {

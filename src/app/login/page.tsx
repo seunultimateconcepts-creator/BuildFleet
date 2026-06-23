@@ -1,9 +1,7 @@
 "use client";
-
+export const dynamic = 'force-dynamic';
 import { useState, useEffect, useRef, useCallback } from "react";
 import { dbu } from "@/lib/db";
-
-export const dynamic = 'force-dynamic';
 
 // ─────────────────────────────────────────────────────────────
 // Background images — plant & fleet related (Unsplash, no auth)
@@ -14,6 +12,7 @@ const BG_IMAGES = [
   "https://images.unsplash.com/photo-1647735282077-c12699af40be?q=80&w=870&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", // bulldozer construction
   "https://images.unsplash.com/photo-1629807473015-41699c4471b5?q=80&w=870&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", // fleet trucks road
 ];
+
 
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 
@@ -125,35 +124,49 @@ export default function LoginPage() {
           <div>
             <svg width="420" height="100" viewBox="0 0 420 100" xmlns="http://www.w3.org/2000/svg">
               <defs>
-                <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+                <linearGradient id="g" x1="0%" y1="100%" x2="100%" y2="0%">
                   <stop offset="0%" stopColor="#7ED321"/>
-                  <stop offset="40%" stopColor="#00C9A7"/>
-                  <stop offset="100%" stopColor="#1A6FC4"/>
+                  <stop offset="50%" stopColor="#00C9A7"/>
+                  <stop offset="100%" stopColor="#00BFFF"/>
                 </linearGradient>
               </defs>
-              <g transform="translate(42,50)">
-                <path d="M-36,0 A36,36 0 1,1 20,32" fill="none" stroke="url(#g)" strokeWidth="2.5" strokeLinecap="round"/>
-                <line x1="-18" y1="27" x2="14" y2="-30" stroke="url(#g)" strokeWidth="2" strokeLinecap="round"/>
-                <line x1="-8" y1="32" x2="24" y2="-23" stroke="url(#g)" strokeWidth="2" strokeLinecap="round"/>
-                <line x1="2" y1="33" x2="33" y2="-18" stroke="url(#g)" strokeWidth="2" strokeLinecap="round"/>
-                <line x1="12" y1="32" x2="38" y2="-7" stroke="url(#g)" strokeWidth="2" strokeLinecap="round"/>
-                <circle cx="-18" cy="27" r="3.5" fill="#7ED321"/>
-                <circle cx="14" cy="-30" r="3.5" fill="#7ED321"/>
-                <circle cx="-8" cy="32" r="3.5" fill="#00C9A7"/>
-                <circle cx="24" cy="-23" r="3.5" fill="#00C9A7"/>
-                <circle cx="2" cy="33" r="3.5" fill="#00B8D4"/>
-                <circle cx="33" cy="-18" r="3.5" fill="#00B8D4"/>
-                <circle cx="12" cy="32" r="3.5" fill="#1A6FC4"/>
-                <circle cx="38" cy="-7" r="3.5" fill="#1A6FC4"/>
+              {/* Circle arc — opens at bottom right like UTL (U shape facing up) */}
+              <g transform="translate(46,50)">
+                {/* Main arc — starts bottom-left, goes up and around, opens bottom-right */}
+                <path d="M-30,22 A38,38 0 1,1 30,22"
+                  fill="none" stroke="url(#g)" strokeWidth="2.5" strokeLinecap="round"/>
+
+                {/* Diagonal lines — bottom-left to top-right, matching UTL style */}
+                <line x1="-20" y1="18" x2="-8" y2="-32" stroke="url(#g)" strokeWidth="2" strokeLinecap="round"/>
+                <line x1="-10" y1="24" x2="4"  y2="-35" stroke="url(#g)" strokeWidth="2" strokeLinecap="round"/>
+                <line x1="0"   y1="26" x2="16" y2="-34" stroke="url(#g)" strokeWidth="2" strokeLinecap="round"/>
+                <line x1="10"  y1="24" x2="28" y2="-28" stroke="url(#g)" strokeWidth="2" strokeLinecap="round"/>
+                <line x1="20"  y1="18" x2="36" y2="-18" stroke="url(#g)" strokeWidth="2" strokeLinecap="round"/>
+
+                {/* Dots at TOP of lines (matching UTL — dots at the tips) */}
+                <circle cx="-8"  cy="-32" r="3.5" fill="#7ED321"/>
+                <circle cx="4"   cy="-35" r="3.5" fill="#55D430"/>
+                <circle cx="16"  cy="-34" r="3.5" fill="#00C9A7"/>
+                <circle cx="28"  cy="-28" r="3.5" fill="#00BFFF"/>
+                <circle cx="36"  cy="-18" r="4"   fill="#00BFFF"/>
+
+                {/* Dots at BOTTOM of lines */}
+                <circle cx="-20" cy="18"  r="2.5" fill="#7ED321"/>
+                <circle cx="-10" cy="24"  r="2.5" fill="#55D430"/>
+                <circle cx="0"   cy="26"  r="2.5" fill="#00C9A7"/>
+                <circle cx="10"  cy="24"  r="2.5" fill="#00BFFF"/>
+                <circle cx="20"  cy="18"  r="2.5" fill="#00BFFF"/>
               </g>
-              <text x="92" y="46" fontFamily="'Segoe UI',Arial,sans-serif" fontWeight="800" fontSize="42" fill="#FFFFFF" letterSpacing="-1">
+
+              {/* BuildFleet text */}
+              <text x="98" y="46" fontFamily="'Segoe UI',Arial,sans-serif" fontWeight="800" fontSize="42" fill="#FFFFFF" letterSpacing="-1">
                 Build<tspan fill="url(#g)">Fleet</tspan>
               </text>
-              <text x="94" y="68" fontFamily="'Segoe UI',Arial,sans-serif" fontWeight="600" fontSize="13" fill="#8A9AC0" letterSpacing="2">
+              <text x="100" y="68" fontFamily="'Segoe UI',Arial,sans-serif" fontWeight="600" fontSize="13" fill="#8A9AC0" letterSpacing="2">
                 ENTERPRISE FLEET MANAGEMENT
               </text>
-              <line x1="94" y1="78" x2="410" y2="78" stroke="#1E2235" strokeWidth="0.8"/>
-              <text x="94" y="92" fontFamily="'Segoe UI',Arial,sans-serif" fontSize="10" fill="#3A4060">
+              <line x1="100" y1="78" x2="415" y2="78" stroke="#1E2235" strokeWidth="0.8"/>
+              <text x="100" y="92" fontFamily="'Segoe UI',Arial,sans-serif" fontSize="10" fill="#3A4060">
                 A product of <tspan fontWeight="700" fill="url(#g)">Ultimate Tech Lab</tspan>
               </text>
             </svg>

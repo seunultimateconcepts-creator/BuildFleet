@@ -1,4 +1,7 @@
+/* eslint-disable react-hooks/set-state-in-effect */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 "use client";
+export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -26,7 +29,6 @@ export default function Header() {
     const saved = localStorage.getItem("buildfleet-theme");
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const isDark = saved ? saved === "dark" : prefersDark;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDarkMode(isDark);
     document.documentElement.classList.toggle("dark", isDark);
   }, []);
@@ -41,8 +43,7 @@ export default function Header() {
 
   async function handleLogout() {
     await dbu.auth.signOut();
-    router.push("/login");
-    router.refresh();
+    window.location.href = "/login"; // hard redirect — clears all state cleanly
   }
 
   return (

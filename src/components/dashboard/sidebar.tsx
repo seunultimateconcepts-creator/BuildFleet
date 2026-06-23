@@ -1,4 +1,5 @@
 "use client";
+export const dynamic = 'force-dynamic';
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -105,32 +106,36 @@ function BuildFleetLogo() {
       aria-label="BuildFleet — Enterprise Fleet Management"
     >
       <defs>
-        <linearGradient id="utlg" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id="utlg" x1="0%" y1="100%" x2="100%" y2="0%">
           <stop offset="0%" stopColor="#7ED321" />
-          <stop offset="40%" stopColor="#00C9A7" />
-          <stop offset="100%" stopColor="#1A6FC4" />
+          <stop offset="50%" stopColor="#00C9A7" />
+          <stop offset="100%" stopColor="#00BFFF" />
         </linearGradient>
       </defs>
 
-      {/* Circuit globe — positioned top-left */}
+      {/* Circuit globe — U shape opening upward like UTL logo */}
       <g transform="translate(36,46)">
-        <path d="M-30,0 A30,30 0 1,1 17,27" fill="none" stroke="url(#utlg)" strokeWidth="2.2" strokeLinecap="round"/>
-        <line x1="-15" y1="23" x2="12" y2="-26" stroke="url(#utlg)" strokeWidth="1.8" strokeLinecap="round"/>
-        <line x1="-6" y1="27" x2="21" y2="-20" stroke="url(#utlg)" strokeWidth="1.8" strokeLinecap="round"/>
-        <line x1="2" y1="28" x2="28" y2="-15" stroke="url(#utlg)" strokeWidth="1.8" strokeLinecap="round"/>
-        <line x1="10" y1="27" x2="32" y2="-6" stroke="url(#utlg)" strokeWidth="1.8" strokeLinecap="round"/>
-        <circle cx="-15" cy="23" r="3" fill="#7ED321"/>
-        <circle cx="12" cy="-26" r="3" fill="#7ED321"/>
-        <circle cx="-6" cy="27" r="3" fill="#00C9A7"/>
-        <circle cx="21" cy="-20" r="3" fill="#00C9A7"/>
-        <circle cx="2" cy="28" r="3" fill="#00B8D4"/>
-        <circle cx="28" cy="-15" r="3" fill="#00B8D4"/>
-        <circle cx="10" cy="27" r="3" fill="#1A6FC4"/>
-        <circle cx="32" cy="-6" r="3" fill="#1A6FC4"/>
-        <circle cx="-3" cy="-2" r="2.2" fill="#7ED321"/>
-        <circle cx="7" cy="4" r="2.2" fill="#00C9A7"/>
-        <circle cx="15" cy="8" r="2.2" fill="#00B8D4"/>
-        <circle cx="22" cy="13" r="2.2" fill="#1A6FC4"/>
+        {/* Arc opens at bottom — like a U bowl facing up */}
+        <path d="M-28,20 A30,30 0 1,1 28,20"
+          fill="none" stroke="url(#utlg)" strokeWidth="2.2" strokeLinecap="round"/>
+
+        {/* Diagonal lines — bottom-left to top-right */}
+        <line x1="-18" y1="16" x2="-6"  y2="-28" stroke="url(#utlg)" strokeWidth="1.8" strokeLinecap="round"/>
+        <line x1="-8"  y1="22" x2="5"   y2="-30" stroke="url(#utlg)" strokeWidth="1.8" strokeLinecap="round"/>
+        <line x1="2"   y1="24" x2="16"  y2="-29" stroke="url(#utlg)" strokeWidth="1.8" strokeLinecap="round"/>
+        <line x1="12"  y1="22" x2="26"  y2="-23" stroke="url(#utlg)" strokeWidth="1.8" strokeLinecap="round"/>
+
+        {/* Dots at TOP of lines */}
+        <circle cx="-6"  cy="-28" r="3"   fill="#7ED321"/>
+        <circle cx="5"   cy="-30" r="3"   fill="#55D430"/>
+        <circle cx="16"  cy="-29" r="3"   fill="#00C9A7"/>
+        <circle cx="26"  cy="-23" r="3.5" fill="#00BFFF"/>
+
+        {/* Dots at BOTTOM of lines */}
+        <circle cx="-18" cy="16"  r="2.2" fill="#7ED321"/>
+        <circle cx="-8"  cy="22"  r="2.2" fill="#55D430"/>
+        <circle cx="2"   cy="24"  r="2.2" fill="#00C9A7"/>
+        <circle cx="12"  cy="22"  r="2.2" fill="#00BFFF"/>
       </g>
 
       {/* BuildFleet wordmark */}
