@@ -1,5 +1,4 @@
 "use client";
-export const dynamic = 'force-dynamic';
 
 import { ReactNode, useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -68,9 +67,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#F7F8FC]">
+    <div className="flex h-screen bg-[#F7F8FC]">
       <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      {/* ml-64 compensates for the fixed sidebar width */}
+      <div className="ml-64 flex-1 flex flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-y-auto p-6">
           {children}
