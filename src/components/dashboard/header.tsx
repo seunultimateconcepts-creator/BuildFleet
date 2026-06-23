@@ -1,7 +1,5 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 "use client";
-export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -24,20 +22,34 @@ export default function Header() {
     getUser();
   }, []);
 
-  // ── Load saved theme on mount ──
+  // ── Load saved theme on mount — apply IMMEDIATELY ──
   useEffect(() => {
     const saved = localStorage.getItem("buildfleet-theme");
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const isDark = saved ? saved === "dark" : prefersDark;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDarkMode(isDark);
-    document.documentElement.classList.toggle("dark", isDark);
+    // Apply to both html AND body to ensure all dark: variants work
+    if (isDark) {
+      document.documentElement.classList.add("dark");
+      document.body.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+      document.body.classList.remove("dark");
+    }
   }, []);
 
   // ── Toggle theme ──
   function toggleTheme() {
     const next = !darkMode;
     setDarkMode(next);
-    document.documentElement.classList.toggle("dark", next);
+    if (next) {
+      document.documentElement.classList.add("dark");
+      document.body.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+      document.body.classList.remove("dark");
+    }
     localStorage.setItem("buildfleet-theme", next ? "dark" : "light");
   }
 

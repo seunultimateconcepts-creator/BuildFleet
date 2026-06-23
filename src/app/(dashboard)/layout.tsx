@@ -45,8 +45,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     checkAuth();
 
     // Listen for sign out events
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: { subscription } } = dbu.auth.onAuthStateChange((event: string, session: any) => {
+    const { data: { subscription } } = dbu.auth.onAuthStateChange((event: string, session: unknown) => {
       if (event === "SIGNED_OUT" || !session) {
         router.replace("/login");
       }
@@ -57,7 +56,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   if (checking) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[#F7F8FC]">
+      <div className="flex items-center justify-center min-h-screen bg-[#F7F8FC] dark:bg-[#0A0C14]">
         <div className="text-center">
           <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           <p className="text-slate-400 text-sm">Loading BuildFleet...</p>
@@ -67,12 +66,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen bg-[#F7F8FC]">
+    <div className="flex h-screen bg-[#F7F8FC] dark:bg-[#0A0C14]">
       <Sidebar />
       {/* ml-64 compensates for the fixed sidebar width */}
       <div className="ml-64 flex-1 flex flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-6 bg-[#F7F8FC] dark:bg-[#0A0C14]">
           {children}
         </main>
       </div>

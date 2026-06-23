@@ -1,22 +1,32 @@
+import type { Metadata } from "next";
 import "./globals.css";
-import { Geist } from "next/font/google";
 
-const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
-
-export const metadata = {
+export const metadata: Metadata = {
   title: "BuildFleet — Enterprise Fleet Management",
-  description: "Enterprise Fleet Management Platform by Ultimate Tech Lab",
-  icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
-    apple: "/favicon.svg",
-  },
+  description: "Enterprise Fleet Management System by Ultimate Tech Lab",
+  icons: { icon: "/favicon.svg" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`font-sans ${geist.variable}`}>
-      <body>{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Apply dark class BEFORE page renders — prevents white flash */}
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function() {
+            try {
+              var theme = localStorage.getItem('buildfleet-theme');
+              var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+              if (theme === 'dark' || (!theme && prefersDark)) {
+                document.documentElement.classList.add('dark');
+              }
+            } catch(e) {}
+          })();
+        `}} />
+      </head>
+      <body className="antialiased">
+        {children}
+      </body>
     </html>
   );
 }
