@@ -27,7 +27,7 @@ function KpiCard({ title, value, sub, color = "white", link }: {
     amber: "bg-amber-500 text-white",
     green: "bg-emerald-500 text-white",
     blue:  "bg-blue-500 text-white",
-    white: "bg-white border border-slate-200 text-slate-800",
+    white: "bg-white dark:bg-[#1A1D2E] border border-slate-200 dark:border-[#2A2D3E] text-slate-800 dark:text-white",
   };
   const card = (
     <div className={`${colors[color]} rounded-2xl p-5 ${link ? "hover:opacity-90 transition-opacity cursor-pointer" : ""}`}>
@@ -72,7 +72,7 @@ function timeAgo(dateStr: string) {
 function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border border-slate-200 rounded-xl shadow-lg px-4 py-3 text-xs">
+    <div className="bg-white dark:bg-[#1A1D2E] border border-slate-200 dark:border-[#2A2D3E] rounded-xl shadow-lg px-4 py-3 text-xs">
       <p className="font-bold text-slate-700 dark:text-slate-200 mb-2">{label}</p>
       {payload.map((p: any) => (
         <div key={p.dataKey} className="flex items-center gap-2 mb-1">
@@ -179,9 +179,9 @@ function UtilizationChart({ range, onRangeChange }: {
   ];
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+    <div className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] overflow-hidden">
       {/* Chart header */}
-      <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+      <div className="px-6 py-5 border-b border-slate-100 dark:border-[#1E2235] flex items-center justify-between">
         <div>
           <h2 className="font-bold text-slate-800 dark:text-white">Plant Utilization Overview</h2>
           <p className="text-slate-400 text-xs mt-0.5">
@@ -189,15 +189,15 @@ function UtilizationChart({ range, onRangeChange }: {
           </p>
         </div>
         {/* Range selector */}
-        <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
+        <div className="flex gap-1 bg-slate-100 dark:bg-[#1A1D2E] rounded-xl p-1">
           {RANGES.map(r => (
             <button
               key={r.value}
               onClick={() => onRangeChange(r.value)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 range === r.value
-                  ? "bg-white text-slate-800 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
+                  ? "bg-white dark:bg-[#0F1117] text-slate-800 dark:text-white shadow-sm"
+                  : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
               }`}
             >
               {r.label}
@@ -457,7 +457,7 @@ export default function DashboardPage() {
             {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
           </p>
         </div>
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3 text-center">
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl px-5 py-3 text-center">
           <p className="text-3xl font-bold text-amber-600">{loading ? "..." : `${utilization}%`}</p>
           <p className="text-xs text-amber-700 font-semibold mt-0.5">Fleet Utilization</p>
         </div>
@@ -484,7 +484,7 @@ export default function DashboardPage() {
       {!loading && (pendingTransfers > 0 || pendingMaint > 0 || inProgressMaint > 0) && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {pendingTransfers > 0 && (
-            <Link href="/transfer" className="bg-amber-50 border border-amber-200 rounded-2xl p-4 hover:bg-amber-100 transition-colors">
+            <Link href="/transfer" className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl p-4 hover:bg-amber-100 transition-colors">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">🔄</span>
                 <div>
@@ -532,8 +532,8 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Recent Activity */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 overflow-hidden">
-          <div className="px-6 py-5 border-b border-slate-100">
+        <div className="lg:col-span-2 bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] overflow-hidden">
+          <div className="px-6 py-5 border-b border-slate-100 dark:border-[#1E2235]">
             <h2 className="font-bold text-slate-800 dark:text-white">Recent Activity</h2>
             <p className="text-slate-400 text-xs mt-0.5">Latest transfers and maintenance events</p>
           </div>
@@ -553,9 +553,9 @@ export default function DashboardPage() {
         {/* Right column */}
         <div className="space-y-5">
           {/* By Category */}
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100">
-              <h3 className="font-bold text-slate-800 text-sm">Fleet by Category</h3>
+          <div className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-[#1E2235]">
+              <h3 className="font-bold text-slate-800 dark:text-white text-sm">Fleet by Category</h3>
             </div>
             <div className="p-5 space-y-3">
               {loading ? (
@@ -565,10 +565,10 @@ export default function DashboardPage() {
               ) : topCategories.map(([cat, count]) => (
                 <div key={cat}>
                   <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="text-slate-600 truncate max-w-35">{cat}</span>
+                    <span className="text-slate-600 dark:text-slate-300 truncate max-w-35">{cat}</span>
                     <span className="font-bold text-slate-800 dark:text-white">{count}</span>
                   </div>
-                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-amber-400 rounded-full transition-all"
                       style={{ width: total > 0 ? `${Math.round((count / total) * 100)}%` : "0%" }}
@@ -580,9 +580,9 @@ export default function DashboardPage() {
           </div>
 
           {/* By Region */}
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100">
-              <h3 className="font-bold text-slate-800 text-sm">Fleet by Region</h3>
+          <div className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-[#1E2235]">
+              <h3 className="font-bold text-slate-800 dark:text-white text-sm">Fleet by Region</h3>
             </div>
             <div className="p-5 space-y-2">
               {loading ? (
@@ -591,9 +591,9 @@ export default function DashboardPage() {
                 <p className="text-slate-400 text-xs text-center py-4">No equipment yet</p>
               ) : topRegions.map(([region, count]) => (
                 <div key={region} className="flex items-center justify-between">
-                  <span className="text-xs text-slate-600">{region}</span>
+                  <span className="text-xs text-slate-600 dark:text-slate-300">{region}</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-800">{count}</span>
+                    <span className="text-xs font-bold text-slate-800 dark:text-white">{count}</span>
                     <span className="text-xs text-slate-400">
                       ({total > 0 ? Math.round((count / total) * 100) : 0}%)
                     </span>
