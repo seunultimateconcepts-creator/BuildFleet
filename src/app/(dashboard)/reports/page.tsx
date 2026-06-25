@@ -71,49 +71,225 @@ function RentalListTab() {
   const grandTotal = logs.reduce((s: number, l: any) =>
     s + (Number(l.hire_rate) || 0), 0);
 
-  function exportCSV() {
-    const rows: string[][] = [];
-    rows.push(["HARTLAND NIGERIA LIMITED"]);
-    rows.push(["PLANT DEPARTMENT"]);
-    rows.push([`EQUIPMENT RENTAL LIST — ${filterMonth.toUpperCase()} ${filterYear}`]);
-    if (filterSite) rows.push([`SITE: ${filterSite}`]);
-    rows.push([]);
-    siteGroups.forEach((group: any) => {
-      rows.push([`SITE: ${group.site}`, `COST CODE: ${group.cost_code || "—"}`]);
-      rows.push(["S/NO","FLEET NO","DESCRIPTION","DAYS","HIRE RATE (₦)","TOTAL (₦)"]);
+  function exportPDF() {
+    // Build site groups for PDF
+    const siteGroupsForPdf = siteGroups.map((group: any) => {
       const byFleet: Record<string, any> = {};
       group.items.forEach((item: any) => {
         if (!byFleet[item.fleet_no]) byFleet[item.fleet_no] = {
           fleet_no: item.fleet_no,
           equipment_name: item.equipment_name || "",
           hire_rate: Number(item.hire_rate) || 0,
-          days: 0,
-          total: 0,
+          days: 0, total: 0,
         };
         byFleet[item.fleet_no].days  += 1;
         byFleet[item.fleet_no].total += Number(item.hire_rate) || 0;
       });
-      Object.values(byFleet).forEach((item: any, idx: number) => {
-        rows.push([
-          String(idx+1), item.fleet_no, item.equipment_name,
-          String(item.days),
-          String(item.hire_rate),
-          String(item.total),
-        ]);
-      });
-      const siteTotal = group.items.reduce((s:number, i:any) =>
-        s + (Number(i.hire_rate)||0), 0);
-      rows.push(["","","TOTAL","","",String(siteTotal)]);
-      rows.push([]);
+      const fleetList = Object.values(byFleet) as any[];
+      const siteTotal = fleetList.reduce((s:number, i:any) => s + i.total, 0);
+      return { ...group, fleetList, siteTotal };
     });
-    rows.push(["GRAND TOTAL","","","","",String(grandTotal)]);
-    const csv = rows.map(r =>
-      r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")
-    ).join("\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([csv], { type:"text/csv" }));
-    a.download = `Rental_List_${filterMonth}_${filterYear}${filterSite ? `_${filterSite}` : ""}.csv`;
-    a.click();
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Rental List — ${filterMonth} ${filterYear}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; font-size: 10px; color: #111; background: #fff; }
+
+    .page { padding: 20mm 15mm; }
+
+    /* Header */
+    .header { text-align: center; margin-bottom: 16px; border-bottom: 2px solid #111; padding-bottom: 10px; }
+    .header .company { font-size: 16px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
+    .header .dept { font-size: 11px; font-weight: 700; margin-top: 2px; color: #333; }
+    .header .title { font-size: 13px; font-weight: 800; margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .header .subtitle { font-size: 9px; color: #555; margin-top: 3px; }
+
+    /* Meta row */
+    .meta-row { display: flex; justify-content: space-between; margin-bottom: 14px;
+      background: #f5f5f5; padding: 6px 10px; border-radius: 4px; border: 1px solid #ddd; }
+    .meta-row span { font-size: 9px; color: #444; }
+    .meta-row strong { font-weight: 700; color: #111; }
+
+    /* Site block */
+    .site-block { margin-bottom: 16px; page-break-inside: avoid; }
+    .site-header { background: #1a1a2e; color: #fff; padding: 7px 12px;
+      display: flex; justify-content: space-between; align-items: center;
+      border-radius: 4px 4px 0 0; }
+    .site-header .site-name { font-weight: 700; font-size: 10px; }
+    .site-header .site-code { font-size: 9px; color: #ccc; margin-top: 1px; }
+    .site-header .site-total { font-size: 13px; font-weight: 800; color: #f5a623; }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; }
+    thead tr { background: #f0f0f0; }
+    th { padding: 5px 8px; text-align: left; font-size: 8.5px;
+      font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
+      border: 1px solid #ddd; color: #444; }
+    td { padding: 5px 8px; border: 1px solid #e0e0e0; vertical-align: middle; }
+    tr:nth-child(even) { background: #fafafa; }
+    tr:hover { background: #fff8ec; }
+
+    .fleet-no { font-weight: 700; color: #c47a00; font-family: monospace; font-size: 9.5px; }
+    .desc { color: #333; max-width: 200px; }
+    .num { text-align: center; font-weight: 600; }
+    .money { text-align: right; font-family: monospace; }
+    .total-money { text-align: right; font-family: monospace; font-weight: 700; color: #1a7a40; }
+
+    /* Subtotal row */
+    .subtotal-row td { background: #f0f7ff; font-weight: 700; border-top: 2px solid #ccc; }
+    .subtotal-label { text-align: right; color: #333; font-size: 9px; }
+    .subtotal-amount { text-align: right; color: #1a5c9e; font-family: monospace; font-size: 10px; }
+
+    /* SWM row — zero rate */
+    .zero-rate { color: #aaa; }
+
+    /* Grand total */
+    .grand-total { margin-top: 16px; background: #1a1a2e; color: #fff;
+      padding: 12px 16px; display: flex; justify-content: space-between;
+      align-items: center; border-radius: 4px; }
+    .grand-total .label { font-size: 11px; font-weight: 700; }
+    .grand-total .period { font-size: 9px; color: #ccc; margin-top: 2px; }
+    .grand-total .amount { font-size: 18px; font-weight: 900; color: #f5a623; }
+
+    /* Summary box */
+    .summary { display: flex; gap: 10px; margin-bottom: 14px; }
+    .summary-card { flex: 1; border: 1px solid #ddd; border-radius: 4px; padding: 8px 10px; text-align: center; }
+    .summary-card .val { font-size: 18px; font-weight: 800; }
+    .summary-card .lbl { font-size: 8px; color: #666; margin-top: 2px; text-transform: uppercase; }
+    .summary-card.dark { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
+    .summary-card.amber { background: #f5a623; color: #fff; border-color: #f5a623; }
+    .summary-card.green { background: #1a7a40; color: #fff; border-color: #1a7a40; }
+
+    /* Footer */
+    .footer { margin-top: 20px; border-top: 1px solid #ddd; padding-top: 8px;
+      display: flex; justify-content: space-between; }
+    .sig-block { text-align: center; flex: 1; }
+    .sig-line { border-top: 1px solid #333; margin: 20px auto 4px; width: 80%; }
+    .sig-label { font-size: 8px; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .page { padding: 10mm 12mm; }
+      .no-break { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="company">Hartland Nigeria Limited</div>
+    <div class="dept">Plant Department</div>
+    <div class="title">Equipment Rental List — ${filterMonth} ${filterYear}</div>
+    ${filterSite ? `<div class="subtitle">Site: ${filterSite}</div>` : `<div class="subtitle">All Project Sites</div>`}
+  </div>
+
+  <!-- Meta -->
+  <div class="meta-row">
+    <span>Generated: <strong>${new Date().toLocaleDateString("en-GB", { day:"2-digit", month:"long", year:"numeric" })}</strong></span>
+    <span>Period: <strong>${filterMonth} ${filterYear}</strong></span>
+    <span>Sites: <strong>${siteGroupsForPdf.length}</strong></span>
+    <span>Total Chargeable Days: <strong>${logs.length}</strong></span>
+    <span>Grand Total: <strong>NGN ${grandTotal.toLocaleString("en-NG")}</strong></span>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="summary">
+    <div class="summary-card dark">
+      <div class="val">${siteGroupsForPdf.length}</div>
+      <div class="lbl">Sites</div>
+    </div>
+    <div class="summary-card amber">
+      <div class="val">${logs.length}</div>
+      <div class="lbl">Chargeable Days</div>
+    </div>
+    <div class="summary-card green">
+      <div class="val">NGN ${grandTotal.toLocaleString("en-NG")}</div>
+      <div class="lbl">Grand Total</div>
+    </div>
+  </div>
+
+  <!-- Site blocks -->
+  ${siteGroupsForPdf.map((group: any, gi: number) => `
+    <div class="site-block no-break">
+      <div class="site-header">
+        <div>
+          <div class="site-name">${group.site}</div>
+          <div class="site-code">Cost Code: ${group.cost_code || "—"}</div>
+        </div>
+        <div class="site-total">NGN ${group.siteTotal.toLocaleString("en-NG")}</div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:30px">S/NO</th>
+            <th style="width:70px">Fleet No.</th>
+            <th>Description</th>
+            <th style="width:40px;text-align:center">Days</th>
+            <th style="width:90px;text-align:right">Hire Rate (NGN)</th>
+            <th style="width:100px;text-align:right">Total (NGN)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${group.fleetList.map((item: any, idx: number) => `
+            <tr class="${item.hire_rate === 0 ? "zero-rate" : ""}">
+              <td class="num">${idx + 1}</td>
+              <td class="fleet-no">${item.fleet_no}</td>
+              <td class="desc">${item.equipment_name || "—"}</td>
+              <td class="num">${item.days}</td>
+              <td class="money">${item.hire_rate > 0 ? item.hire_rate.toLocaleString("en-NG") : "—"}</td>
+              <td class="total-money">${item.total > 0 ? item.total.toLocaleString("en-NG") : "—"}</td>
+            </tr>
+          `).join("")}
+          <tr class="subtotal-row">
+            <td colspan="5" class="subtotal-label">Site Total:</td>
+            <td class="subtotal-amount">NGN ${group.siteTotal.toLocaleString("en-NG")}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `).join("")}
+
+  <!-- Grand Total -->
+  <div class="grand-total">
+    <div>
+      <div class="label">GRAND TOTAL</div>
+      <div class="period">${filterMonth.toUpperCase()} ${filterYear}${filterSite ? ` · ${filterSite}` : " · All Sites"}</div>
+    </div>
+    <div class="amount">NGN ${grandTotal.toLocaleString("en-NG")}</div>
+  </div>
+
+  <!-- Signature blocks -->
+  <div class="footer">
+    <div class="sig-block">
+      <div class="sig-line"></div>
+      <div class="sig-label">Plant Admin Officer</div>
+    </div>
+    <div class="sig-block">
+      <div class="sig-line"></div>
+      <div class="sig-label">Plant Engineer</div>
+    </div>
+    <div class="sig-block">
+      <div class="sig-line"></div>
+      <div class="sig-label">Plant Manager / Director</div>
+    </div>
+  </div>
+
+</div>
+<script>window.onload = () => window.print();</script>
+</body>
+</html>`;
+
+    const win = window.open("", "_blank");
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+    }
   }
 
   return (
@@ -152,9 +328,9 @@ function RentalListTab() {
             {loading ? "Generating..." : "📊 Generate"}
           </button>
           {generated && logs.length > 0 && (
-            <button onClick={exportCSV}
-              className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 ml-auto">
-              ↓ Export CSV
+            <button onClick={exportPDF}
+              className="px-6 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 ml-auto flex items-center gap-2">
+              📄 Export PDF
             </button>
           )}
         </div>
