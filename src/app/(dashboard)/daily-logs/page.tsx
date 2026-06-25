@@ -352,7 +352,7 @@ export default function DailyLogsPage() {
       const isAdmin = roles.some((r:string) =>
         ["plant_manager","plant_director","plant_admin","plant_engineer","super_admin"].includes(r));
 
-      const { data: sitesData } = await dbu.from("sites").select("code,name,cost_code").order("name");
+      const { data: sitesData } = await dbu.from("sites").select("code,name,cost_code,site_type").order("name");
       setSites(sitesData || []);
 
       if (isAdmin) {
@@ -459,10 +459,26 @@ export default function DailyLogsPage() {
 
     const month = MONTHS[new Date(logDate).getMonth()];
     const year  = new Date(logDate).getFullYear();
-    const siteRec  = sites.find(s => s.name === userSite);
+    const siteRec  = sites.find((s: any) => s.name === userSite);
     const costCode = siteRec?.cost_code || siteRec?.code || "";
 
+    // Sites where equipment is NEVER chargeable regardless of status
+    const NON_CHARGEABLE_SITE_TYPES = [
+      "Central Workshop", "Regional Workshop", "Field Workshop",
+      "Storage Yard", "Office"
+    ];
+    const siteIsNonChargeable = NON_CHARGEABLE_SITE_TYPES.includes(siteRec?.site_type || "");
+
     for (const row of rows) {
+      // Final chargeable logic:
+      // 1. Site must be a Project site (not workshop/storage/office)
+      // 2. Equipment must be Working (A) with working_hours > 0
+      // 3. Equipment must not be in breakdown (N)
+      const finalChargeable = !siteIsNonChargeable &&
+        row.status === "A" &&
+        row.working_hours > 0 &&
+        row.is_chargeable;
+
       const payload = {
         site:             userSite,
         cost_code:        costCode,
@@ -474,14 +490,11 @@ export default function DailyLogsPage() {
         fleet_no:         row.fleet_no,
         equipment_name:   row.equipment_name,
         hire_rate:        row.hire_rate,
-        // Save storage hours as idle_hours for DB compatibility
         idle_hours:       row.storage_hours,
         working_hours:    row.working_hours,
         breakdown_hours:  row.breakdown_hours,
-        // S/A/N availability status
         availability_status: row.status === "A" ? "A" : row.status === "N" ? "N" : "S",
-        // CHARGE LOGIC: Working = 1 (chargeable), Storage = 0, Breakdown = 0
-        is_chargeable:    row.is_chargeable,
+        is_chargeable:    finalChargeable,
         fuel_quantity:    row.fuel_quantity,
         fuel_type:        row.fuel_type,
         engine_oil:       row.engine_oil,
@@ -608,7 +621,7 @@ export default function DailyLogsPage() {
               <div>
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">Cost Code</label>
                 <div className="border border-slate-200 rounded-xl px-4 py-2.5 text-sm bg-slate-50 font-mono text-slate-700">
-                  {sites.find(s => s.name === userSite)?.cost_code || "—"}
+                  {sites.find((s:any) => s.name === userSite)?.cost_code || "—"}
                 </div>
               </div>
               <div>
@@ -618,6 +631,24 @@ export default function DailyLogsPage() {
                 </div>
               </div>
             </div>
+
+            {/* Non-chargeable site warning */}
+            {userSite && (() => {
+              const siteRec = (sites as any[]).find((s:any) => s.name === userSite);
+              const nonChargeableTypes = ["Central Workshop","Regional Workshop","Field Workshop","Storage Yard","Office"];
+              if (siteRec && nonChargeableTypes.includes(siteRec.site_type)) {
+                return (
+                  <div className="mt-3 bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 flex items-center gap-3">
+                    <span className="text-lg">ℹ️</span>
+                    <p className="text-xs text-slate-600">
+                      <strong>{siteRec.site_type}</strong> — Equipment at this site is <strong>not chargeable</strong> to any project.
+                      Logs will be recorded for tracking only.
+                    </p>
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </div>
 
           {userSite && (

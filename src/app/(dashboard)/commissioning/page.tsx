@@ -1,9 +1,10 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 export const dynamic = 'force-dynamic';
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useCommissioning } from "@/hooks/use-commissioning";
 import { useSites } from "@/hooks/use-sites";
 import { useAuth } from "@/hooks/use-auth";
@@ -24,6 +25,22 @@ const STATUS_COLORS: Record<string, string> = {
   "Poor":      "bg-red-100     text-red-600",
   "Scrapped":  "bg-slate-100   text-slate-500",
 };
+
+// Equipment categories with their hire rates
+// These match the Settings page CATEGORY_RATES
+const CATEGORY_HIRE_RATES: Record<string, number> = {
+  "Light Vehicle":                       7000,
+  "Heavy Transport":                     25000,
+  "Earth Moving Equipment":              15000,
+  "Asphalt & Road Maintenance Equipment":55000,
+  "Concrete Equipment":                  35000,
+  "Crane & Lifting Equipment":           95000,
+  "Generator & Power Equipment":         12000,
+  "Pneumatic Equipment":                 6500,
+  "Workshop Equipment":                  0,
+};
+
+const EQUIPMENT_CATEGORIES = Object.keys(CATEGORY_HIRE_RATES).sort();
 
 const iCls = "w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white placeholder:text-slate-300";
 
@@ -74,62 +91,41 @@ const BLANK: any = {
   clearing_customs: 0, inland_transport: 0, other_charges: 0, landed_cost: 0,
   opening_hour_meter: 0, opening_kilometer: 0,
   plant_engineer: "", plant_manager: "", commissioned_by: "",
+  hire_rate: 0,
 };
 
 // ─────────────────────────────────────────────────────────────
-// INLINE DATE EDIT MODAL — fix commissioning date on any record
+// INLINE DATE EDIT MODAL
 // ─────────────────────────────────────────────────────────────
-function EditDateModal({
-  record,
-  onClose,
-  onSaved,
-}: {
-  record: any;
-  onClose: () => void;
-  onSaved: () => void;
+function EditDateModal({ record, onClose, onSaved }: {
+  record: any; onClose: () => void; onSaved: () => void;
 }) {
-  const [date, setDate]     = useState<string>(record.date_commissioned || "");
+  const [date,   setDate]   = useState<string>(record.date_commissioned || "");
   const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState<string | null>(null);
+  const [error,  setError]  = useState<string | null>(null);
 
   async function handleSave() {
     if (!date) { setError("Please select a commissioning date."); return; }
     setSaving(true); setError(null);
-    const { error: err } = await dbu
-      .from("commissioning")
-      .update({ date_commissioned: date })
-      .eq("id", record.id);
+    const { error: err } = await dbu.from("commissioning")
+      .update({ date_commissioned: date }).eq("id", record.id);
     setSaving(false);
     if (err) { setError(err.message); return; }
-    onSaved();
-    onClose();
+    onSaved(); onClose();
   }
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-7">
-        {/* Header */}
         <div className="flex items-start justify-between mb-5">
           <div>
-            <p className="text-[11px] font-bold text-amber-500 uppercase tracking-widest mb-0.5">
-              Correct Commissioning Date
-            </p>
+            <p className="text-[11px] font-bold text-amber-500 uppercase tracking-widest mb-0.5">Correct Commissioning Date</p>
             <h3 className="text-lg font-bold text-slate-800">{record.fleet_number}</h3>
             <p className="text-sm text-slate-500 mt-0.5">{record.description}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
         </div>
-
-        {/* Current vs New */}
         <div className="bg-slate-50 rounded-xl p-4 mb-5 space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-slate-500">Record uploaded</span>
-            <span className="font-medium text-slate-700">
-              {record.created_at
-                ? new Date(record.created_at).toLocaleDateString("en-GB")
-                : "—"}
-            </span>
-          </div>
           <div className="flex justify-between">
             <span className="text-slate-500">Current comm. date</span>
             <span className={`font-medium ${record.date_commissioned ? "text-slate-700" : "text-red-400"}`}>
@@ -139,28 +135,15 @@ function EditDateModal({
             </span>
           </div>
         </div>
-
-        {/* Date picker */}
         <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
           Actual Commissioning Date <span className="text-red-400">*</span>
         </label>
-        <input
-          type="date"
-          className={iCls}
-          value={date}
+        <input type="date" className={iCls} value={date}
           onChange={e => setDate(e.target.value)}
-          max={new Date().toISOString().split("T")[0]}
-        />
-        <p className="text-xs text-slate-400 mt-1.5">
-          Enter the date this equipment was physically commissioned on site.
-        </p>
-
+          max={new Date().toISOString().split("T")[0]} />
         {error && (
-          <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">
-            ⚠️ {error}
-          </div>
+          <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">⚠️ {error}</div>
         )}
-
         <div className="flex gap-3 mt-6">
           <button onClick={onClose}
             className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50">
@@ -184,12 +167,30 @@ function NewCommissionModal({ open, onClose }: { open: boolean; onClose: () => v
   const { sites }               = useSites();
   const { profile }             = useAuth();
 
-  const [step,   setStep]   = useState<1|2|3>(1);
-  const [saving, setSaving] = useState(false);
-  const [error,  setError]  = useState<string|null>(null);
-  const [form,   setForm]   = useState({ ...BLANK });
+  const [step,      setStep]      = useState<1|2|3>(1);
+  const [saving,    setSaving]    = useState(false);
+  const [error,     setError]     = useState<string|null>(null);
+  const [form,      setForm]      = useState({ ...BLANK });
+  const [hireRate,  setHireRate]  = useState<number>(0);
+  const [rateLabel, setRateLabel] = useState<string>("");
 
   function set(k: string, v: any) { setForm((p: any) => ({ ...p, [k]: v })); }
+
+  // Auto-assign hire rate when category changes
+  function handleCategoryChange(category: string) {
+    set("category", category);
+    const rate = CATEGORY_HIRE_RATES[category] || 0;
+    setHireRate(rate);
+    set("hire_rate", rate);
+    if (rate > 0) {
+      setRateLabel(`₦${rate.toLocaleString()}/day — auto-assigned from category`);
+    } else {
+      setRateLabel(category === "Workshop Equipment"
+        ? "₦0 — Workshop equipment is not chargeable"
+        : "₦0 — No rate set for this category yet"
+      );
+    }
+  }
 
   function handleSiteSelect(siteName: string) {
     set("location", siteName);
@@ -215,16 +216,38 @@ function NewCommissionModal({ open, onClose }: { open: boolean; onClose: () => v
       setError("Please fill all required fields (marked *)."); setStep(1); return;
     }
     setSaving(true); setError(null);
+
+    // Auto-fetch hire rate from equipment table category settings if not set
+    let finalHireRate = hireRate;
+    if (!finalHireRate && form.category) {
+      const { data: equipWithRate } = await dbu
+        .from("equipment")
+        .select("hire_rate")
+        .ilike("category", `%${form.category}%`)
+        .gt("hire_rate", 0)
+        .limit(1)
+        .single();
+      if (equipWithRate?.hire_rate) {
+        finalHireRate = equipWithRate.hire_rate;
+      }
+    }
+
     const result = await submitCommissioning({
-      ...form, landed_cost: landedCost,
+      ...form,
+      landed_cost: landedCost,
+      hire_rate: finalHireRate,
       commissioned_by: profile?.id || "",
     });
     setSaving(false);
     if (!result.success) { setError(result.error || "Submission failed."); return; }
-    onClose(); setForm({ ...BLANK }); setStep(1);
+    onClose(); setForm({ ...BLANK }); setStep(1); setHireRate(0); setRateLabel("");
   }
 
-  function reset() { onClose(); setForm({ ...BLANK }); setStep(1); setError(null); }
+  function reset() {
+    onClose(); setForm({ ...BLANK }); setStep(1);
+    setError(null); setHireRate(0); setRateLabel("");
+  }
+
   if (!open) return null;
 
   return (
@@ -308,10 +331,21 @@ function NewCommissionModal({ open, onClose }: { open: boolean; onClose: () => v
                   onChange={e => set("description", e.target.value)}
                   placeholder="e.g. Portable Air Compressor" />
               </F>
+
+              {/* CATEGORY — now a dropdown with auto hire rate */}
               <F label="Category">
-                <input className={iCls} value={form.category}
-                  onChange={e => set("category", e.target.value)}
-                  placeholder="e.g. Pneumatic Equipment" />
+                <select className={iCls} value={form.category}
+                  onChange={e => handleCategoryChange(e.target.value)}>
+                  <option value="">Select category...</option>
+                  {EQUIPMENT_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                </select>
+                {rateLabel && (
+                  <p className={`text-xs mt-1.5 font-medium ${
+                    hireRate > 0 ? "text-emerald-600" : "text-slate-400"
+                  }`}>
+                    {hireRate > 0 ? "✓" : "ℹ️"} {rateLabel}
+                  </p>
+                )}
               </F>
 
               <SecHead letter="C" title="Machine Details" sub="Make, model, chassis, engine" />
@@ -358,17 +392,14 @@ function NewCommissionModal({ open, onClose }: { open: boolean; onClose: () => v
                 <input className={iCls} type="date" value={form.date_received || ""}
                   onChange={e => set("date_received", e.target.value)} />
               </F>
-
-              {/* COMMISSIONING DATE — clearly labelled as the physical on-site date */}
               <F label="Date Commissioned on Site" required>
                 <input className={iCls} type="date" value={form.date_commissioned}
                   onChange={e => set("date_commissioned", e.target.value)}
                   max={new Date().toISOString().split("T")[0]} />
                 <p className="text-xs text-slate-400 mt-1">
-                  The actual date this equipment was commissioned on site — not todays date.
+                  The actual date this equipment was commissioned on site — not today&apos;s date.
                 </p>
               </F>
-
               <F label="Equipment Condition">
                 <select className={iCls} value={form.equipment_condition}
                   onChange={e => set("equipment_condition", e.target.value)}>
@@ -487,6 +518,7 @@ function NewCommissionModal({ open, onClose }: { open: boolean; onClose: () => v
                 <input className={iCls} value={form.plant_manager} onChange={e => set("plant_manager", e.target.value)} />
               </F>
 
+              {/* Summary with hire rate shown */}
               <div className="col-span-2 bg-slate-50 border border-slate-200 rounded-xl p-5">
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Summary</p>
                 <div className="grid grid-cols-3 gap-4 text-sm">
@@ -496,14 +528,13 @@ function NewCommissionModal({ open, onClose }: { open: boolean; onClose: () => v
                     ["Description",  form.description || "—"],
                     ["Make",         form.make || "—"],
                     ["Model",        form.model || "—"],
+                    ["Category",     form.category || "—"],
                     ["Site",         form.location || "—"],
                     ["Region",       form.region || "—"],
                     ["Cost Code",    form.cost_code || "—"],
                     ["Comm. Date",   form.date_commissioned
-                      ? new Date(form.date_commissioned).toLocaleDateString("en-GB")
-                      : "—"],
+                      ? new Date(form.date_commissioned).toLocaleDateString("en-GB") : "—"],
                     ["Meter",        form.meter_device],
-                    ["Condition",    form.condition_at_receipt],
                     ["Landed Cost",  `₦${landedCost.toLocaleString()}`],
                   ].map(([l, v]) => (
                     <div key={l}>
@@ -512,7 +543,18 @@ function NewCommissionModal({ open, onClose }: { open: boolean; onClose: () => v
                     </div>
                   ))}
                 </div>
+                {/* Hire rate highlight */}
+                {hireRate > 0 && (
+                  <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Auto-assigned Hire Rate</p>
+                      <p className="text-xs text-emerald-600 mt-0.5">Based on category: {form.category}</p>
+                    </div>
+                    <p className="text-2xl font-bold text-emerald-700">₦{hireRate.toLocaleString()}/day</p>
+                  </div>
+                )}
               </div>
+
               {error && (
                 <div className="col-span-2 bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
                   ⚠️ {error}
@@ -557,35 +599,34 @@ function NewCommissionModal({ open, onClose }: { open: boolean; onClose: () => v
 // ─────────────────────────────────────────────────────────────
 export default function CommissioningPage() {
   const { commissioningRecords, loading, fetchRecords } = useCommissioning();
-  const { canCommission }                           = useAuth();
-  const [modal, setModal]   = useState<"new"|"upload"|null>(null);
+  const { canCommission }                               = useAuth();
+  const [modal,      setModal]      = useState<"new"|"upload"|null>(null);
   const [editRecord, setEditRecord] = useState<any>(null);
-  const [search, setSearch] = useState("");
+  const [search,     setSearch]     = useState("");
   const [filterCat,  setFilterCat]  = useState("");
   const [filterSite, setFilterSite] = useState("");
 
   function exportRegister() {
     const headers = ["Fleet No.","Description","Category","Make","Model",
-      "Site","Region","Cost Code","Comm. Date","Condition","Supplier","Landed Cost"];
+      "Site","Region","Cost Code","Comm. Date","Condition","Hire Rate","Supplier","Landed Cost"];
     const rows = filtered.map((r: any) => [
       r.fleet_number, r.description, r.category, r.make, r.model,
       r.location, r.region, r.cost_code || "",
-      r.date_commissioned
-        ? new Date(r.date_commissioned).toLocaleDateString("en-GB")
-        : "",
+      r.date_commissioned ? new Date(r.date_commissioned).toLocaleDateString("en-GB") : "",
       r.equipment_condition || "",
-      r.supplier || "", r.landed_cost || 0,
+      r.hire_rate || 0,
+      r.supplier || "",
+      r.landed_cost || 0,
     ]);
     const csv = [headers, ...rows]
       .map(row => row.map((v: any) => `"${String(v).replace(/"/g,'""')}"`).join(","))
       .join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href = url;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
     a.download = `BuildFleet_Commissioning_Register_${new Date().toISOString().slice(0,10)}.csv`;
     a.click();
-    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(a.href);
   }
 
   const filtered = commissioningRecords.filter((r: any) => {
@@ -599,11 +640,7 @@ export default function CommissioningPage() {
       (!filterSite || r.location === filterSite);
   });
 
-  // Count records missing a commissioning date
-  const missingDateCount = commissioningRecords.filter(
-    (r: any) => !r.date_commissioned
-  ).length;
-
+  const missingDateCount = commissioningRecords.filter((r: any) => !r.date_commissioned).length;
   const uniqueSites = [...new Set(commissioningRecords.map((r: any) => r.location))].filter(Boolean);
   const uniqueCats  = [...new Set(commissioningRecords.map((r: any) => r.category))].filter(Boolean).sort();
   const thisMonth   = new Date().toISOString().slice(0, 7);
@@ -615,7 +652,7 @@ export default function CommissioningPage() {
           <p className="text-[11px] font-bold text-amber-500 uppercase tracking-widest mb-1">PLT-01</p>
           <h1 className="text-3xl font-bold text-slate-900">Commissioning</h1>
           <p className="text-slate-500 mt-1 text-sm max-w-lg">
-            Register new equipment using the digital PLT-01 form.
+            Register new equipment using the digital PLT-01 form. Hire rates are auto-assigned by category.
           </p>
         </div>
         <div className="flex flex-wrap gap-3 shrink-0">
@@ -636,7 +673,6 @@ export default function CommissioningPage() {
         </div>
       </div>
 
-      {/* Warning banner if records are missing commissioning dates */}
       {missingDateCount > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-4">
           <span className="text-2xl">📅</span>
@@ -645,25 +681,18 @@ export default function CommissioningPage() {
               {missingDateCount} equipment {missingDateCount === 1 ? "record is" : "records are"} missing a commissioning date
             </p>
             <p className="text-amber-600 text-xs mt-0.5">
-              Click the <strong>✏️ pencil icon</strong> on any row to set the actual date it was commissioned on site.
+              Click the ✏️ pencil icon on any row to set the actual date.
             </p>
           </div>
         </div>
       )}
 
-      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Total Commissioned", value: commissioningRecords.length, bg: "bg-slate-900 text-white" },
-          { label: "This Month",
-            value: commissioningRecords.filter((r: any) => r.date_commissioned?.startsWith(thisMonth)).length,
-            bg: "bg-amber-500 text-white" },
-          { label: "Additions",
-            value: commissioningRecords.filter((r: any) => r.fleet_status === "Addition").length,
-            bg: "bg-white border border-slate-200 text-slate-800" },
-          { label: "Replacements",
-            value: commissioningRecords.filter((r: any) => r.fleet_status === "Replacement").length,
-            bg: "bg-white border border-slate-200 text-slate-800" },
+          { label:"Total Commissioned", value:commissioningRecords.length,                                                                    bg:"bg-slate-900 text-white" },
+          { label:"This Month",         value:commissioningRecords.filter((r:any)=>r.date_commissioned?.startsWith(thisMonth)).length,         bg:"bg-amber-500 text-white" },
+          { label:"Additions",          value:commissioningRecords.filter((r:any)=>r.fleet_status==="Addition").length,                        bg:"bg-white border border-slate-200 text-slate-800" },
+          { label:"Replacements",       value:commissioningRecords.filter((r:any)=>r.fleet_status==="Replacement").length,                     bg:"bg-white border border-slate-200 text-slate-800" },
         ].map(s => (
           <div key={s.label} className={`${s.bg} rounded-2xl p-5`}>
             <p className="text-3xl font-bold">{s.value}</p>
@@ -672,7 +701,6 @@ export default function CommissioningPage() {
         ))}
       </div>
 
-      {/* Filters */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <input placeholder="Search fleet no., description, make..."
@@ -689,7 +717,6 @@ export default function CommissioningPage() {
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
           <div>
@@ -702,10 +729,8 @@ export default function CommissioningPage() {
             <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
               <tr>
                 {["Fleet No.","Description","Category","Make","Model",
-                  "Site","Region","Cost Code","Comm. Date","Condition",""].map(h => (
-                  <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                    {h}
-                  </th>
+                  "Site","Region","Hire Rate","Comm. Date","Condition",""].map(h => (
+                  <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -727,7 +752,9 @@ export default function CommissioningPage() {
                   <td className="px-5 py-4 text-slate-600">{item.model}</td>
                   <td className="px-5 py-4 text-slate-500 text-xs max-w-35 truncate">{item.location}</td>
                   <td className="px-5 py-4 text-slate-500 text-xs">{item.region}</td>
-                  <td className="px-5 py-4 text-slate-500 text-xs font-mono">{item.cost_code || "—"}</td>
+                  <td className="px-5 py-4 text-xs font-mono font-semibold text-emerald-700">
+                    {item.hire_rate ? `₦${Number(item.hire_rate).toLocaleString()}` : "—"}
+                  </td>
                   <td className="px-5 py-4 text-xs whitespace-nowrap">
                     {item.date_commissioned ? (
                       <span className="text-slate-600">
@@ -744,13 +771,9 @@ export default function CommissioningPage() {
                       {item.equipment_condition || "—"}
                     </span>
                   </td>
-                  {/* Edit date button — always visible, not just on hover */}
                   <td className="px-3 py-4">
-                    <button
-                      onClick={() => setEditRecord(item)}
-                      title="Set commissioning date"
-                      className="text-slate-300 hover:text-amber-500 transition-colors text-base"
-                    >
+                    <button onClick={() => setEditRecord(item)} title="Set commissioning date"
+                      className="text-slate-300 hover:text-amber-500 transition-colors text-base">
                       ✏️
                     </button>
                   </td>
@@ -764,14 +787,12 @@ export default function CommissioningPage() {
       <NewCommissionModal   open={modal === "new"}    onClose={() => setModal(null)} />
       <PlantListUploadModal open={modal === "upload"} onClose={() => setModal(null)} />
 
-      {/* Inline date correction modal */}
       {editRecord && (
         <EditDateModal
           record={editRecord}
           onClose={() => setEditRecord(null)}
-            onSaved={() => {
+          onSaved={() => {
             setEditRecord(null);
-            // refresh the list so updated date shows immediately
             if (typeof fetchRecords === "function") fetchRecords();
           }}
         />
