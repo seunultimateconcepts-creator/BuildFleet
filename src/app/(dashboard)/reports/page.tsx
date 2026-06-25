@@ -29,71 +29,122 @@ function RentalListTab() {
   const [generated,   setGenerated]   = useState(false);
   const [filterMonth, setFilterMonth] = useState(MONTHS[new Date().getMonth()]);
   const [filterYear,  setFilterYear]  = useState(new Date().getFullYear());
+  const [filterSite,  setFilterSite]  = useState("");
+  const [sites,       setSites]       = useState<string[]>([]);
+
+  // Load all sites for filter
+  useEffect(() => {
+    dbu.from("sites").select("name").order("name")
+      .then(({ data }: { data: { name: string }[] | null }) => setSites((data||[]).map((s:any) => s.name)));
+  }, []);
 
   async function generate() {
     setLoading(true);
-    const { data } = await dbu
-      .from("daily_logs").select("*")
-      .eq("month", filterMonth).eq("year", filterYear)
-      .eq("is_chargeable", true).order("site");
+    let q = dbu
+      .from("daily_logs")
+      .select("*")
+      .eq("month", filterMonth)
+      .eq("year", filterYear)
+      .eq("is_chargeable", true)
+      .gt("working_hours", 0)   // must have actual working hours
+      .order("site");
+
+    if (filterSite) q = q.eq("site", filterSite);
+
+    const { data } = await q;
     setLogs(data || []);
     setGenerated(true);
     setLoading(false);
   }
 
+  // Group by site
   const bySite = logs.reduce((acc: any, log: any) => {
-    if (!acc[log.site]) acc[log.site] = { site: log.site, cost_code: log.cost_code, items: [] };
+    if (!acc[log.site]) acc[log.site] = {
+      site: log.site, cost_code: log.cost_code, items: []
+    };
     acc[log.site].items.push(log);
     return acc;
   }, {});
   const siteGroups = Object.values(bySite) as any[];
-  const grandTotal = logs.reduce((s: number, l: any) => s + (Number(l.total_charge)||0), 0);
+
+  // Calculate charge per log: hire_rate × 1 day per log entry
+  const grandTotal = logs.reduce((s: number, l: any) =>
+    s + (Number(l.hire_rate) || 0), 0);
 
   function exportCSV() {
     const rows: string[][] = [];
     rows.push(["HARTLAND NIGERIA LIMITED"]);
     rows.push(["PLANT DEPARTMENT"]);
-    rows.push([`EQUIPMENT RENTAL LIST FOR THE MONTH OF ${filterMonth.toUpperCase()}, ${filterYear}`]);
+    rows.push([`EQUIPMENT RENTAL LIST — ${filterMonth.toUpperCase()} ${filterYear}`]);
+    if (filterSite) rows.push([`SITE: ${filterSite}`]);
     rows.push([]);
     siteGroups.forEach((group: any) => {
       rows.push([`SITE: ${group.site}`, `COST CODE: ${group.cost_code || "—"}`]);
-      rows.push(["S/NO","FLEET NO","DESCRIPTION","DAYS","HIRE RATE (₦)","TOTAL INVOICED (₦)"]);
+      rows.push(["S/NO","FLEET NO","DESCRIPTION","DAYS","HIRE RATE (₦)","TOTAL (₦)"]);
       const byFleet: Record<string, any> = {};
       group.items.forEach((item: any) => {
-        if (!byFleet[item.fleet_no]) byFleet[item.fleet_no] = { fleet_no:item.fleet_no, equipment_name:item.equipment_name||"", hire_rate:item.hire_rate||0, days:0, total:0 };
-        byFleet[item.fleet_no].days += 1;
-        byFleet[item.fleet_no].total += Number(item.hire_rate)||0;
+        if (!byFleet[item.fleet_no]) byFleet[item.fleet_no] = {
+          fleet_no: item.fleet_no,
+          equipment_name: item.equipment_name || "",
+          hire_rate: Number(item.hire_rate) || 0,
+          days: 0,
+          total: 0,
+        };
+        byFleet[item.fleet_no].days  += 1;
+        byFleet[item.fleet_no].total += Number(item.hire_rate) || 0;
       });
       Object.values(byFleet).forEach((item: any, idx: number) => {
-        rows.push([String(idx+1), item.fleet_no, item.equipment_name, String(item.days), String(item.hire_rate), String(item.total)]);
+        rows.push([
+          String(idx+1), item.fleet_no, item.equipment_name,
+          String(item.days),
+          String(item.hire_rate),
+          String(item.total),
+        ]);
       });
-      const siteTotal = group.items.reduce((s: number, i: any) => s+(Number(i.hire_rate)||0), 0);
+      const siteTotal = group.items.reduce((s:number, i:any) =>
+        s + (Number(i.hire_rate)||0), 0);
       rows.push(["","","TOTAL","","",String(siteTotal)]);
       rows.push([]);
     });
     rows.push(["GRAND TOTAL","","","","",String(grandTotal)]);
-    const csv = rows.map(r => r.map(v => `"${v.replace(/"/g,'""')}"`).join(",")).join("\n");
+    const csv = rows.map(r =>
+      r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")
+    ).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type:"text/csv" }));
-    a.download = `Rental_List_${filterMonth}_${filterYear}.csv`;
+    a.download = `Rental_List_${filterMonth}_${filterYear}${filterSite ? `_${filterSite}` : ""}.csv`;
     a.click();
   }
 
   return (
     <div className="space-y-5">
       <div className="bg-white rounded-2xl border border-slate-200 p-5">
-        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Generate Rental List</p>
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+          Generate Rental List
+        </p>
         <div className="flex flex-wrap items-end gap-4">
           <div>
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">Month</label>
-            <select className={iCls+" w-40"} value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
+            <select className={iCls+" w-40"} value={filterMonth}
+              onChange={e => setFilterMonth(e.target.value)}>
               {MONTHS.map(m => <option key={m}>{m}</option>)}
             </select>
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">Year</label>
-            <select className={iCls+" w-28"} value={filterYear} onChange={e => setFilterYear(parseInt(e.target.value))}>
+            <select className={iCls+" w-28"} value={filterYear}
+              onChange={e => setFilterYear(parseInt(e.target.value))}>
               {[2024,2025,2026,2027].map(y => <option key={y}>{y}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">
+              Site (optional)
+            </label>
+            <select className={iCls+" w-64"} value={filterSite}
+              onChange={e => setFilterSite(e.target.value)}>
+              <option value="">All Sites</option>
+              {sites.map(s => <option key={s}>{s}</option>)}
             </select>
           </div>
           <button onClick={generate} disabled={loading}
@@ -101,67 +152,125 @@ function RentalListTab() {
             {loading ? "Generating..." : "📊 Generate"}
           </button>
           {generated && logs.length > 0 && (
-            <button onClick={exportCSV} className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 ml-auto">
+            <button onClick={exportCSV}
+              className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 ml-auto">
               ↓ Export CSV
             </button>
           )}
         </div>
       </div>
+
       {generated && logs.length === 0 && (
         <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
-          <p className="text-lg font-semibold text-slate-600">No chargeable logs for {filterMonth} {filterYear}</p>
-          <p className="text-sm text-slate-400 mt-1">Make sure daily logs have been entered and equipment marked as Working (A) for this month.</p>
+          <p className="text-lg font-semibold text-slate-600">
+            No chargeable logs for {filterMonth} {filterYear}
+          </p>
+          <p className="text-sm text-slate-400 mt-1">
+            {filterSite ? `at ${filterSite}` : "across all sites"}
+          </p>
+          <p className="text-xs text-slate-400 mt-2">
+            Make sure daily logs have working hours entered and equipment has hire rates set.
+          </p>
         </div>
       )}
+
       {generated && logs.length > 0 && (
         <>
           <div className="grid grid-cols-3 gap-4">
-            <div className="bg-slate-900 text-white rounded-2xl p-5"><p className="text-3xl font-bold">{siteGroups.length}</p><p className="text-sm opacity-70 mt-1">Sites</p></div>
-            <div className="bg-amber-500 text-white rounded-2xl p-5"><p className="text-3xl font-bold">{logs.length}</p><p className="text-sm opacity-70 mt-1">Chargeable Days</p></div>
-            <div className="bg-emerald-600 text-white rounded-2xl p-5"><p className="text-2xl font-bold">₦{grandTotal.toLocaleString("en-NG")}</p><p className="text-sm opacity-70 mt-1">Grand Total</p></div>
+            <div className="bg-slate-900 text-white rounded-2xl p-5">
+              <p className="text-3xl font-bold">{siteGroups.length}</p>
+              <p className="text-sm opacity-70 mt-1">Sites</p>
+            </div>
+            <div className="bg-amber-500 text-white rounded-2xl p-5">
+              <p className="text-3xl font-bold">{logs.length}</p>
+              <p className="text-sm opacity-70 mt-1">Chargeable Days</p>
+            </div>
+            <div className="bg-emerald-600 text-white rounded-2xl p-5">
+              <p className="text-2xl font-bold">₦{grandTotal.toLocaleString("en-NG")}</p>
+              <p className="text-sm opacity-70 mt-1">Grand Total</p>
+            </div>
           </div>
+
           {siteGroups.map((group: any) => {
             const byFleet: Record<string, any> = {};
             group.items.forEach((item: any) => {
-              if (!byFleet[item.fleet_no]) byFleet[item.fleet_no] = { fleet_no:item.fleet_no, equipment_name:item.equipment_name||"", hire_rate:item.hire_rate||0, days:0, total:0 };
-              byFleet[item.fleet_no].days += 1;
-              byFleet[item.fleet_no].total += Number(item.hire_rate)||0;
+              if (!byFleet[item.fleet_no]) byFleet[item.fleet_no] = {
+                fleet_no: item.fleet_no,
+                equipment_name: item.equipment_name || "",
+                hire_rate: Number(item.hire_rate) || 0,
+                days: 0,
+                total: 0,
+              };
+              byFleet[item.fleet_no].days  += 1;
+              byFleet[item.fleet_no].total += Number(item.hire_rate) || 0;
             });
             const fleetList = Object.values(byFleet) as any[];
-            const siteTotal = fleetList.reduce((s:number,i:any)=>s+i.total,0);
+            const siteTotal = fleetList.reduce((s:number, i:any) => s + i.total, 0);
+
             return (
-              <div key={group.site} className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+              <div key={group.site}
+                className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
                 <div className="px-6 py-4 bg-slate-800 text-white flex items-center justify-between">
-                  <div><p className="font-bold">{group.site}</p><p className="text-slate-400 text-xs mt-0.5">Cost Code: {group.cost_code||"—"}</p></div>
-                  <p className="font-bold text-amber-400 text-lg">₦{siteTotal.toLocaleString("en-NG")}</p>
+                  <div>
+                    <p className="font-bold">{group.site}</p>
+                    <p className="text-slate-400 text-xs mt-0.5">
+                      Cost Code: {group.cost_code||"—"}
+                    </p>
+                  </div>
+                  <p className="font-bold text-amber-400 text-lg">
+                    ₦{siteTotal.toLocaleString("en-NG")}
+                  </p>
                 </div>
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 border-b border-slate-100">
-                    <tr>{["S/NO","Fleet No.","Description","Days","Hire Rate","Total Invoiced"].map(h=><th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">{h}</th>)}</tr>
+                    <tr>
+                      {["S/NO","Fleet No.","Description","Days","Hire Rate","Total"].map(h => (
+                        <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {fleetList.map((item:any,idx:number)=>(
+                    {fleetList.map((item:any, idx:number) => (
                       <tr key={item.fleet_no} className="hover:bg-amber-50/20">
                         <td className="px-5 py-3 text-slate-400 text-xs">{idx+1}</td>
-                        <td className="px-5 py-3 font-bold text-amber-600 font-mono text-xs">{item.fleet_no}</td>
+                        <td className="px-5 py-3 font-bold text-amber-600 font-mono text-xs">
+                          {item.fleet_no}
+                        </td>
                         <td className="px-5 py-3 text-slate-700">{item.equipment_name||"—"}</td>
                         <td className="px-5 py-3 font-bold text-slate-800">{item.days}</td>
-                        <td className="px-5 py-3 text-slate-600">₦{Number(item.hire_rate).toLocaleString()}</td>
-                        <td className="px-5 py-3 font-bold text-emerald-700">₦{item.total.toLocaleString("en-NG")}</td>
+                        <td className="px-5 py-3 text-slate-600">
+                          ₦{Number(item.hire_rate).toLocaleString()}
+                        </td>
+                        <td className="px-5 py-3 font-bold text-emerald-700">
+                          ₦{item.total.toLocaleString("en-NG")}
+                        </td>
                       </tr>
                     ))}
                     <tr className="bg-slate-50 border-t-2 border-slate-200">
-                      <td colSpan={5} className="px-5 py-3 text-right font-bold text-slate-700">Site Total:</td>
-                      <td className="px-5 py-3 font-bold text-emerald-700">₦{siteTotal.toLocaleString("en-NG")}</td>
+                      <td colSpan={5}
+                        className="px-5 py-3 text-right font-bold text-slate-700">
+                        Site Total:
+                      </td>
+                      <td className="px-5 py-3 font-bold text-emerald-700">
+                        ₦{siteTotal.toLocaleString("en-NG")}
+                      </td>
                     </tr>
                   </tbody>
                 </table>
               </div>
             );
           })}
+
           <div className="bg-slate-900 text-white rounded-2xl p-6 flex items-center justify-between">
-            <p className="font-bold text-xl">GRAND TOTAL — {filterMonth.toUpperCase()} {filterYear}</p>
-            <p className="text-3xl font-bold text-amber-400">₦{grandTotal.toLocaleString("en-NG")}</p>
+            <p className="font-bold text-xl">
+              GRAND TOTAL — {filterMonth.toUpperCase()} {filterYear}
+              {filterSite && <span className="text-slate-400 text-sm ml-2">({filterSite})</span>}
+            </p>
+            <p className="text-3xl font-bold text-amber-400">
+              ₦{grandTotal.toLocaleString("en-NG")}
+            </p>
           </div>
         </>
       )}

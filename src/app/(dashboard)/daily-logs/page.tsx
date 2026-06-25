@@ -1,4 +1,4 @@
- 
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -392,7 +392,7 @@ export default function DailyLogsPage() {
           equipment_id:     e.id,
           fleet_no:         e.fleet_number,
           equipment_name:   e.name || "",
-          hire_rate:        found.hire_rate || e.hire_rate || 0,
+          hire_rate:        found.hire_rate > 0 ? found.hire_rate : (e.hire_rate || 0),
           status:           found.working_hours > 0 ? "A" : found.breakdown_hours > 0 ? "N" : "S",
           storage_hours:    found.idle_hours || found.storage_hours || 0,
           working_hours:    found.working_hours || 0,
