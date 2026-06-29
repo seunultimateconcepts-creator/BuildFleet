@@ -121,55 +121,42 @@ export default function LoginPage() {
 
           {/* Logo */}
           <div>
-            <svg width="420" height="100" viewBox="0 0 420 100" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <linearGradient id="g" x1="0%" y1="100%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#7ED321"/>
-                  <stop offset="50%" stopColor="#00C9A7"/>
-                  <stop offset="100%" stopColor="#00BFFF"/>
-                </linearGradient>
-              </defs>
-              {/* BuildFleet hexagon logo — clean, no teeth */}
-              <g transform="translate(8,2) scale(0.9)">
-                {/* Hexagon centered at (46,50) radius 38 */}
-                <polygon points="46,12 84,34 84,66 46,88 8,66 8,34"
-                  fill="none" stroke="url(#g)" strokeWidth="3" strokeLinejoin="round"/>
-                {/* Inner hex */}
-                <polygon points="46,19 76,37 76,63 46,81 16,63 16,37"
-                  fill="rgba(13,21,37,0.9)"/>
-                {/* Scan lines */}
-                <line x1="20" y1="42" x2="72" y2="42" stroke="url(#g)" strokeWidth="2" strokeLinecap="round" opacity="0.25"/>
-                <line x1="18" y1="50" x2="74" y2="50" stroke="url(#g)" strokeWidth="2.8" strokeLinecap="round"/>
-                <line x1="20" y1="58" x2="72" y2="58" stroke="url(#g)" strokeWidth="2" strokeLinecap="round" opacity="0.25"/>
-                {/* Tracker dot */}
-                <circle cx="74" cy="50" r="5.5" fill="#F5A623"/>
-                <circle cx="74" cy="50" r="10" fill="none" stroke="#F5A623" strokeWidth="1.5" opacity="0.4"/>
-                <circle cx="74" cy="50" r="15" fill="none" stroke="#F5A623" strokeWidth="1" opacity="0.2"/>
-                {/* Center hub */}
-                <circle cx="46" cy="50" r="13" fill="#1A2744"/>
-                <circle cx="46" cy="50" r="6" fill="#F5A623"/>
-                <circle cx="46" cy="50" r="2.8" fill="rgba(8,13,26,0.9)"/>
-                {/* Data pulse */}
-                <line x1="84" y1="44" x2="104" y2="44" stroke="#F5A623" strokeWidth="2" strokeLinecap="round" opacity="0.45"/>
-                <line x1="84" y1="50" x2="112" y2="50" stroke="#F5A623" strokeWidth="2.5" strokeLinecap="round"/>
-                <line x1="84" y1="56" x2="108" y2="56" stroke="#F5A623" strokeWidth="2" strokeLinecap="round" opacity="0.6"/>
-                <circle cx="104" cy="44" r="3.5" fill="#F5A623" opacity="0.45"/>
-                <circle cx="112" cy="50" r="4.5" fill="#F5A623"/>
-                <circle cx="108" cy="56" r="3.5" fill="#F5A623" opacity="0.6"/>
-              </g>
-
-              {/* BuildFleet text */}
-              <text x="98" y="46" fontFamily="'Segoe UI',Arial,sans-serif" fontWeight="800" fontSize="42" fill="#FFFFFF" letterSpacing="-1">
-                Build<tspan fill="url(#g)">Fleet</tspan>
-              </text>
-              <text x="100" y="68" fontFamily="'Segoe UI',Arial,sans-serif" fontWeight="600" fontSize="13" fill="#8A9AC0" letterSpacing="2">
-                ENTERPRISE FLEET MANAGEMENT
-              </text>
-              <line x1="100" y1="78" x2="415" y2="78" stroke="#1E2235" strokeWidth="0.8"/>
-              <text x="100" y="92" fontFamily="'Segoe UI',Arial,sans-serif" fontSize="10" fill="#3A4060">
-                A product of <tspan fontWeight="700" fill="url(#g)">Ultimate Tech Lab</tspan>
-              </text>
-            </svg>
+            {/* BuildFleet Logo — icon left, wordmark right */}
+            <div className="flex items-center gap-4">
+              {/* Hexagon icon */}
+              <svg width="72" height="72" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <polygon points="40,4 74,22 74,58 40,76 6,58 6,22"
+                  fill="none" stroke="#F5A623" strokeWidth="3.5" strokeLinejoin="round"/>
+                <polygon points="40,13 66,28 66,52 40,67 14,52 14,28"
+                  fill="rgba(13,21,37,0.95)"/>
+                <line x1="18" y1="33" x2="62" y2="33" stroke="#F5A623" strokeWidth="2.2" strokeLinecap="round" opacity="0.25"/>
+                <line x1="16" y1="40" x2="64" y2="40" stroke="#F5A623" strokeWidth="2.8" strokeLinecap="round"/>
+                <line x1="18" y1="47" x2="62" y2="47" stroke="#F5A623" strokeWidth="2.2" strokeLinecap="round" opacity="0.25"/>
+                <circle cx="64" cy="40" r="5.5" fill="#F5A623"/>
+                <circle cx="64" cy="40" r="10" fill="none" stroke="#F5A623" strokeWidth="1.5" opacity="0.4"/>
+                <circle cx="64" cy="40" r="16" fill="none" stroke="#F5A623" strokeWidth="1" opacity="0.15"/>
+                <line x1="74" y1="36" x2="88" y2="36" stroke="#F5A623" strokeWidth="1.8" strokeLinecap="round" opacity="0.45"/>
+                <line x1="74" y1="40" x2="94" y2="40" stroke="#F5A623" strokeWidth="2.2" strokeLinecap="round"/>
+                <line x1="74" y1="44" x2="90" y2="44" stroke="#F5A623" strokeWidth="1.8" strokeLinecap="round" opacity="0.6"/>
+                <circle cx="94" cy="40" r="4" fill="#F5A623"/>
+                <circle cx="40" cy="40" r="13" fill="#1A2744"/>
+                <circle cx="40" cy="40" r="6" fill="#F5A623"/>
+                <circle cx="40" cy="40" r="2.5" fill="rgba(8,13,26,0.9)"/>
+              </svg>
+              {/* Wordmark */}
+              <div>
+                <p className="font-black text-white leading-none" style={{ fontSize: "42px", letterSpacing: "-1px" }}>
+                  Build<span style={{ color: "#F5A623" }}>Fleet</span>
+                </p>
+                <p className="text-xs font-semibold uppercase tracking-widest mt-1" style={{ color: "#8A9AC0", letterSpacing: "3px" }}>
+                  Enterprise Fleet Management
+                </p>
+                <p className="text-xs mt-1" style={{ color: "#2A4060" }}>
+                  A product of{" "}
+                  <span className="font-bold" style={{ color: "#F5A623" }}>Ultimate Tech Lab</span>
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Center content — always visible over any image */}
