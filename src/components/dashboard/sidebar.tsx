@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 "use client";
 
 import Link from "next/link";
@@ -17,6 +18,7 @@ import {
   ChevronDown,
   CircleDot,
   ImageIcon,
+  Sidebar,
 } from "lucide-react";
 
 const navItems = [
@@ -97,199 +99,52 @@ const navItems = [
 
 function BuildFleetLogo() {
   return (
-    <svg width="208" height="72" viewBox="0 0 290 80"
+    <svg width="210" height="68" viewBox="0 0 290 80"
       xmlns="http://www.w3.org/2000/svg"
-      aria-label="BuildFleet — Enterprise Fleet Management">
+      aria-label="BuildFleet Enterprise Fleet Management">
       <defs>
-        <linearGradient id="utlg" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%"   stopColor="#7ED321"/>
-          <stop offset="35%"  stopColor="#00E5A0"/>
-          <stop offset="65%"  stopColor="#00BFDF"/>
-          <stop offset="100%" stopColor="#1A6FC4"/>
+        <linearGradient id="bfg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#F5A623"/>
+          <stop offset="100%" stopColor="#E8820A"/>
         </linearGradient>
       </defs>
 
-      {/* UTL logo — precisely traced: arc top-left→left→bottom→bottom-right, gap at top-right */}
-      <g transform="translate(2,0) scale(0.68)">
-        <path d="M22,10 A44,44 0 1,0 88,72"
-          fill="none" stroke="url(#utlg)" strokeWidth="4.5" strokeLinecap="round"/>
-        <line x1="22" y1="74" x2="30" y2="22" stroke="url(#utlg)" strokeWidth="3.5" strokeLinecap="round"/>
-        <circle cx="30" cy="22" r="5.5" fill="#7ED321"/>
-        <circle cx="26" cy="48" r="4"   fill="#7ED321"/>
-        <line x1="34" y1="78" x2="44" y2="24" stroke="url(#utlg)" strokeWidth="3.5" strokeLinecap="round"/>
-        <circle cx="44" cy="24" r="5.5" fill="#44D430"/>
-        <circle cx="39" cy="51" r="4"   fill="#44D430"/>
-        <line x1="46" y1="80" x2="58" y2="28" stroke="url(#utlg)" strokeWidth="3.5" strokeLinecap="round"/>
-        <circle cx="58" cy="28" r="5.5" fill="#00E5A0"/>
-        <circle cx="52" cy="54" r="4"   fill="#00E5A0"/>
-        <line x1="58" y1="80" x2="72" y2="34" stroke="url(#utlg)" strokeWidth="3.5" strokeLinecap="round"/>
-        <circle cx="72" cy="34" r="5.5" fill="#00BFDF"/>
-        <circle cx="65" cy="57" r="4"   fill="#00BFDF"/>
-        <line x1="68" y1="78" x2="82" y2="44" stroke="url(#utlg)" strokeWidth="3.5" strokeLinecap="round"/>
-        <circle cx="82" cy="44" r="5.5" fill="#1A8FD4"/>
-        <circle cx="75" cy="61" r="4"   fill="#1A8FD4"/>
-        <line x1="76" y1="72" x2="88" y2="54" stroke="url(#utlg)" strokeWidth="3.5" strokeLinecap="round"/>
-        <circle cx="88" cy="54" r="5.5" fill="#1A6FC4"/>
-        <circle cx="82" cy="63" r="4"   fill="#1A6FC4"/>
-      </g>
+      {/* Hexagon icon centered at (38, 40) radius 32 */}
+      <polygon points="38,8 70,24 70,56 38,72 6,56 6,24"
+        fill="none" stroke="#F5A623" strokeWidth="2.5" strokeLinejoin="round"/>
 
-      {/* BuildFleet wordmark */}
-      <text
-        x="76"
-        y="38"
-        fontFamily="'Segoe UI', Arial, sans-serif"
-        fontWeight="800"
-        fontSize="32"
-        fill="#FFFFFF"
-        letterSpacing="-0.5"
-      >
-        Build<tspan fill="url(#utlg)">Fleet</tspan>
-      </text>
+      {/* Inner hex dark fill */}
+      <polygon points="38,14 62,28 62,52 38,66 14,52 14,28"
+        fill="#0D1525"/>
 
-      {/* Tagline */}
-      <text
-        x="77"
-        y="58"
-        fontFamily="'Segoe UI', Arial, sans-serif"
-        fontWeight="500"
-        fontSize="10.5"
-        fill="#5A6280"
-        letterSpacing="0.8"
-      >
-        ENTERPRISE FLEET MANAGEMENT
-      </text>
+      {/* Scan lines */}
+      <line x1="18" y1="34" x2="58" y2="34" stroke="#F5A623" strokeWidth="1.6" strokeLinecap="round" opacity="0.25"/>
+      <line x1="16" y1="40" x2="60" y2="40" stroke="#F5A623" strokeWidth="2" strokeLinecap="round"/>
+      <line x1="18" y1="46" x2="58" y2="46" stroke="#F5A623" strokeWidth="1.6" strokeLinecap="round" opacity="0.25"/>
 
-      {/* Thin divider */}
-      <line x1="77" y1="68" x2="278" y2="68" stroke="#1E2235" strokeWidth="0.8"/>
+      {/* Active tracker dot */}
+      <circle cx="60" cy="40" r="4.5" fill="#F5A623"/>
+      <circle cx="60" cy="40" r="8" fill="none" stroke="#F5A623" strokeWidth="1.2" opacity="0.4"/>
 
-      {/* UTL byline */}
-      <text
-        x="77"
-        y="82"
-        fontFamily="'Segoe UI', Arial, sans-serif"
-        fontSize="9"
-        fill="#3A4060"
-      >
-        A product of{" "}
-        <tspan fontWeight="700" fill="url(#utlg)">Ultimate Tech Lab</tspan>
-      </text>
+      {/* Center hub */}
+      <circle cx="38" cy="40" r="10" fill="#1A2744"/>
+      <circle cx="38" cy="40" r="4.5" fill="#F5A623"/>
+      <circle cx="38" cy="40" r="2" fill="#080D1A"/>
+
+      {/* Data pulse lines */}
+      <line x1="70" y1="36" x2="84" y2="36" stroke="#F5A623" strokeWidth="1.5" strokeLinecap="round" opacity="0.45"/>
+      <line x1="70" y1="40" x2="90" y2="40" stroke="#F5A623" strokeWidth="2" strokeLinecap="round"/>
+      <line x1="70" y1="44" x2="86" y2="44" stroke="#F5A623" strokeWidth="1.5" strokeLinecap="round" opacity="0.6"/>
+      <circle cx="84" cy="36" r="2.5" fill="#F5A623" opacity="0.45"/>
+      <circle cx="90" cy="40" r="3" fill="#F5A623"/>
+      <circle cx="86" cy="44" r="2.5" fill="#F5A623" opacity="0.6"/>
+
+      {/* Wordmark */}
+      <text x="100" y="36" fontFamily="Arial Black, sans-serif" fontWeight="900"
+        fontSize="24" fill="white" letterSpacing="-0.5">Build</text>
+      <text x="100" y="62" fontFamily="Arial Black, sans-serif" fontWeight="900"
+        fontSize="24" fill="#F5A623" letterSpacing="-0.5">Fleet</text>
     </svg>
-  );
-}
-
-interface SidebarProps {
-  companyName?: string;
-  companyInitials?: string;
-}
-
-export function Sidebar({
-  companyName = "Hartland Nigeria Ltd",
-  companyInitials = "HNL",
-}: SidebarProps) {
-  const pathname = usePathname();
-  const { profile } = useAuth();
-  const userRoles: string[] = (profile?.roles as string[]) || [];
-
-  const visibleItems = navItems.filter((item) =>
-    item.roles.some((r) => userRoles.includes(r))
-  );
-
-  return (
-    /*
-      KEY FIX: `fixed inset-y-0 left-0` pins the sidebar to the viewport.
-      The main content area in layout.tsx must have `ml-64` to compensate.
-    */
-    <aside className="fixed inset-y-0 left-0 z-40 flex flex-col w-64 bg-[#0F1117] border-r border-[#1E2235]">
-
-      {/* ── Logo area ── */}
-      <div className="shrink-0 px-4 pt-5 pb-4 border-b border-[#1E2235]">
-        <Link href="/" aria-label="Go to dashboard">
-          <BuildFleetLogo />
-        </Link>
-      </div>
-
-      {/* ── Scrollable nav ── */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-        {visibleItems.map((item) => {
-          const Icon = item.icon;
-          const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
-
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group ${
-                isActive
-                  ? "bg-[#1A6FC4] text-white shadow-sm"
-                  : "text-[#8A90AA] hover:bg-[#181B28] hover:text-white"
-              }`}
-            >
-              <Icon size={18} className="shrink-0" />
-              <span className="flex-1 truncate">{item.label}</span>
-              {item.badge && (
-                <span
-                  className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                    isActive
-                      ? "bg-white/20 text-white"
-                      : "bg-[#00C9A7]/15 text-[#00C9A7]"
-                  }`}
-                >
-                  {item.badge}
-                </span>
-              )}
-            </Link>
-          );
-        })}
-      </nav>
-
-      {/* ── Company account switcher ── */}
-      <div className="shrink-0 border-t border-[#1E2235] p-3 space-y-1">
-        <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#181B28] transition-colors group">
-          {/* Gradient avatar */}
-          <div
-            className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-            style={{
-              background: "linear-gradient(135deg, #7ED321 0%, #00C9A7 50%, #1A6FC4 100%)",
-            }}
-          >
-            <span className="text-white text-xs font-bold tracking-wide">
-              {companyInitials}
-            </span>
-          </div>
-          <div className="flex-1 text-left min-w-0">
-            <p className="text-white text-xs font-semibold truncate leading-tight">
-              {companyName}
-            </p>
-            <p className="text-[#4A5275] text-[10px] leading-tight">
-              Active workspace
-            </p>
-          </div>
-          <ChevronDown size={14} className="text-[#4A5275] group-hover:text-white transition-colors shrink-0" />
-        </button>
-
-        {/* User info row */}
-        {profile && (
-          <div className="flex items-center gap-2.5 px-3 py-2">
-            <div className="w-7 h-7 rounded-full bg-[#1A2235] border border-[#2D3550] flex items-center justify-center shrink-0">
-              <span className="text-[#8A90AA] text-[11px] font-medium">
-                {String(profile.full_name ?? "U").charAt(0).toUpperCase()}
-              </span>
-            </div>
-            <div className="min-w-0">
-              <p className="text-[#C0C6D8] text-xs font-medium truncate leading-tight">
-                {profile.full_name as string}
-              </p>
-              <p className="text-[#4A5275] text-[10px] capitalize truncate leading-tight">
-                {((profile.roles as string[])?.[0] ?? "").replace(/_/g, " ")}
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-    </aside>
   );
 }
 

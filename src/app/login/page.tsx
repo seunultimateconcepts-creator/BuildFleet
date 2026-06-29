@@ -129,28 +129,33 @@ export default function LoginPage() {
                   <stop offset="100%" stopColor="#00BFFF"/>
                 </linearGradient>
               </defs>
-              {/* UTL logo precisely traced — arc: top-left→left→bottom→bottom-right, gap at top-right */}
-              <g transform="translate(8,5) scale(0.85)">
-                <path d="M22,10 A44,44 0 1,0 88,72"
-                  fill="none" stroke="url(#g)" strokeWidth="4.5" strokeLinecap="round"/>
-                <line x1="22" y1="74" x2="30" y2="22" stroke="url(#g)" strokeWidth="3.5" strokeLinecap="round"/>
-                <circle cx="30" cy="22" r="5.5" fill="#7ED321"/>
-                <circle cx="26" cy="48" r="4"   fill="#7ED321"/>
-                <line x1="34" y1="78" x2="44" y2="24" stroke="url(#g)" strokeWidth="3.5" strokeLinecap="round"/>
-                <circle cx="44" cy="24" r="5.5" fill="#44D430"/>
-                <circle cx="39" cy="51" r="4"   fill="#44D430"/>
-                <line x1="46" y1="80" x2="58" y2="28" stroke="url(#g)" strokeWidth="3.5" strokeLinecap="round"/>
-                <circle cx="58" cy="28" r="5.5" fill="#00E5A0"/>
-                <circle cx="52" cy="54" r="4"   fill="#00E5A0"/>
-                <line x1="58" y1="80" x2="72" y2="34" stroke="url(#g)" strokeWidth="3.5" strokeLinecap="round"/>
-                <circle cx="72" cy="34" r="5.5" fill="#00BFDF"/>
-                <circle cx="65" cy="57" r="4"   fill="#00BFDF"/>
-                <line x1="68" y1="78" x2="82" y2="44" stroke="url(#g)" strokeWidth="3.5" strokeLinecap="round"/>
-                <circle cx="82" cy="44" r="5.5" fill="#1A8FD4"/>
-                <circle cx="75" cy="61" r="4"   fill="#1A8FD4"/>
-                <line x1="76" y1="72" x2="88" y2="54" stroke="url(#g)" strokeWidth="3.5" strokeLinecap="round"/>
-                <circle cx="88" cy="54" r="5.5" fill="#1A6FC4"/>
-                <circle cx="82" cy="63" r="4"   fill="#1A6FC4"/>
+              {/* BuildFleet hexagon logo — clean, no teeth */}
+              <g transform="translate(8,2) scale(0.9)">
+                {/* Hexagon centered at (46,50) radius 38 */}
+                <polygon points="46,12 84,34 84,66 46,88 8,66 8,34"
+                  fill="none" stroke="url(#g)" strokeWidth="3" strokeLinejoin="round"/>
+                {/* Inner hex */}
+                <polygon points="46,19 76,37 76,63 46,81 16,63 16,37"
+                  fill="rgba(13,21,37,0.9)"/>
+                {/* Scan lines */}
+                <line x1="20" y1="42" x2="72" y2="42" stroke="url(#g)" strokeWidth="2" strokeLinecap="round" opacity="0.25"/>
+                <line x1="18" y1="50" x2="74" y2="50" stroke="url(#g)" strokeWidth="2.8" strokeLinecap="round"/>
+                <line x1="20" y1="58" x2="72" y2="58" stroke="url(#g)" strokeWidth="2" strokeLinecap="round" opacity="0.25"/>
+                {/* Tracker dot */}
+                <circle cx="74" cy="50" r="5.5" fill="#F5A623"/>
+                <circle cx="74" cy="50" r="10" fill="none" stroke="#F5A623" strokeWidth="1.5" opacity="0.4"/>
+                <circle cx="74" cy="50" r="15" fill="none" stroke="#F5A623" strokeWidth="1" opacity="0.2"/>
+                {/* Center hub */}
+                <circle cx="46" cy="50" r="13" fill="#1A2744"/>
+                <circle cx="46" cy="50" r="6" fill="#F5A623"/>
+                <circle cx="46" cy="50" r="2.8" fill="rgba(8,13,26,0.9)"/>
+                {/* Data pulse */}
+                <line x1="84" y1="44" x2="104" y2="44" stroke="#F5A623" strokeWidth="2" strokeLinecap="round" opacity="0.45"/>
+                <line x1="84" y1="50" x2="112" y2="50" stroke="#F5A623" strokeWidth="2.5" strokeLinecap="round"/>
+                <line x1="84" y1="56" x2="108" y2="56" stroke="#F5A623" strokeWidth="2" strokeLinecap="round" opacity="0.6"/>
+                <circle cx="104" cy="44" r="3.5" fill="#F5A623" opacity="0.45"/>
+                <circle cx="112" cy="50" r="4.5" fill="#F5A623"/>
+                <circle cx="108" cy="56" r="3.5" fill="#F5A623" opacity="0.6"/>
               </g>
 
               {/* BuildFleet text */}
@@ -206,26 +211,26 @@ export default function LoginPage() {
 
           {/* Mobile logo */}
           <div className="lg:hidden mb-6 flex justify-center">
-            <svg width="160" height="48" viewBox="0 0 320 80" xmlns="http://www.w3.org/2000/svg">
+            <svg width="180" height="52" viewBox="0 0 260 60" xmlns="http://www.w3.org/2000/svg">
               <defs>
-                <linearGradient id="gm" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#7ED321"/>
-                  <stop offset="40%" stopColor="#00C9A7"/>
-                  <stop offset="100%" stopColor="#1A6FC4"/>
+                <linearGradient id="mg" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#F5A623"/>
+                  <stop offset="100%" stopColor="#E8820A"/>
                 </linearGradient>
               </defs>
-              <g transform="translate(34,40)">
-                <path d="M-28,0 A28,28 0 1,1 16,25" fill="none" stroke="url(#gm)" strokeWidth="2" strokeLinecap="round"/>
-                <circle cx="-14" cy="21" r="2.8" fill="#7ED321"/>
-                <circle cx="11" cy="-23" r="2.8" fill="#00C9A7"/>
-                <circle cx="9" cy="25" r="2.8" fill="#1A6FC4"/>
-              </g>
-              <text x="72" y="35" fontFamily="'Segoe UI',Arial,sans-serif" fontWeight="700" fontSize="28" fill="#0F1117">
-                Build<tspan fill="url(#gm)">Fleet</tspan>
-              </text>
-              <text x="73" y="52" fontFamily="'Segoe UI',Arial,sans-serif" fontSize="8" fill="#8A90AA" letterSpacing="1.8">
-                ENTERPRISE FLEET MANAGEMENT
-              </text>
+              <polygon points="28,4 52,17 52,43 28,56 4,43 4,17"
+                fill="none" stroke="#F5A623" strokeWidth="2.2" strokeLinejoin="round"/>
+              <polygon points="28,10 46,20 46,40 28,50 10,40 10,20"
+                fill="#0D1525"/>
+              <line x1="13" y1="27" x2="43" y2="27" stroke="#F5A623" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
+              <line x1="12" y1="30" x2="44" y2="30" stroke="#F5A623" strokeWidth="2" strokeLinecap="round"/>
+              <line x1="13" y1="33" x2="43" y2="33" stroke="#F5A623" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
+              <circle cx="44" cy="30" r="3.5" fill="#F5A623"/>
+              <circle cx="44" cy="30" r="6" fill="none" stroke="#F5A623" strokeWidth="1" opacity="0.4"/>
+              <circle cx="28" cy="30" r="7" fill="#1A2744"/>
+              <circle cx="28" cy="30" r="3" fill="#F5A623"/>
+              <text x="62" y="24" fontFamily="Arial Black, sans-serif" fontWeight="900" fontSize="20" fill="white" letterSpacing="-0.5">Build</text>
+              <text x="62" y="48" fontFamily="Arial Black, sans-serif" fontWeight="900" fontSize="20" fill="#F5A623" letterSpacing="-0.5">Fleet</text>
             </svg>
           </div>
 
