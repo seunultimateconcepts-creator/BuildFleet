@@ -16,6 +16,14 @@ const PHOTO_TYPES = ["General","Commissioning","Before Repair","After Repair","D
 
 const iCls = "w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white dark:bg-[#0F1117] dark:border-[#1E2235] dark:text-white";
 
+const STATUS_STYLE: Record<string, string> = {
+  "Working":      "bg-emerald-100 text-emerald-700",
+  "Under Repair": "bg-amber-100 text-amber-700",
+  "Storage":      "bg-slate-100 text-slate-600",
+  "Scrapped":     "bg-red-100 text-red-600",
+  "Break Down":   "bg-orange-100 text-orange-700",
+};
+
 // ─────────────────────────────────────────────────────────────
 // LIGHTBOX
 // ─────────────────────────────────────────────────────────────
@@ -40,10 +48,8 @@ function Lightbox({ photos, index, onClose }: {
   const photo = photos[current];
 
   return (
-    <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4"
-      onClick={onClose}>
-      <button onClick={onClose}
-        className="absolute top-4 right-4 text-white/70 hover:text-white z-10">
+    <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <button onClick={onClose} className="absolute top-4 right-4 text-white/70 hover:text-white z-10">
         <X size={28}/>
       </button>
       {photos.length > 1 && (
@@ -61,7 +67,7 @@ function Lightbox({ photos, index, onClose }: {
       <div onClick={e => e.stopPropagation()} className="max-w-5xl w-full">
         <div className="relative w-full h-[80vh]">
           <Image src={photo.url} alt={photo.caption || photo.fleet_number}
-            fill unoptimized className="object-contain rounded-xl" />
+            fill unoptimized className="object-contain rounded-xl"/>
         </div>
         <div className="mt-4 text-center">
           <p className="text-white font-bold text-lg">{photo.fleet_number}</p>
@@ -80,8 +86,7 @@ function Lightbox({ photos, index, onClose }: {
 // SINGLE UPLOAD MODAL
 // ─────────────────────────────────────────────────────────────
 function UploadModal({ open, onClose, onUploaded, preselectedFleet }: {
-  open: boolean; onClose: () => void;
-  onUploaded: () => void; preselectedFleet?: string;
+  open: boolean; onClose: () => void; onUploaded: () => void; preselectedFleet?: string;
 }) {
   const { profile } = useAuth();
   const fileRef     = useRef<HTMLInputElement>(null);
@@ -103,23 +108,22 @@ function UploadModal({ open, onClose, onUploaded, preselectedFleet }: {
     ]).then(([p1, p2]) => {
       const all = [...(p1.data||[]), ...(p2.data||[])];
       setEquipment(all.filter(e => e?.fleet_number).sort((a, b) =>
-        (a.fleet_number||"").localeCompare(b.fleet_number||"")
-      ));
+        (a.fleet_number||"").localeCompare(b.fleet_number||"")));
     });
     if (preselectedFleet) setSelected(preselectedFleet);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  function handleFiles(selectedFiles: FileList | null) {
-    if (!selectedFiles) return;
-    const arr = Array.from(selectedFiles).filter(f => f.type.startsWith("image/")).slice(0, 20);
+  function handleFiles(f: FileList | null) {
+    if (!f) return;
+    const arr = Array.from(f).filter(x => x.type.startsWith("image/")).slice(0, 20);
     setFiles(arr);
-    setPreviews(arr.map(f => URL.createObjectURL(f)));
+    setPreviews(arr.map(x => URL.createObjectURL(x)));
   }
 
   function removeFile(i: number) {
-    setFiles(prev => prev.filter((_, idx) => idx !== i));
-    setPreviews(prev => prev.filter((_, idx) => idx !== i));
+    setFiles(p => p.filter((_, idx) => idx !== i));
+    setPreviews(p => p.filter((_, idx) => idx !== i));
   }
 
   async function handleUpload() {
@@ -127,7 +131,6 @@ function UploadModal({ open, onClose, onUploaded, preselectedFleet }: {
     setUploading(true); setError(null); setProgress(0);
     const equip = equipment.find(e => e.fleet_number === selected || e.id === selected);
     if (!equip) { setError("Equipment not found."); setUploading(false); return; }
-
     let uploaded = 0;
     const results: any[] = [];
     for (const file of files) {
@@ -141,9 +144,7 @@ function UploadModal({ open, onClose, onUploaded, preselectedFleet }: {
       setProgress(Math.round((uploaded / files.length) * 100));
     }
     if (results.length > 0) await dbu.from("equipment_photos").insert(results);
-    setUploading(false);
-    onUploaded();
-    onClose();
+    setUploading(false); onUploaded(); onClose();
     setFiles([]); setPreviews([]); setCaption(""); setProgress(0);
   }
 
@@ -161,14 +162,10 @@ function UploadModal({ open, onClose, onUploaded, preselectedFleet }: {
         </div>
         <div className="p-7 space-y-5">
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-              Equipment <span className="text-red-400">*</span>
-            </label>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Equipment <span className="text-red-400">*</span></label>
             <select className={iCls} value={selected} onChange={e => setSelected(e.target.value)}>
               <option value="">— Select equipment —</option>
-              {equipment.map(e => (
-                <option key={e.id} value={e.fleet_number}>{e.fleet_number} — {e.name}</option>
-              ))}
+              {equipment.map(e => <option key={e.id} value={e.fleet_number}>{e.fleet_number} — {e.name}</option>)}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -183,16 +180,14 @@ function UploadModal({ open, onClose, onUploaded, preselectedFleet }: {
               <input className={iCls} value={caption} onChange={e => setCaption(e.target.value)} placeholder="e.g. After engine overhaul"/>
             </div>
           </div>
-          <div
-            onClick={() => fileRef.current?.click()}
+          <div onClick={() => fileRef.current?.click()}
             onDragOver={e => e.preventDefault()}
             onDrop={e => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
             className="border-2 border-dashed border-slate-200 dark:border-[#1E2235] rounded-xl p-8 text-center cursor-pointer hover:border-amber-400 hover:bg-amber-50/5 transition-colors">
             <Camera size={32} className="mx-auto text-slate-300 mb-3"/>
             <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">Click or drag photos here</p>
             <p className="text-xs text-slate-400 mt-1">JPG, PNG, WEBP — up to 20 photos at once</p>
-            <input ref={fileRef} type="file" multiple accept="image/*" className="hidden"
-              onChange={e => handleFiles(e.target.files)}/>
+            <input ref={fileRef} type="file" multiple accept="image/*" className="hidden" onChange={e => handleFiles(e.target.files)}/>
           </div>
           {previews.length > 0 && (
             <div className="grid grid-cols-4 gap-3">
@@ -209,7 +204,7 @@ function UploadModal({ open, onClose, onUploaded, preselectedFleet }: {
           )}
           {uploading && (
             <div>
-              <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
+              <div className="flex justify-between text-xs text-slate-500 mb-1.5">
                 <span>Uploading {files.length} photo{files.length > 1 ? "s" : ""}...</span>
                 <span>{progress}%</span>
               </div>
@@ -234,354 +229,479 @@ function UploadModal({ open, onClose, onUploaded, preselectedFleet }: {
 }
 
 // ─────────────────────────────────────────────────────────────
-// BULK FOLDER UPLOAD MODAL
+// SHARED BULK UPLOAD LOGIC
 // ─────────────────────────────────────────────────────────────
 type BulkGroup = {
   fleetNumber: string;
   equipmentId: string;
   equipmentName: string;
   files: File[];
-  matched: boolean;
 };
 
-function BulkUploadModal({ open, onClose, onUploaded }: {
-  open: boolean; onClose: () => void; onUploaded: () => void;
-}) {
-  const { profile }     = useAuth();
-  const folderRef       = useRef<HTMLInputElement>(null);
-  const [equipment,     setEquipment]     = useState<any[]>([]);
-  const [groups,        setGroups]        = useState<BulkGroup[]>([]);
-  const [photoType,     setPhotoType]     = useState("General");
-  const [stage,         setStage]         = useState<"pick"|"preview"|"uploading"|"done">("pick");
-  const [totalFiles,    setTotalFiles]    = useState(0);
-  const [uploaded,      setUploaded]      = useState(0);
-  const [skipped,       setSkipped]       = useState(0);
-  const [currentLabel,  setCurrentLabel]  = useState("");
-  const [unmatchedNames, setUnmatchedNames] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (!open) return;
-    setStage("pick"); setGroups([]); setUploaded(0); setSkipped(0); setUnmatchedNames([]);
-    Promise.all([
-      dbu.from("equipment").select("id,fleet_number,name").range(0, 999),
-      dbu.from("equipment").select("id,fleet_number,name").range(1000, 1999),
-    ]).then(([p1, p2]) => {
-      const all = [...(p1.data||[]), ...(p2.data||[])];
-      setEquipment(all.filter(e => e?.fleet_number));
-    });
-  }, [open]);
-
-  function handleFolderSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    // Build a map: folderName -> File[]
-    const folderMap: Record<string, File[]> = {};
-
-    Array.from(files).forEach(file => {
-      if (!file.type.startsWith("image/")) return;
-      const parts = file.webkitRelativePath.split("/");
-
-      let folderName: string;
-      if (parts.length >= 3) {
-        // ROOT/FLEET_FOLDER/filename.jpg → use folder name
-        folderName = parts[1].trim().toUpperCase();
-      } else if (parts.length === 2) {
-        // ROOT/AC-07.jpg → use filename without extension
-        folderName = parts[1].replace(/\.[^.]+$/, "").trim().toUpperCase();
-      } else {
-        return; // skip
-      }
-
-      if (!folderMap[folderName]) folderMap[folderName] = [];
-      folderMap[folderName].push(file);
-    });
-
-    // Match against equipment
-    const equipMap: Record<string, any> = {};
-    equipment.forEach(eq => {
-      equipMap[eq.fleet_number.toUpperCase()] = eq;
-    });
-
-    const matched: BulkGroup[] = [];
-    const unmatched: string[]  = [];
-
-    Object.entries(folderMap).forEach(([folderName, folderFiles]) => {
-      const eq = equipMap[folderName];
-      if (eq) {
-        matched.push({
-          fleetNumber:   eq.fleet_number,
-          equipmentId:   eq.id,
-          equipmentName: eq.name,
-          files:         folderFiles,
-          matched:       true,
-        });
-      } else {
-        unmatched.push(`${folderName} (${folderFiles.length} photos)`);
-      }
-    });
-
-    matched.sort((a, b) => a.fleetNumber.localeCompare(b.fleetNumber));
-    setGroups(matched);
-    setTotalFiles(matched.reduce((n, g) => n + g.files.length, 0));
-    setUnmatchedNames(unmatched);
-    setStage("preview");
-  }
-
-  async function handleBulkUpload() {
-    setStage("uploading");
-    let done = 0;
-    let skip = 0;
-
-    for (const group of groups) {
-      setCurrentLabel(`${group.fleetNumber} — ${group.equipmentName}`);
-      const results: any[] = [];
-
-      for (const file of group.files) {
-        const ext  = file.name.split(".").pop();
-        const path = `${group.fleetNumber}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: upErr } = await dbu.storage.from("equipment-photos").upload(path, file, { cacheControl: "3600", upsert: false });
-        if (upErr) { skip++; continue; }
-        const { data: { publicUrl } } = dbu.storage.from("equipment-photos").getPublicUrl(path);
-        results.push({
-          equipment_id: group.equipmentId,
-          fleet_number: group.fleetNumber,
-          url:          publicUrl,
-          caption:      null,
-          photo_type:   photoType,
-          uploaded_by:  profile?.full_name || "User",
-        });
-        done++;
-        setUploaded(done);
-      }
-
-      if (results.length > 0) {
-        await dbu.from("equipment_photos").insert(results);
-      }
+async function runBulkUpload(
+  groups: BulkGroup[],
+  totalFiles: number,
+  photoType: string,
+  userName: string,
+  onProgress: (uploaded: number, label: string) => void,
+): Promise<{ uploaded: number; skipped: number }> {
+  let done = 0; let skip = 0;
+  for (const group of groups) {
+    onProgress(done, `${group.fleetNumber} — ${group.equipmentName}`);
+    const results: any[] = [];
+    for (const file of group.files) {
+      const ext  = file.name.split(".").pop();
+      const path = `${group.fleetNumber}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error: upErr } = await dbu.storage.from("equipment-photos").upload(path, file, { cacheControl: "3600", upsert: false });
+      if (upErr) { skip++; continue; }
+      const { data: { publicUrl } } = dbu.storage.from("equipment-photos").getPublicUrl(path);
+      results.push({ equipment_id: group.equipmentId, fleet_number: group.fleetNumber, url: publicUrl, caption: null, photo_type: photoType, uploaded_by: userName });
+      done++;
+      onProgress(done, `${group.fleetNumber} — ${group.equipmentName}`);
     }
-
-    setSkipped(skip);
-    setStage("done");
-    onUploaded();
+    if (results.length > 0) await dbu.from("equipment_photos").insert(results);
   }
+  return { uploaded: done, skipped: skip };
+}
 
+// ─────────────────────────────────────────────────────────────
+// SHARED BULK MODAL SHELL
+// ─────────────────────────────────────────────────────────────
+function BulkModalShell({ title, subtitle, open, onClose, stage, children, footer }: {
+  title: string; subtitle: string; open: boolean; onClose: () => void;
+  stage: string; children: React.ReactNode; footer: React.ReactNode;
+}) {
   if (!open) return null;
-
-  const matchedCount   = groups.length;
-  const progress       = totalFiles > 0 ? Math.round((uploaded / totalFiles) * 100) : 0;
-
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
       <div className="bg-white dark:bg-[#0F1117] rounded-2xl shadow-2xl w-full max-w-2xl my-6">
-
-        {/* Header */}
         <div className="px-7 py-5 bg-slate-900 rounded-t-2xl flex items-center justify-between">
           <div>
             <p className="text-amber-400 text-[11px] font-bold uppercase tracking-widest">Plant Gallery</p>
-            <h2 className="text-lg font-bold text-white">Bulk Upload — All Equipment Folders</h2>
+            <h2 className="text-lg font-bold text-white">{title}</h2>
+            <p className="text-slate-400 text-xs mt-0.5">{subtitle}</p>
           </div>
           {stage !== "uploading" && (
             <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl">×</button>
           )}
         </div>
-
-        <div className="p-7">
-
-          {/* ── STAGE: PICK ────────────────────────────────────── */}
-          {stage === "pick" && (
-            <div className="space-y-5">
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 text-sm text-blue-800 dark:text-blue-300 space-y-2">
-                <p className="font-bold">How this works:</p>
-                <ol className="list-decimal list-inside space-y-1 text-blue-700 dark:text-blue-400">
-                  <li>Select your <strong>GRAPHICS</strong> folder (or any root folder)</li>
-                  <li>Each <strong>subfolder name must match a fleet number</strong> (e.g. folder named "AC-07" → equipment AC-07)</li>
-                  <li>Loose image files at the root are also matched by filename (e.g. AC-02.jpg → AC-02)</li>
-                  <li>All matched photos upload automatically — one shot</li>
-                </ol>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Photo Type (applied to all)</label>
-                <select className={iCls} value={photoType} onChange={e => setPhotoType(e.target.value)}>
-                  {PHOTO_TYPES.map(t => <option key={t}>{t}</option>)}
-                </select>
-              </div>
-
-              <div
-                onClick={() => folderRef.current?.click()}
-                className="border-2 border-dashed border-slate-200 dark:border-[#1E2235] rounded-xl p-10 text-center cursor-pointer hover:border-amber-400 hover:bg-amber-50/5 transition-colors">
-                <FolderOpen size={40} className="mx-auto text-slate-300 mb-3"/>
-                <p className="text-sm font-bold text-slate-600 dark:text-slate-400">Click to select your GRAPHICS folder</p>
-                <p className="text-xs text-slate-400 mt-2">All subfolders will be scanned. Folder names must match fleet numbers.</p>
-                <input
-                  ref={folderRef}
-                  type="file"
-                  multiple
-                  accept="image/*"
-                  className="hidden"
-                  // @ts-expect-error
-                  webkitdirectory=""
-                  directory=""
-                  onChange={handleFolderSelect}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* ── STAGE: PREVIEW ─────────────────────────────────── */}
-          {stage === "preview" && (
-            <div className="space-y-5">
-              {/* Summary */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-4 text-center">
-                  <p className="text-2xl font-bold text-emerald-600">{matchedCount}</p>
-                  <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-1">Equipment Matched</p>
-                </div>
-                <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 text-center">
-                  <p className="text-2xl font-bold text-amber-600">{totalFiles}</p>
-                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">Photos Ready</p>
-                </div>
-                <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 text-center">
-                  <p className="text-2xl font-bold text-slate-600 dark:text-slate-300">{unmatchedNames.length}</p>
-                  <p className="text-xs text-slate-500 mt-1">Folders Unmatched</p>
-                </div>
-              </div>
-
-              {/* Unmatched warning */}
-              {unmatchedNames.length > 0 && (
-                <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <AlertCircle size={16} className="text-orange-600 shrink-0"/>
-                    <p className="text-sm font-bold text-orange-800 dark:text-orange-400">
-                      {unmatchedNames.length} folder{unmatchedNames.length > 1 ? "s" : ""} not matched — will be skipped
-                    </p>
-                  </div>
-                  <div className="max-h-24 overflow-y-auto">
-                    {unmatchedNames.map(n => (
-                      <p key={n} className="text-xs text-orange-600 dark:text-orange-500">{n}</p>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Matched list */}
-              <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-                  Matched Equipment ({matchedCount})
-                </p>
-                <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
-                  {groups.map(g => (
-                    <div key={g.fleetNumber}
-                      className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-[#1A1D2E] rounded-xl">
-                      <div>
-                        <span className="font-bold text-amber-600 font-mono text-xs">{g.fleetNumber}</span>
-                        <span className="text-slate-500 text-xs ml-2 truncate">{g.equipmentName}</span>
-                      </div>
-                      <span className="text-xs text-slate-400 shrink-0">
-                        {g.files.length} photo{g.files.length > 1 ? "s" : ""}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {matchedCount === 0 && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
-                  ⚠️ No folders matched any fleet numbers. Make sure folder names match exactly (e.g. "AC-07", "SN-40").
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── STAGE: UPLOADING ───────────────────────────────── */}
-          {stage === "uploading" && (
-            <div className="space-y-6 py-4">
-              <div className="text-center">
-                <p className="text-2xl font-bold text-slate-800 dark:text-white">{uploaded} / {totalFiles}</p>
-                <p className="text-slate-500 text-sm mt-1">photos uploaded</p>
-              </div>
-              <div className="h-3 bg-slate-100 dark:bg-[#1A1D2E] rounded-full overflow-hidden">
-                <div className="h-full bg-amber-400 rounded-full transition-all duration-300"
-                  style={{ width: `${progress}%` }}/>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-slate-400">Currently uploading:</p>
-                <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 mt-0.5 truncate">{currentLabel}</p>
-              </div>
-              <p className="text-center text-xs text-slate-400">
-                Please keep this window open. Do not refresh the page.
-              </p>
-            </div>
-          )}
-
-          {/* ── STAGE: DONE ────────────────────────────────────── */}
-          {stage === "done" && (
-            <div className="space-y-5 py-4 text-center">
-              <CheckCircle size={52} className="mx-auto text-emerald-500"/>
-              <div>
-                <p className="text-xl font-bold text-slate-800 dark:text-white">Upload Complete</p>
-                <p className="text-slate-500 text-sm mt-2">
-                  <span className="font-bold text-emerald-600">{uploaded}</span> photos uploaded successfully
-                  {skipped > 0 && <span className="text-orange-500"> · {skipped} failed</span>}
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-4">
-                  <p className="text-2xl font-bold text-emerald-600">{uploaded}</p>
-                  <p className="text-emerald-700 dark:text-emerald-400 text-xs mt-1">Uploaded</p>
-                </div>
-                <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4">
-                  <p className="text-2xl font-bold text-slate-600 dark:text-slate-300">{matchedCount}</p>
-                  <p className="text-slate-500 text-xs mt-1">Equipment Updated</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-7 py-5 border-t border-slate-100 dark:border-[#1E2235] flex gap-3 justify-end">
-          {stage === "pick" && (
-            <button onClick={onClose} className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-[#1E2235] text-sm text-slate-500 hover:bg-slate-50">
-              Cancel
-            </button>
-          )}
-          {stage === "preview" && (
-            <>
-              <button onClick={() => setStage("pick")}
-                className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-[#1E2235] text-sm text-slate-500 hover:bg-slate-50">
-                ← Back
-              </button>
-              <button onClick={handleBulkUpload} disabled={matchedCount === 0}
-                className="px-6 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 disabled:opacity-40 flex items-center gap-2">
-                <Upload size={16}/>
-                Upload All {totalFiles} Photos
-              </button>
-            </>
-          )}
-          {stage === "done" && (
-            <button onClick={() => { onClose(); setStage("pick"); setGroups([]); }}
-              className="px-6 py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-bold hover:bg-emerald-600">
-              Done ✓
-            </button>
-          )}
-        </div>
+        <div className="p-7">{children}</div>
+        <div className="px-7 py-5 border-t border-slate-100 dark:border-[#1E2235] flex gap-3 justify-end">{footer}</div>
       </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────
+// SHARED BULK PREVIEW + PROGRESS SCREENS
+// ─────────────────────────────────────────────────────────────
+function BulkPreview({ groups, totalFiles, unmatchedItems, unmatchedLabel }: {
+  groups: BulkGroup[]; totalFiles: number; unmatchedItems: string[]; unmatchedLabel: string;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-4 text-center">
+          <p className="text-2xl font-bold text-emerald-600">{groups.length}</p>
+          <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-1">Equipment Matched</p>
+        </div>
+        <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 text-center">
+          <p className="text-2xl font-bold text-amber-600">{totalFiles}</p>
+          <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">Photos Ready</p>
+        </div>
+        <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 text-center">
+          <p className="text-2xl font-bold text-slate-600 dark:text-slate-300">{unmatchedItems.length}</p>
+          <p className="text-xs text-slate-500 mt-1">{unmatchedLabel} Unmatched</p>
+        </div>
+      </div>
+
+      {unmatchedItems.length > 0 && (
+        <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertCircle size={16} className="text-orange-600 shrink-0"/>
+            <p className="text-sm font-bold text-orange-800 dark:text-orange-400">
+              {unmatchedItems.length} {unmatchedLabel.toLowerCase()}{unmatchedItems.length > 1 ? "s" : ""} not matched — will be skipped
+            </p>
+          </div>
+          <div className="max-h-24 overflow-y-auto space-y-0.5">
+            {unmatchedItems.map(n => (
+              <p key={n} className="text-xs text-orange-600 dark:text-orange-500 font-mono">{n}</p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+          Matched Equipment ({groups.length})
+        </p>
+        <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
+          {groups.map(g => (
+            <div key={g.fleetNumber}
+              className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-[#1A1D2E] rounded-xl">
+              <div className="min-w-0">
+                <span className="font-bold text-amber-600 font-mono text-xs">{g.fleetNumber}</span>
+                <span className="text-slate-500 text-xs ml-2 truncate">{g.equipmentName}</span>
+              </div>
+              <span className="text-xs text-slate-400 shrink-0 ml-2">
+                {g.files.length} photo{g.files.length > 1 ? "s" : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {groups.length === 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+          ⚠️ No files matched any fleet numbers. Names must match exactly (e.g. "AC-07").
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BulkProgress({ uploaded, totalFiles, currentLabel }: {
+  uploaded: number; totalFiles: number; currentLabel: string;
+}) {
+  const pct = totalFiles > 0 ? Math.round((uploaded / totalFiles) * 100) : 0;
+  return (
+    <div className="space-y-6 py-4">
+      <div className="text-center">
+        <p className="text-3xl font-bold text-slate-800 dark:text-white">
+          {uploaded} <span className="text-slate-400 text-xl">/ {totalFiles}</span>
+        </p>
+        <p className="text-slate-500 text-sm mt-1">photos uploaded</p>
+      </div>
+      <div className="h-3 bg-slate-100 dark:bg-[#1A1D2E] rounded-full overflow-hidden">
+        <div className="h-full bg-amber-400 rounded-full transition-all duration-300" style={{ width: `${pct}%` }}/>
+      </div>
+      <p className="text-center text-xs text-slate-500 font-medium">{pct}%</p>
+      <div className="text-center">
+        <p className="text-xs text-slate-400">Currently uploading:</p>
+        <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 mt-0.5 truncate">{currentLabel}</p>
+      </div>
+      <p className="text-center text-xs text-slate-400">Please keep this window open. Do not refresh.</p>
+    </div>
+  );
+}
+
+function BulkDone({ uploaded, skipped, matchedCount, onClose }: {
+  uploaded: number; skipped: number; matchedCount: number; onClose: () => void;
+}) {
+  return (
+    <div className="space-y-5 py-4 text-center">
+      <CheckCircle size={52} className="mx-auto text-emerald-500"/>
+      <div>
+        <p className="text-xl font-bold text-slate-800 dark:text-white">Upload Complete</p>
+        <p className="text-slate-500 text-sm mt-2">
+          <span className="font-bold text-emerald-600">{uploaded}</span> photos uploaded successfully
+          {skipped > 0 && <span className="text-orange-500"> · {skipped} failed</span>}
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-4">
+          <p className="text-2xl font-bold text-emerald-600">{uploaded}</p>
+          <p className="text-emerald-700 dark:text-emerald-400 text-xs mt-1">Uploaded</p>
+        </div>
+        <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4">
+          <p className="text-2xl font-bold text-slate-600 dark:text-slate-300">{matchedCount}</p>
+          <p className="text-slate-500 text-xs mt-1">Equipment Updated</p>
+        </div>
+      </div>
+      <button onClick={onClose}
+        className="px-6 py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-bold hover:bg-emerald-600">
+        Done ✓
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// BULK FOLDER UPLOAD MODAL
+// ─────────────────────────────────────────────────────────────
+function BulkFolderModal({ open, onClose, onUploaded }: {
+  open: boolean; onClose: () => void; onUploaded: () => void;
+}) {
+  const { profile }      = useAuth();
+  const folderRef        = useRef<HTMLInputElement>(null);
+  const [equipment,      setEquipment]      = useState<any[]>([]);
+  const [groups,         setGroups]         = useState<BulkGroup[]>([]);
+  const [photoType,      setPhotoType]      = useState("General");
+  const [stage,          setStage]          = useState<"pick"|"preview"|"uploading"|"done">("pick");
+  const [totalFiles,     setTotalFiles]     = useState(0);
+  const [uploaded,       setUploaded]       = useState(0);
+  const [skipped,        setSkipped]        = useState(0);
+  const [currentLabel,   setCurrentLabel]   = useState("");
+  const [unmatched,      setUnmatched]      = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    setStage("pick"); setGroups([]); setUploaded(0); setSkipped(0); setUnmatched([]);
+    Promise.all([
+      dbu.from("equipment").select("id,fleet_number,name").range(0, 999),
+      dbu.from("equipment").select("id,fleet_number,name").range(1000, 1999),
+    ]).then(([p1, p2]) => {
+      setEquipment([...(p1.data||[]), ...(p2.data||[])].filter(e => e?.fleet_number));
+    });
+  }, [open]);
+
+  function handleFolderSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const equipMap: Record<string, any> = {};
+    equipment.forEach(eq => { equipMap[eq.fleet_number.toUpperCase()] = eq; });
+    const folderMap: Record<string, { eq: any; files: File[] }> = {};
+    const unmatchedSet: string[] = [];
+
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith("image/")) return;
+      const parts = file.webkitRelativePath.split("/");
+      const key = parts.length >= 3
+        ? parts[1].trim().toUpperCase()                          // subfolder name
+        : parts[1].replace(/\.[^.]+$/, "").trim().toUpperCase(); // filename without ext
+      const eq = equipMap[key];
+      if (eq) {
+        if (!folderMap[key]) folderMap[key] = { eq, files: [] };
+        folderMap[key].files.push(file);
+      } else if (!unmatchedSet.includes(key)) {
+        unmatchedSet.push(`${key} (${file.name})`);
+      }
+    });
+
+    const matched = Object.values(folderMap).map(g => ({
+      fleetNumber: g.eq.fleet_number, equipmentId: g.eq.id,
+      equipmentName: g.eq.name, files: g.files,
+    })).sort((a, b) => a.fleetNumber.localeCompare(b.fleetNumber));
+
+    setGroups(matched);
+    setTotalFiles(matched.reduce((n, g) => n + g.files.length, 0));
+    setUnmatched(unmatchedSet.slice(0, 50));
+    setStage("preview");
+  }
+
+  async function handleUpload() {
+    setStage("uploading");
+    const result = await runBulkUpload(groups, totalFiles, photoType, profile?.full_name || "User",
+      (u, label) => { setUploaded(u); setCurrentLabel(label); });
+    setSkipped(result.skipped);
+    setStage("done");
+    onUploaded();
+  }
+
+  return (
+    <BulkModalShell
+      title="Bulk Upload — Folders"
+      subtitle="Each subfolder name must match a fleet number"
+      open={open} onClose={onClose} stage={stage}
+      footer={
+        <>
+          {stage === "pick" && <button onClick={onClose} className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-[#1E2235] text-sm text-slate-500 hover:bg-slate-50">Cancel</button>}
+          {stage === "preview" && (
+            <>
+              <button onClick={() => { setStage("pick"); setGroups([]); }} className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-[#1E2235] text-sm text-slate-500 hover:bg-slate-50">← Back</button>
+              <button onClick={handleUpload} disabled={groups.length === 0}
+                className="px-6 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 disabled:opacity-40 flex items-center gap-2">
+                <Upload size={16}/> Upload All {totalFiles} Photos
+              </button>
+            </>
+          )}
+        </>
+      }>
+      {stage === "pick" && (
+        <div className="space-y-5">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 text-sm text-blue-800 dark:text-blue-300 space-y-1.5">
+            <p className="font-bold">How this works:</p>
+            <ol className="list-decimal list-inside space-y-1 text-blue-700 dark:text-blue-400 text-xs">
+              <li>Select your <strong>GRAPHICS</strong> folder</li>
+              <li>Each <strong>subfolder name must match a fleet number</strong> (e.g. folder "AC-07" → equipment AC-07)</li>
+              <li>Loose image files at root are matched by filename (e.g. AC-02.jpg → AC-02)</li>
+              <li>All matched photos upload automatically</li>
+            </ol>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Photo Type (applied to all)</label>
+            <select className={iCls} value={photoType} onChange={e => setPhotoType(e.target.value)}>
+              {PHOTO_TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+          </div>
+          <div onClick={() => folderRef.current?.click()}
+            className="border-2 border-dashed border-slate-200 dark:border-[#1E2235] rounded-xl p-10 text-center cursor-pointer hover:border-amber-400 hover:bg-amber-50/5 transition-colors">
+            <FolderOpen size={40} className="mx-auto text-slate-300 mb-3"/>
+            <p className="text-sm font-bold text-slate-600 dark:text-slate-400">Click to select your GRAPHICS folder</p>
+            <p className="text-xs text-slate-400 mt-2">Subfolders will be scanned. Folder names must match fleet numbers.</p>
+            <input ref={folderRef} type="file" multiple accept="image/*" className="hidden"
+              // @ts-ignore
+              webkitdirectory="" directory="" onChange={handleFolderSelect}/>
+          </div>
+        </div>
+      )}
+      {stage === "preview" && (
+        <BulkPreview groups={groups} totalFiles={totalFiles} unmatchedItems={unmatched} unmatchedLabel="Folder"/>
+      )}
+      {stage === "uploading" && (
+        <BulkProgress uploaded={uploaded} totalFiles={totalFiles} currentLabel={currentLabel}/>
+      )}
+      {stage === "done" && (
+        <BulkDone uploaded={uploaded} skipped={skipped} matchedCount={groups.length}
+          onClose={() => { onClose(); setStage("pick"); setGroups([]); }}/>
+      )}
+    </BulkModalShell>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// FLAT BULK UPLOAD MODAL — select ALL files at once
+// ─────────────────────────────────────────────────────────────
+function FlatBulkModal({ open, onClose, onUploaded }: {
+  open: boolean; onClose: () => void; onUploaded: () => void;
+}) {
+  const { profile }    = useAuth();
+  const fileRef        = useRef<HTMLInputElement>(null);
+  const [equipment,    setEquipment]    = useState<any[]>([]);
+  const [groups,       setGroups]       = useState<BulkGroup[]>([]);
+  const [photoType,    setPhotoType]    = useState("General");
+  const [stage,        setStage]        = useState<"pick"|"preview"|"uploading"|"done">("pick");
+  const [totalFiles,   setTotalFiles]   = useState(0);
+  const [uploaded,     setUploaded]     = useState(0);
+  const [skipped,      setSkipped]      = useState(0);
+  const [currentLabel, setCurrentLabel] = useState("");
+  const [unmatched,    setUnmatched]    = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    setStage("pick"); setGroups([]); setUploaded(0); setSkipped(0); setUnmatched([]);
+    Promise.all([
+      dbu.from("equipment").select("id,fleet_number,name").range(0, 999),
+      dbu.from("equipment").select("id,fleet_number,name").range(1000, 1999),
+    ]).then(([p1, p2]) => {
+      setEquipment([...(p1.data||[]), ...(p2.data||[])].filter(e => e?.fleet_number));
+    });
+  }, [open]);
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const equipMap: Record<string, any> = {};
+    equipment.forEach(eq => { equipMap[eq.fleet_number.toUpperCase()] = eq; });
+    const groupMap: Record<string, { eq: any; files: File[] }> = {};
+    const unmatchedFiles: string[] = [];
+
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith("image/")) return;
+      // Strip extension, strip trailing "(1)" "(2)" suffixes to get base fleet number
+      const nameNoExt = file.name.replace(/\.[^.]+$/, "").trim();
+      // Try exact match first, then strip trailing " (n)" pattern
+      const candidates = [
+        nameNoExt.toUpperCase(),
+        nameNoExt.replace(/\s*\(\d+\)$/, "").trim().toUpperCase(),
+        nameNoExt.replace(/_\d+$/, "").trim().toUpperCase(),
+      ];
+      let matched = false;
+      for (const key of candidates) {
+        const eq = equipMap[key];
+        if (eq) {
+          if (!groupMap[key]) groupMap[key] = { eq, files: [] };
+          groupMap[key].files.push(file);
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) unmatchedFiles.push(file.name);
+    });
+
+    const matchedGroups = Object.values(groupMap).map(g => ({
+      fleetNumber: g.eq.fleet_number, equipmentId: g.eq.id,
+      equipmentName: g.eq.name, files: g.files,
+    })).sort((a, b) => a.fleetNumber.localeCompare(b.fleetNumber));
+
+    setGroups(matchedGroups);
+    setTotalFiles(matchedGroups.reduce((n, g) => n + g.files.length, 0));
+    setUnmatched(unmatchedFiles.slice(0, 50));
+    setStage("preview");
+  }
+
+  async function handleUpload() {
+    setStage("uploading");
+    const result = await runBulkUpload(groups, totalFiles, photoType, profile?.full_name || "User",
+      (u, label) => { setUploaded(u); setCurrentLabel(label); });
+    setSkipped(result.skipped);
+    setStage("done");
+    onUploaded();
+  }
+
+  return (
+    <BulkModalShell
+      title="Bulk Upload — All Files"
+      subtitle="Select all images at once — matched by filename to fleet number"
+      open={open} onClose={onClose} stage={stage}
+      footer={
+        <>
+          {stage === "pick" && <button onClick={onClose} className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-[#1E2235] text-sm text-slate-500 hover:bg-slate-50">Cancel</button>}
+          {stage === "preview" && (
+            <>
+              <button onClick={() => { setStage("pick"); setGroups([]); }} className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-[#1E2235] text-sm text-slate-500 hover:bg-slate-50">← Back</button>
+              <button onClick={handleUpload} disabled={groups.length === 0}
+                className="px-6 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 disabled:opacity-40 flex items-center gap-2">
+                <Upload size={16}/> Upload All {totalFiles} Photos
+              </button>
+            </>
+          )}
+        </>
+      }>
+      {stage === "pick" && (
+        <div className="space-y-5">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 text-sm text-blue-800 dark:text-blue-300 space-y-1.5">
+            <p className="font-bold">How this works:</p>
+            <ol className="list-decimal list-inside space-y-1 text-blue-700 dark:text-blue-400 text-xs">
+              <li>Open your GRAPHICS folder in File Explorer</li>
+              <li>Press <strong>Ctrl+A</strong> to select everything, then drag here or click to browse</li>
+              <li>Each <strong>filename must match a fleet number</strong> (e.g. AC-07.jpg → AC-07)</li>
+              <li>Multiple photos per equipment: AC-07.jpg, AC-07 (1).jpg, AC-07 (2).jpg all map to AC-07</li>
+              <li>Files that don't match any fleet number are listed and skipped</li>
+            </ol>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Photo Type (applied to all)</label>
+            <select className={iCls} value={photoType} onChange={e => setPhotoType(e.target.value)}>
+              {PHOTO_TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+          </div>
+          <div onClick={() => fileRef.current?.click()}
+            onDragOver={e => e.preventDefault()}
+            onDrop={e => {
+              e.preventDefault();
+              const synth = { target: { files: e.dataTransfer.files } } as any;
+              handleFileSelect(synth);
+            }}
+            className="border-2 border-dashed border-slate-200 dark:border-[#1E2235] rounded-xl p-10 text-center cursor-pointer hover:border-amber-400 hover:bg-amber-50/5 transition-colors">
+            <Upload size={40} className="mx-auto text-slate-300 mb-3"/>
+            <p className="text-sm font-bold text-slate-600 dark:text-slate-400">
+              Click to select all image files, or drag & drop them here
+            </p>
+            <p className="text-xs text-slate-400 mt-2">
+              Select everything with Ctrl+A inside your graphics folder. JPG, PNG, WEBP supported.
+            </p>
+            <input ref={fileRef} type="file" multiple accept="image/*" className="hidden" onChange={handleFileSelect}/>
+          </div>
+        </div>
+      )}
+      {stage === "preview" && (
+        <BulkPreview groups={groups} totalFiles={totalFiles} unmatchedItems={unmatched} unmatchedLabel="File"/>
+      )}
+      {stage === "uploading" && (
+        <BulkProgress uploaded={uploaded} totalFiles={totalFiles} currentLabel={currentLabel}/>
+      )}
+      {stage === "done" && (
+        <BulkDone uploaded={uploaded} skipped={skipped} matchedCount={groups.length}
+          onClose={() => { onClose(); setStage("pick"); setGroups([]); }}/>
+      )}
+    </BulkModalShell>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // EQUIPMENT CARD
 // ─────────────────────────────────────────────────────────────
-const STATUS_STYLE: Record<string, string> = {
-  "Working":      "bg-emerald-100 text-emerald-700",
-  "Under Repair": "bg-amber-100 text-amber-700",
-  "Storage":      "bg-slate-100 text-slate-600",
-  "Scrapped":     "bg-red-100 text-red-600",
-  "Break Down":   "bg-orange-100 text-orange-700",
-};
-
 function EquipmentCard({ fleetNumber, name, category, status, photos, onUpload, onView }: {
   fleetNumber: string; name: string; category: string; status: string;
   photos: any[]; onUpload: () => void; onView: (idx: number) => void;
@@ -591,11 +711,9 @@ function EquipmentCard({ fleetNumber, name, category, status, photos, onUpload, 
 
   return (
     <div className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] overflow-hidden hover:shadow-md hover:border-amber-200 transition-all group">
-      {/* Cover */}
       <div className="relative aspect-video bg-slate-100 dark:bg-[#1A1D2E] overflow-hidden cursor-pointer"
         onClick={() => photos.length > 0 && onView(0)}>
         {cover ? (
-          // ← FIX: unoptimized so Supabase URLs render without next.config domain setup
           <Image src={cover.url} alt={name} fill unoptimized
             className="object-cover group-hover:scale-105 transition-transform duration-300"/>
         ) : (
@@ -616,13 +734,11 @@ function EquipmentCard({ fleetNumber, name, category, status, photos, onUpload, 
         )}
       </div>
 
-      {/* Thumbnail strip */}
       {photos.length > 1 && (
         <div className="flex gap-1 p-2 bg-slate-50 dark:bg-[#0D0F1A]">
           {photos.slice(1, 3).map((p, i) => (
             <div key={p.id || i} onClick={() => onView(i + 1)}
               className="w-12 h-10 rounded-lg overflow-hidden cursor-pointer shrink-0 hover:opacity-80 transition-opacity">
-              {/* ← FIX: unoptimized */}
               <Image src={p.url} alt="" width={48} height={40} unoptimized className="w-full h-full object-cover"/>
             </div>
           ))}
@@ -635,7 +751,6 @@ function EquipmentCard({ fleetNumber, name, category, status, photos, onUpload, 
         </div>
       )}
 
-      {/* Info */}
       <div className="p-4">
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="min-w-0">
@@ -660,20 +775,21 @@ function EquipmentCard({ fleetNumber, name, category, status, photos, onUpload, 
 // MAIN PAGE
 // ─────────────────────────────────────────────────────────────
 export default function PlantGalleryPage() {
-  const { profile }     = useAuth();
-  const [equipment,     setEquipment]     = useState<any[]>([]);
-  const [photos,        setPhotos]        = useState<any[]>([]);
-  const [loading,       setLoading]       = useState(true);
-  const [search,        setSearch]        = useState("");
-  const [filterCat,     setFilterCat]     = useState("");
-  const [filterSite,    setFilterSite]    = useState("");
-  const [filterType,    setFilterType]    = useState<"all"|"with"|"without">("all");
-  const [uploadModal,   setUploadModal]   = useState(false);
-  const [bulkModal,     setBulkModal]     = useState(false);
-  const [uploadFleet,   setUploadFleet]   = useState<string|undefined>();
-  const [lightboxPhotos,setLightboxPhotos]= useState<any[]>([]);
-  const [lightboxIndex, setLightboxIndex] = useState(0);
-  const [deleteMode,    setDeleteMode]    = useState(false);
+  const { profile }      = useAuth();
+  const [equipment,      setEquipment]      = useState<any[]>([]);
+  const [photos,         setPhotos]         = useState<any[]>([]);
+  const [loading,        setLoading]        = useState(true);
+  const [search,         setSearch]         = useState("");
+  const [filterCat,      setFilterCat]      = useState("");
+  const [filterSite,     setFilterSite]     = useState("");
+  const [filterType,     setFilterType]     = useState<"all"|"with"|"without">("all");
+  const [uploadModal,    setUploadModal]    = useState(false);
+  const [folderModal,    setFolderModal]    = useState(false);
+  const [flatModal,      setFlatModal]      = useState(false);
+  const [uploadFleet,    setUploadFleet]    = useState<string|undefined>();
+  const [lightboxPhotos, setLightboxPhotos] = useState<any[]>([]);
+  const [lightboxIndex,  setLightboxIndex]  = useState(0);
+  const [deleteMode,     setDeleteMode]     = useState(false);
 
   const canManage = (profile?.roles as string[] || []).some(r =>
     ["super_admin","plant_admin","plant_engineer","plant_manager"].includes(r)
@@ -747,33 +863,34 @@ export default function PlantGalleryPage() {
             Visual register of all fleet equipment — photos, condition records and repair documentation.
           </p>
         </div>
-        <div className="flex flex-wrap gap-3 shrink-0">
-          {canManage && (
-            <>
-              <button onClick={() => setDeleteMode(d => !d)}
-                className={`px-5 py-2.5 rounded-xl text-sm font-semibold border transition-colors flex items-center gap-2 ${
-                  deleteMode
-                    ? "bg-red-600 text-white border-red-600"
-                    : "bg-white dark:bg-[#0F1117] border-slate-200 dark:border-[#1E2235] text-slate-600 hover:bg-slate-50"
-                }`}>
-                <Trash2 size={15}/>
-                {deleteMode ? "Done Deleting" : "Delete Photos"}
-              </button>
-              <button
-                onClick={() => setBulkModal(true)}
-                className="border border-amber-300 bg-amber-50 text-amber-700 px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-100 flex items-center gap-2">
-                <FolderOpen size={16}/>
-                Bulk Upload (Folders)
-              </button>
-              <button
-                onClick={() => { setUploadFleet(undefined); setUploadModal(true); }}
-                className="bg-amber-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-600 shadow-sm flex items-center gap-2">
-                <Camera size={16}/>
-                Upload Photos
-              </button>
-            </>
-          )}
-        </div>
+        {canManage && (
+          <div className="flex flex-wrap gap-3 shrink-0">
+            <button onClick={() => setDeleteMode(d => !d)}
+              className={`px-5 py-2.5 rounded-xl text-sm font-semibold border transition-colors flex items-center gap-2 ${
+                deleteMode
+                  ? "bg-red-600 text-white border-red-600"
+                  : "bg-white dark:bg-[#0F1117] border-slate-200 dark:border-[#1E2235] text-slate-600 hover:bg-slate-50"
+              }`}>
+              <Trash2 size={15}/>
+              {deleteMode ? "Done Deleting" : "Delete Photos"}
+            </button>
+            <button onClick={() => setFlatModal(true)}
+              className="border border-slate-200 dark:border-[#1E2235] bg-white dark:bg-[#0F1117] text-slate-700 dark:text-slate-300 px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50 flex items-center gap-2">
+              <Upload size={16}/>
+              Upload All Files
+            </button>
+            <button onClick={() => setFolderModal(true)}
+              className="border border-amber-300 bg-amber-50 text-amber-700 px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-100 flex items-center gap-2">
+              <FolderOpen size={16}/>
+              Upload by Folder
+            </button>
+            <button onClick={() => { setUploadFleet(undefined); setUploadModal(true); }}
+              className="bg-amber-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-600 shadow-sm flex items-center gap-2">
+              <Camera size={16}/>
+              Upload Photos
+            </button>
+          </div>
+        )}
       </div>
 
       {/* KPI Cards */}
@@ -822,7 +939,7 @@ export default function PlantGalleryPage() {
           <div>
             <p className="font-bold text-red-800 dark:text-red-400 text-sm">Delete mode active</p>
             <p className="text-red-600 dark:text-red-500 text-xs mt-0.5">
-              Click any photo thumbnail to delete it permanently. Click "Done Deleting" when finished.
+              Click any photo to delete it permanently. Click "Done Deleting" when finished.
             </p>
           </div>
         </div>
@@ -895,9 +1012,14 @@ export default function PlantGalleryPage() {
         onUploaded={load}
         preselectedFleet={uploadFleet}
       />
-      <BulkUploadModal
-        open={bulkModal}
-        onClose={() => setBulkModal(false)}
+      <BulkFolderModal
+        open={folderModal}
+        onClose={() => setFolderModal(false)}
+        onUploaded={load}
+      />
+      <FlatBulkModal
+        open={flatModal}
+        onClose={() => setFlatModal(false)}
         onUploaded={load}
       />
       {lightboxPhotos.length > 0 && (
