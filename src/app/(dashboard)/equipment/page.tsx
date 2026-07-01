@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-expressions */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -12,7 +13,7 @@ import { dbu } from "@/lib/db";
 import type { Equipment, OperationalStatus } from "@/types";
 
 // ─────────────────────────────────────────────────────────────
-// CONSTANTS — Idle & Stand By removed, Storage added
+// CONSTANTS
 // ─────────────────────────────────────────────────────────────
 const ALL_STATUSES = [
   "Working", "Under Repair", "Break Down", "Storage", "Scrapped",
@@ -20,7 +21,6 @@ const ALL_STATUSES = [
 
 type EquipmentStatus = (typeof ALL_STATUSES)[number];
 
-// Clerk can only set these 3
 const CLERK_STATUSES: EquipmentStatus[] = [
   "Working", "Break Down", "Storage",
 ];
@@ -45,13 +45,157 @@ const CONDITION_STYLE: Record<string, string> = {
 
 const iCls = "w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 
-// Yard config — maps status to site_type filter and label
 const YARD_CONFIG: Partial<Record<EquipmentStatus, { label: string; siteTypes: string[] }>> = {
-  "Break Down":   { label: "Repair Yard",                    siteTypes: ["Repair Yard"] },
-  "Under Repair": { label: "Workshop",                       siteTypes: ["Central Workshop","Regional Workshop","Field Workshop"] },
-  "Storage":      { label: "Storage Yard",                   siteTypes: ["Storage Yard"] },
-  "Scrapped":     { label: "Disposal / Scrap Location",      siteTypes: [] }, // all sites
+  "Break Down":   { label: "Repair Yard",               siteTypes: ["Repair Yard"] },
+  "Under Repair": { label: "Workshop",                  siteTypes: ["Central Workshop","Regional Workshop","Field Workshop"] },
+  "Storage":      { label: "Storage Yard",              siteTypes: ["Storage Yard"] },
+  "Scrapped":     { label: "Disposal / Scrap Location", siteTypes: [] },
 };
+
+// ─────────────────────────────────────────────────────────────
+// EXPORT COLUMN CONFIG
+// ─────────────────────────────────────────────────────────────
+const EXPORT_COLUMNS: { key: string; label: string; defaultOn: boolean }[] = [
+  { key: "fleet_number",       label: "Fleet No.",         defaultOn: true  },
+  { key: "name",               label: "Description",       defaultOn: true  },
+  { key: "category",           label: "Category",          defaultOn: true  },
+  { key: "make",               label: "Make",              defaultOn: true  },
+  { key: "model",              label: "Model",             defaultOn: true  },
+  { key: "year",               label: "Year",              defaultOn: true  },
+  { key: "allocated_to",       label: "Allocated User",    defaultOn: true  },
+  { key: "allocated_position", label: "Department",        defaultOn: true  },
+  { key: "site",               label: "Site",              defaultOn: true  },
+  { key: "region",             label: "Region",            defaultOn: true  },
+  { key: "operational_status", label: "Status",            defaultOn: true  },
+  { key: "current_yard",       label: "Yard / Location",   defaultOn: true  },
+  { key: "assessment",         label: "Condition",         defaultOn: true  },
+  { key: "current_hour_meter", label: "Hour Meter (Hrs)",  defaultOn: true  },
+  { key: "current_kilometer",  label: "Km Reading",        defaultOn: true  },
+  { key: "reg_no",             label: "Reg. No.",          defaultOn: true  },
+  { key: "serial_no",          label: "Serial No.",        defaultOn: false },
+  { key: "chassis_no",         label: "Chassis No.",       defaultOn: false },
+  { key: "engine_power",       label: "Engine Power",      defaultOn: false },
+  { key: "size_capacity",      label: "Size / Capacity",   defaultOn: false },
+  { key: "tank_capacity",      label: "Tank Capacity",     defaultOn: false },
+  { key: "meter_device",       label: "Meter Device",      defaultOn: false },
+  { key: "commission_date",    label: "Commission Date",   defaultOn: false },
+  { key: "hire_rate",          label: "Hire Rate (₦)",     defaultOn: false },
+  { key: "purchase_cost",      label: "Purchase Cost",     defaultOn: false },
+  { key: "landed_cost",        label: "Landed Cost",       defaultOn: false },
+  { key: "supplier",           label: "Supplier",          defaultOn: false },
+  { key: "life_expectancy",    label: "Life Expectancy",   defaultOn: false },
+];
+
+// ─────────────────────────────────────────────────────────────
+// EXPORT MODAL
+// ─────────────────────────────────────────────────────────────
+function ExportModal({ equipment, onClose }: { equipment: Equipment[]; onClose: () => void }) {
+  const [selected, setSelected] = useState<Set<string>>(
+    new Set(EXPORT_COLUMNS.filter(c => c.defaultOn).map(c => c.key))
+  );
+
+  function toggle(key: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
+  function selectAll()    { setSelected(new Set(EXPORT_COLUMNS.map(c => c.key))); }
+  function selectNone()   { setSelected(new Set()); }
+  function selectDefault(){ setSelected(new Set(EXPORT_COLUMNS.filter(c => c.defaultOn).map(c => c.key))); }
+
+  function doExport() {
+    const cols = EXPORT_COLUMNS.filter(c => selected.has(c.key));
+    const headers = cols.map(c => c.label);
+    const rows = equipment.map(e => cols.map(c => {
+      const val = c.key === "current_yard" ? (e as any).current_yard : (e as any)[c.key];
+      return val ?? "";
+    }));
+    const csv = [headers, ...rows]
+      .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url;
+    a.download = `BuildFleet_Plant_List_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    onClose();
+  }
+
+  const onCount  = EXPORT_COLUMNS.filter(c => selected.has(c.key)).length;
+  const coreCols = EXPORT_COLUMNS.filter(c => c.defaultOn);
+  const extCols  = EXPORT_COLUMNS.filter(c => !c.defaultOn);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] flex flex-col">
+        <div className="flex items-start justify-between mb-1">
+          <h3 className="font-bold text-slate-800 text-lg">Export Plant List</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+        <p className="text-slate-500 text-xs mb-4">
+          Exporting <span className="font-semibold text-slate-700">{equipment.length}</span> equipment ·{" "}
+          <span className="font-semibold text-amber-600">{onCount} columns</span> selected
+        </p>
+
+        <div className="flex gap-2 mb-4">
+          {([["All", selectAll], ["Default", selectDefault], ["None", selectNone]] as const).map(([label, fn]) => (
+            <button key={label} onClick={fn}
+              className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 font-medium">
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="overflow-y-auto flex-1 space-y-5 pr-1">
+          <div>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Core Columns</p>
+            <div className="space-y-1">
+              {coreCols.map(c => (
+                <label key={c.key} className={`flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer transition-colors ${
+                  selected.has(c.key) ? "bg-amber-50 border border-amber-200" : "border border-transparent hover:bg-slate-50"
+                }`}>
+                  <input type="checkbox" checked={selected.has(c.key)} onChange={() => toggle(c.key)}
+                    className="accent-amber-500 w-4 h-4 shrink-0" />
+                  <span className="text-sm text-slate-700">{c.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Additional Columns</p>
+            <div className="space-y-1">
+              {extCols.map(c => (
+                <label key={c.key} className={`flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer transition-colors ${
+                  selected.has(c.key) ? "bg-amber-50 border border-amber-200" : "border border-transparent hover:bg-slate-50"
+                }`}>
+                  <input type="checkbox" checked={selected.has(c.key)} onChange={() => toggle(c.key)}
+                    className="accent-amber-500 w-4 h-4 shrink-0" />
+                  <span className="text-sm text-slate-700">{c.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-4 border-t border-slate-100 mt-4">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-500 hover:bg-slate-50">
+            Cancel
+          </button>
+          <button onClick={doExport} disabled={onCount === 0}
+            className="flex-1 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-40">
+            📊 Export {onCount} cols
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────
 // STATUS MODAL
@@ -68,7 +212,6 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
   const [saving,        setSaving]        = useState(false);
   const [error,         setError]         = useState<string | null>(null);
 
-  // Fetch ALL sites once
   useEffect(() => {
     dbu.from("sites")
       .select("id,name,code,site_type,cost_code")
@@ -76,21 +219,18 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
       .then(({ data }: { data: any[] | null }) => setAllSites(data || []));
   }, []);
 
-  // Filter yards based on selected status
   useEffect(() => {
     const config = YARD_CONFIG[status];
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!config) { setFilteredYards([]); return; }
     if (config.siteTypes.length === 0) {
-      setFilteredYards(allSites); // Scrapped — show all
+      setFilteredYards(allSites);
     } else {
       setFilteredYards(allSites.filter(s => config.siteTypes.includes(s.site_type)));
     }
-     
-    setYard(""); // reset yard when status changes
+    setYard("");
   }, [status, allSites]);
 
-  // Clerks can only set 3 statuses
   const availableStatuses = isClerk ? CLERK_STATUSES : ALL_STATUSES;
   const yardConfig = YARD_CONFIG[status];
   const needsYard  = !!yardConfig;
@@ -199,61 +339,21 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
 }
 
 // ─────────────────────────────────────────────────────────────
-// EXPORT PLANT LIST
-// ─────────────────────────────────────────────────────────────
-function exportPlantList(equipment: Equipment[]) {
-  const headers = [
-    "Fleet No.", "Description", "Category", "Make", "Model", "Year",
-    "Serial No.", "Chassis No.", "Reg. No.", "Engine Power",
-    "Size/Capacity", "Tank Capacity", "Meter Device",
-    "Site", "Region", "Operational Status", "Current Yard/Location", "Condition",
-    "Hour Meter (Hrs)", "Km Reading", "Commission Date",
-    "Purchase Cost", "Landed Cost", "Supplier", "Life Expectancy",
-  ];
-
-  const rows = equipment.map(e => [
-    e.fleet_number, e.name, e.category, e.make, e.model, e.year || "",
-    e.serial_no || "", e.chassis_no || "", e.reg_no || "",
-    e.engine_power || "", e.size_capacity || "", e.tank_capacity || "",
-    e.meter_device || "", e.site, e.region,
-    e.operational_status, (e as any).current_yard || "",
-    e.assessment,
-    e.current_hour_meter || 0,
-    e.current_kilometer || 0,   // Km Reading — no miles/odometer
-    e.commission_date || "",
-    e.purchase_cost || "", e.landed_cost || "",
-    e.supplier || "", e.life_expectancy || "",
-  ]);
-
-  const csv = [headers, ...rows]
-    .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))
-    .join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement("a");
-  a.href = url;
-  a.download = `BuildFleet_Plant_List_${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// ─────────────────────────────────────────────────────────────
 // MAIN PAGE
 // ─────────────────────────────────────────────────────────────
 export default function EquipmentPage() {
   const { equipment, loading, updateStatus } = useEquipment();
   const { profile, canCommission, canTransfer, isClerk } = useAuth();
 
-  const [search,       setSearch]       = useState("");
-  const [filterSt,     setFilterSt]     = useState("");
-  const [filterCat,    setFilterCat]    = useState("");
-  const [filterSite,   setFilterSite]   = useState("");
-  const [filterRegion, setFilterRegion] = useState("");
-  const [statusItem,   setStatusItem]   = useState<Equipment | null>(null);
-  const [view,         setView]         = useState<"table"|"grid">("table");
+  const [search,          setSearch]          = useState("");
+  const [filterSt,        setFilterSt]        = useState("");
+  const [filterCat,       setFilterCat]       = useState("");
+  const [filterSite,      setFilterSite]      = useState("");
+  const [filterRegion,    setFilterRegion]    = useState("");
+  const [statusItem,      setStatusItem]      = useState<Equipment | null>(null);
+  const [view,            setView]            = useState<"table"|"grid">("table");
+  const [showExportModal, setShowExportModal] = useState(false);
 
-  // Plant clerks CAN see the Status button now (limited options in modal)
   const canSeeStatusBtn = profile?.roles?.some((r: string) =>
     ["plant_clerk","site_supervisor","plant_engineer","plant_admin","plant_manager","plant_director","super_admin"].includes(r)
   );
@@ -266,9 +366,10 @@ export default function EquipmentPage() {
       e.make.toLowerCase().includes(q) ||
       e.model.toLowerCase().includes(q) ||
       (e.reg_no||"").toLowerCase().includes(q) ||
-      e.category.toLowerCase().includes(q);
+      e.category.toLowerCase().includes(q) ||
+      ((e as any).allocated_to||"").toLowerCase().includes(q) ||
+      ((e as any).allocated_position||"").toLowerCase().includes(q);
 
-    // "Under Repair" KPI card should show both Under Repair AND Break Down
     const matchSt = !filterSt ||
       e.operational_status === filterSt ||
       (filterSt === "Under Repair" && e.operational_status === "Break Down");
@@ -306,7 +407,7 @@ export default function EquipmentPage() {
         </div>
         <div className="flex flex-wrap gap-3 shrink-0">
           <button
-            onClick={() => exportPlantList(filtered.length > 0 ? filtered : equipment)}
+            onClick={() => setShowExportModal(true)}
             className="border border-slate-200 bg-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50 flex items-center gap-2">
             📊 Export Plant List
           </button>
@@ -325,14 +426,14 @@ export default function EquipmentPage() {
         </div>
       </div>
 
-      {/* KPI Cards — clickable to filter */}
+      {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
-          { label: "Total Fleet",  value: counts.total,    bg: "bg-slate-900 text-white",                          filter: "" },
-          { label: "Working",      value: counts.working,  bg: "bg-emerald-500 text-white",                        filter: "Working" },
-          { label: "Under Repair", value: counts.repair,   bg: "bg-amber-500 text-white",                          filter: "Under Repair" },
-          { label: "Storage",      value: counts.storage,  bg: "bg-white border border-slate-200 text-slate-800",  filter: "Storage" },
-          { label: "Scrapped",     value: counts.scrapped, bg: "bg-white border border-slate-200 text-slate-800",  filter: "Scrapped" },
+          { label: "Total Fleet",  value: counts.total,    bg: "bg-slate-900 text-white",                         filter: "" },
+          { label: "Working",      value: counts.working,  bg: "bg-emerald-500 text-white",                       filter: "Working" },
+          { label: "Under Repair", value: counts.repair,   bg: "bg-amber-500 text-white",                         filter: "Under Repair" },
+          { label: "Storage",      value: counts.storage,  bg: "bg-white border border-slate-200 text-slate-800", filter: "Storage" },
+          { label: "Scrapped",     value: counts.scrapped, bg: "bg-white border border-slate-200 text-slate-800", filter: "Scrapped" },
         ].map(k => (
           <button
             key={k.label}
@@ -352,7 +453,7 @@ export default function EquipmentPage() {
       {/* Filters */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5">
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          <input placeholder="Search fleet no., name, make, category..."
+          <input placeholder="Search fleet no., name, make, user, dept..."
             value={search} onChange={e => setSearch(e.target.value)}
             className={iCls + " lg:col-span-2"} />
           <select className={iCls} value={filterSt} onChange={e => setFilterSt(e.target.value)}>
@@ -398,8 +499,8 @@ export default function EquipmentPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
                 <tr>
-                  {["Fleet No.","Description","Category","Make / Model","Site","Region",
-                    "Status","Yard / Location","Condition","Hr Meter / Km","Actions"].map(h => (
+                  {["Fleet No.","Description","Category","Make / Model","Allocated To","Department",
+                    "Site","Region","Status","Yard / Location","Condition","Hr Meter / Km","Actions"].map(h => (
                     <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">
                       {h}
                     </th>
@@ -408,9 +509,9 @@ export default function EquipmentPage() {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {loading ? (
-                  <tr><td colSpan={11} className="px-5 py-16 text-center text-slate-400">Loading equipment...</td></tr>
+                  <tr><td colSpan={13} className="px-5 py-16 text-center text-slate-400">Loading equipment...</td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={11} className="px-5 py-16 text-center text-slate-400">
+                  <tr><td colSpan={13} className="px-5 py-16 text-center text-slate-400">
                     {equipment.length === 0
                       ? "No equipment yet. Commission your first equipment to get started."
                       : "No equipment matches your filters."}
@@ -431,6 +532,18 @@ export default function EquipmentPage() {
                     <td className="px-5 py-4 text-xs">
                       <div className="font-medium text-slate-700">{item.make}</div>
                       <div className="text-slate-400">{item.model}</div>
+                    </td>
+                    <td className="px-5 py-4 text-xs text-slate-600">
+                      <div className="truncate max-w-32">
+                        {(item as any).allocated_to
+                          ? <span className="font-medium">{(item as any).allocated_to}</span>
+                          : <span className="text-slate-300">—</span>}
+                      </div>
+                    </td>
+                    <td className="px-5 py-4 text-xs text-slate-500">
+                      <div className="truncate max-w-28">
+                        {(item as any).allocated_position || <span className="text-slate-300">—</span>}
+                      </div>
                     </td>
                     <td className="px-5 py-4 text-slate-500 text-xs">
                       <div className="truncate max-w-32">{item.site}</div>
@@ -457,7 +570,6 @@ export default function EquipmentPage() {
                         {item.assessment}
                       </span>
                     </td>
-                    {/* Hr Meter / Km — no odometer/miles */}
                     <td className="px-5 py-4 text-xs text-slate-500 whitespace-nowrap">
                       {item.meter_device === "Km"
                         ? `${(item.current_kilometer || 0).toLocaleString()} km`
@@ -509,17 +621,19 @@ export default function EquipmentPage() {
               </div>
               <div className="space-y-1.5 text-xs text-slate-500">
                 {[
-                  ["Make / Model", `${item.make} ${item.model}`],
-                  ["Category",     item.category],
-                  ["Site",         item.site],
-                  ["Region",       item.region],
+                  ["Make / Model",  `${item.make} ${item.model}`],
+                  ["Category",      item.category],
+                  ...((item as any).allocated_to    ? [["Allocated To", (item as any).allocated_to]]    : []),
+                  ...((item as any).allocated_position ? [["Department", (item as any).allocated_position]] : []),
+                  ["Site",          item.site],
+                  ["Region",        item.region],
                   ...((item as any).current_yard ? [["Yard / Location", (item as any).current_yard]] : []),
-                  ["Condition",    item.assessment],
+                  ["Condition",     item.assessment],
                   [item.meter_device === "Km" ? "Km Reading" : "Hour Meter",
                    item.meter_device === "Km"
                      ? `${(item.current_kilometer||0).toLocaleString()} km`
                      : `${(item.current_hour_meter||0).toLocaleString()} hrs`],
-                ].map(([l,v]) => (
+                ].map(([l, v]) => (
                   <div key={l} className="flex justify-between">
                     <span>{l}</span>
                     <span className="font-medium text-slate-700 text-right truncate ml-2">{v}</span>
@@ -541,6 +655,14 @@ export default function EquipmentPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* MODALS */}
+      {showExportModal && (
+        <ExportModal
+          equipment={filtered.length > 0 ? filtered : equipment}
+          onClose={() => setShowExportModal(false)}
+        />
       )}
 
       {statusItem && (
