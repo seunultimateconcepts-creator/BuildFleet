@@ -10,7 +10,6 @@ import Link from "next/link";
 import { useEquipment } from "@/hooks/use-equipment";
 import { useAuth } from "@/hooks/use-auth";
 import { dbu } from "@/lib/db";
-
 import type { Equipment, OperationalStatus } from "@/types";
 
 // ─────────────────────────────────────────────────────────────
@@ -88,290 +87,360 @@ const EXPORT_COLUMNS: { key: string; label: string; defaultOn: boolean }[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────
-// EXPORT — XML Excel generator (no package needed)
+// EXPORT — Excel XML Spreadsheet (zero dependencies, pure string)
 // ─────────────────────────────────────────────────────────────
-const STATUS_HEX: Record<string, string> = {
-  "Working":      "16A34A",
-  "Under Repair": "CA8A04",
-  "Break Down":   "EA580C",
-  "Storage":      "475569",
-  "Scrapped":     "DC2626",
+const STATUS_COLOR: Record<string, string> = {
+  "Working":      "#16A34A",
+  "Under Repair": "#CA8A04",
+  "Break Down":   "#EA580C",
+  "Storage":      "#475569",
+  "Scrapped":     "#DC2626",
 };
-const CONDITION_HEX: Record<string, string> = {
-  "Very Good": "15803D",
-  "Good":      "16A34A",
-  "Fair-Good": "65A30D",
-  "Fair":      "CA8A04",
-  "Poor-Fair": "EA580C",
-  "Poor":      "DC2626",
-  "Scrapped":  "475569",
+const CONDITION_COLOR: Record<string, string> = {
+  "Very Good": "#15803D",
+  "Good":      "#16A34A",
+  "Fair-Good": "#65A30D",
+  "Fair":      "#CA8A04",
+  "Poor-Fair": "#EA580C",
+  "Poor":      "#DC2626",
+  "Scrapped":  "#475569",
+};
+const COL_WIDTHS: Record<string, number> = {
+  "Fleet No.": 80, "Description": 200, "Category": 130, "Make": 90, "Model": 90,
+  "Year": 50, "Allocated User": 170, "Department": 150, "Site": 185, "Region": 110,
+  "Status": 95, "Yard / Location": 185, "Condition": 80, "Hour Meter (Hrs)": 110,
+  "Km Reading": 95, "Reg. No.": 95, "Serial No.": 120, "Chassis No.": 120,
+  "Engine Power": 95, "Size / Capacity": 110, "Tank Capacity": 95, "Meter Device": 95,
+  "Commission Date": 110, "Hire Rate (N)": 110, "Purchase Cost": 110,
+  "Landed Cost": 110, "Supplier": 150, "Life Expectancy": 110,
 };
 
-function x(v: string) {
-  return v.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+function xmlEsc(v: string) {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
-function generateXLSX(
+function cell(
+  value: string | number,
+  styleId: string,
+  type: "String" | "Number" = "String",
+  color?: string,
+): string {
+  const data = type === "Number"
+    ? `<ss:Data ss:Type="Number">${value}</ss:Data>`
+    : `<ss:Data ss:Type="String">${xmlEsc(String(value ?? ""))}</ss:Data>`;
+
+  // Inline font colour override via NamedCell trick not available in SpreadsheetML,
+  // so we encode colour in the style name and define per-status styles in Styles block.
+  return `<ss:Cell ss:StyleID="${styleId}">${data}</ss:Cell>`;
+}
+
+function buildExcelXML(
   cols: { key: string; label: string }[],
   rows: (string | number)[][],
   totalEquipment: number,
   generatedBy: string,
-) {
+): string {
   const numCols = cols.length;
-  const dateStr = new Date().toLocaleDateString("en-GB", { day:"2-digit", month:"long", year:"numeric" });
+  const dateStr = new Date().toLocaleDateString("en-GB", {
+    day: "2-digit", month: "long", year: "numeric",
+  });
 
   // ── Styles ───────────────────────────────────────────────
-  const styleXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="8">
-    <font><sz val="18"/><b/><color rgb="FFFFFFFF"/><name val="Arial"/></font>
-    <font><sz val="13"/><b/><color rgb="FFF5A623"/><name val="Arial"/></font>
-    <font><sz val="9"/><i/><color rgb="FF64748B"/><name val="Arial"/></font>
-    <font><sz val="9"/><b/><color rgb="FFFFFFFF"/><name val="Arial"/></font>
-    <font><sz val="9"/><b/><color rgb="FF92400E"/><name val="Arial"/></font>
-    <font><sz val="9"/><color rgb="FF1E293B"/><name val="Arial"/></font>
-    <font><sz val="9"/><b/><color rgb="FF16A34A"/><name val="Arial"/></font>
-    <font><sz val="8"/><i/><color rgb="FF64748B"/><name val="Arial"/></font>
-  </fonts>
-  <fills count="8">
-    <fill><patternFill patternType="none"/></fill>
-    <fill><patternFill patternType="gray125"/></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FF080D1A"/></patternFill></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FF1A2744"/></patternFill></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FFF8F9FA"/></patternFill></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FFFFF3CD"/></patternFill></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FFF5A623"/></patternFill></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FFFFFFFF"/></patternFill></fill>
-  </fills>
-  <borders count="3">
-    <border><left/><right/><top/><bottom/><diagonal/></border>
-    <border><left style="thin"><color rgb="FFE2E8F0"/></left><right style="thin"><color rgb="FFE2E8F0"/></right><top style="thin"><color rgb="FFE2E8F0"/></top><bottom style="thin"><color rgb="FFE2E8F0"/></bottom><diagonal/></border>
-    <border><left style="thin"><color rgb="FF1A2744"/></left><right style="thin"><color rgb="FF1A2744"/></right><top style="thin"><color rgb="FF1A2744"/></top><bottom style="thin"><color rgb="FF1A2744"/></bottom><diagonal/></border>
-  </borders>
-  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="14">
-    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
-    <xf numFmtId="0" fontId="0" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-    <xf numFmtId="0" fontId="1" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-    <xf numFmtId="0" fontId="2" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="left" vertical="center" indent="1"/></xf>
-    <xf numFmtId="0" fontId="2" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="right" vertical="center" indent="1"/></xf>
-    <xf numFmtId="0" fontId="6" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
-    <xf numFmtId="0" fontId="3" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
-    <xf numFmtId="0" fontId="4" fillId="7" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-    <xf numFmtId="0" fontId="4" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-    <xf numFmtId="0" fontId="5" fillId="7" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center" indent="1"/></xf>
-    <xf numFmtId="0" fontId="5" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center" indent="1"/></xf>
-    <xf numFmtId="#,##0" fontId="5" fillId="7" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
-    <xf numFmtId="#,##0" fontId="5" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
-    <xf numFmtId="0" fontId="7" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-  </cellXfs>
-</styleSheet>`;
+  const styles = `
+  <ss:Styles>
+    <ss:Style ss:ID="Default">
+      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Color="#1E293B"/>
+      <ss:Alignment ss:Vertical="Center"/>
+    </ss:Style>
 
-  // ── Shared strings (deduplicated string table) ────────────
-  const strings: string[] = [];
-  const sIdx: Record<string, number> = {};
-  function si(v: string): number {
-    if (sIdx[v] === undefined) { sIdx[v] = strings.length; strings.push(v); }
-    return sIdx[v];
-  }
+    <ss:Style ss:ID="banner">
+      <ss:Font ss:FontName="Arial" ss:Size="18" ss:Bold="1" ss:Color="#FFFFFF"/>
+      <ss:Interior ss:Color="#080D1A" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+    </ss:Style>
 
-  // Pre-register fixed strings
-  si("HARTLAND NIGERIA LIMITED");
-  si("PLANT & EQUIPMENT REGISTER");
-  si(`Generated: ${dateStr}`);
-  si(`Total Equipment: ${totalEquipment}   |   Prepared by: ${generatedBy}`);
-  cols.forEach(c => si(c.label.toUpperCase()));
-  rows.forEach(row => row.forEach(v => { if (typeof v === "string") si(v); }));
-  si("CONFIDENTIAL — For internal use only. Generated by BuildFleet\u2122 — A product of Ultimate Tech Lab (UTL)");
+    <ss:Style ss:ID="subtitle">
+      <ss:Font ss:FontName="Arial" ss:Size="13" ss:Bold="1" ss:Color="#F5A623"/>
+      <ss:Interior ss:Color="#1A2744" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+    </ss:Style>
 
-  const sharedStrXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${strings.length}" uniqueCount="${strings.length}">
-${strings.map(s => `  <si><t xml:space="preserve">${x(s)}</t></si>`).join("\n")}
-</sst>`;
+    <ss:Style ss:ID="metaL">
+      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Italic="1" ss:Color="#64748B"/>
+      <ss:Interior ss:Color="#F8F9FA" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:Indent="1"/>
+    </ss:Style>
 
-  // ── Helper: column letter ──────────────────────────────────
-  function col(n: number): string {
-    let s = "";
-    while (n > 0) { s = String.fromCharCode(65 + (n - 1) % 26) + s; n = Math.floor((n - 1) / 26); }
-    return s;
-  }
+    <ss:Style ss:ID="metaR">
+      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Italic="1" ss:Color="#64748B"/>
+      <ss:Interior ss:Color="#F8F9FA" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Right" ss:Vertical="Center" ss:Indent="1"/>
+    </ss:Style>
 
-  // ── Helper: shared string cell ─────────────────────────────
-  function sc(r: number, c: number, val: string, style: number) {
-    return `<c r="${col(c)}${r}" t="s" s="${style}"><v>${si(val)}</v></c>`;
-  }
-  // ── Helper: number cell ────────────────────────────────────
-  function nc(r: number, c: number, val: number, style: number) {
-    return `<c r="${col(c)}${r}" s="${style}"><v>${val}</v></c>`;
-  }
+    <ss:Style ss:ID="amber">
+      <ss:Interior ss:Color="#F5A623" ss:Pattern="Solid"/>
+    </ss:Style>
 
-  // ── Worksheet ─────────────────────────────────────────────
-  let cellsXml = "";
-  const merges: string[] = [];
-  const lastCol = col(numCols);
+    <ss:Style ss:ID="colHeader">
+      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+      <ss:Interior ss:Color="#080D1A" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+      <ss:Borders>
+        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#F5A623"/>
+      </ss:Borders>
+    </ss:Style>
 
-  // Row 1: banner
-  merges.push(`A1:${lastCol}1`);
-  cellsXml += `<row r="1" ht="40" customHeight="1"><c r="A1" t="s" s="1"><v>${si("HARTLAND NIGERIA LIMITED")}</v></c></row>\n`;
+    <ss:Style ss:ID="fleetW">
+      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="#92400E"/>
+      <ss:Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <ss:Borders>
+        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </ss:Borders>
+    </ss:Style>
+    <ss:Style ss:ID="fleetA">
+      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="#92400E"/>
+      <ss:Interior ss:Color="#FFF3CD" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <ss:Borders>
+        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </ss:Borders>
+    </ss:Style>
 
-  // Row 2: title
-  merges.push(`A2:${lastCol}2`);
-  cellsXml += `<row r="2" ht="26" customHeight="1"><c r="A2" t="s" s="2"><v>${si("PLANT & EQUIPMENT REGISTER")}</v></c></row>\n`;
+    <ss:Style ss:ID="dataW">
+      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Color="#1E293B"/>
+      <ss:Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:Indent="1"/>
+      <ss:Borders>
+        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </ss:Borders>
+    </ss:Style>
+    <ss:Style ss:ID="dataA">
+      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Color="#1E293B"/>
+      <ss:Interior ss:Color="#FFF3CD" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:Indent="1"/>
+      <ss:Borders>
+        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </ss:Borders>
+    </ss:Style>
 
-  // Row 3: meta
-  const midCol = Math.ceil(numCols / 2);
-  merges.push(`A3:${col(midCol)}3`);
-  merges.push(`${col(midCol + 1)}3:${lastCol}3`);
-  cellsXml += `<row r="3" ht="20" customHeight="1">`;
-  cellsXml += `<c r="A3" t="s" s="3"><v>${si(`Generated: ${dateStr}`)}</v></c>`;
-  cellsXml += `<c r="${col(midCol + 1)}3" t="s" s="4"><v>${si(`Total Equipment: ${totalEquipment}   |   Prepared by: ${generatedBy}`)}</v></c>`;
-  cellsXml += `</row>\n`;
+    <ss:Style ss:ID="numW">
+      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Color="#1E293B"/>
+      <ss:Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+      <ss:NumberFormat ss:Format="#,##0"/>
+      <ss:Borders>
+        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </ss:Borders>
+    </ss:Style>
+    <ss:Style ss:ID="numA">
+      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Color="#1E293B"/>
+      <ss:Interior ss:Color="#FFF3CD" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+      <ss:NumberFormat ss:Format="#,##0"/>
+      <ss:Borders>
+        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </ss:Borders>
+    </ss:Style>
 
-  // Row 4: amber divider — empty styled row
-  merges.push(`A4:${lastCol}4`);
-  cellsXml += `<row r="4" ht="4" customHeight="1"><c r="A4" s="13"/></row>\n`;
+    ${Object.entries(STATUS_COLOR).map(([status, color]) => `
+    <ss:Style ss:ID="st_${status.replace(/ /g,"_")}_W">
+      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="${color}"/>
+      <ss:Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <ss:Borders>
+        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </ss:Borders>
+    </ss:Style>
+    <ss:Style ss:ID="st_${status.replace(/ /g,"_")}_A">
+      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="${color}"/>
+      <ss:Interior ss:Color="#FFF3CD" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <ss:Borders>
+        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </ss:Borders>
+    </ss:Style>`).join("")}
 
-  // Row 5: column headers
-  cellsXml += `<row r="5" ht="30" customHeight="1">`;
-  cols.forEach((c, i) => {
-    cellsXml += `<c r="${col(i + 1)}5" t="s" s="6"><v>${si(c.label.toUpperCase())}</v></c>`;
-  });
-  cellsXml += `</row>\n`;
+    ${Object.entries(CONDITION_COLOR).map(([cond, color]) => `
+    <ss:Style ss:ID="cd_${cond.replace(/-| /g,"_")}_W">
+      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="${color}"/>
+      <ss:Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <ss:Borders>
+        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </ss:Borders>
+    </ss:Style>
+    <ss:Style ss:ID="cd_${cond.replace(/-| /g,"_")}_A">
+      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="${color}"/>
+      <ss:Interior ss:Color="#FFF3CD" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <ss:Borders>
+        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </ss:Borders>
+    </ss:Style>`).join("")}
 
-  // Rows 6+: data
-  rows.forEach((row, ri) => {
-    const exRow = ri + 6;
+    <ss:Style ss:ID="footer">
+      <ss:Font ss:FontName="Arial" ss:Size="8" ss:Italic="1" ss:Color="#64748B"/>
+      <ss:Interior ss:Color="#F8F9FA" ss:Pattern="Solid"/>
+      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+    </ss:Style>
+  </ss:Styles>`;
+
+  // ── Column widths ────────────────────────────────────────
+  const colDefs = cols.map(c =>
+    `<ss:Column ss:Width="${COL_WIDTHS[c.label] ?? 100}"/>`
+  ).join("\n      ");
+
+  // ── Rows ─────────────────────────────────────────────────
+  // Row 1: Banner
+  const row1 = `
+    <ss:Row ss:Height="40">
+      <ss:Cell ss:StyleID="banner" ss:MergeAcross="${numCols - 1}">
+        <ss:Data ss:Type="String">HARTLAND NIGERIA LIMITED</ss:Data>
+      </ss:Cell>
+    </ss:Row>`;
+
+  // Row 2: Subtitle
+  const row2 = `
+    <ss:Row ss:Height="26">
+      <ss:Cell ss:StyleID="subtitle" ss:MergeAcross="${numCols - 1}">
+        <ss:Data ss:Type="String">PLANT &amp; EQUIPMENT REGISTER</ss:Data>
+      </ss:Cell>
+    </ss:Row>`;
+
+  // Row 3: Meta
+  const mid = Math.ceil(numCols / 2);
+  const row3 = `
+    <ss:Row ss:Height="20">
+      <ss:Cell ss:StyleID="metaL" ss:MergeAcross="${mid - 1}">
+        <ss:Data ss:Type="String">Generated: ${dateStr}</ss:Data>
+      </ss:Cell>
+      <ss:Cell ss:StyleID="metaR" ss:MergeAcross="${numCols - mid - 1}">
+        <ss:Data ss:Type="String">Total Equipment: ${totalEquipment}   |   Prepared by: ${xmlEsc(generatedBy)}</ss:Data>
+      </ss:Cell>
+    </ss:Row>`;
+
+  // Row 4: Amber divider
+  const row4 = `
+    <ss:Row ss:Height="4">
+      <ss:Cell ss:StyleID="amber" ss:MergeAcross="${numCols - 1}"><ss:Data ss:Type="String"></ss:Data></ss:Cell>
+    </ss:Row>`;
+
+  // Row 5: Column headers
+  const row5 = `
+    <ss:Row ss:Height="30">
+      ${cols.map(c => `<ss:Cell ss:StyleID="colHeader"><ss:Data ss:Type="String">${xmlEsc(c.label.toUpperCase())}</ss:Data></ss:Cell>`).join("\n      ")}
+    </ss:Row>`;
+
+  // Data rows
+  const numericLabels = new Set(["Hour Meter (Hrs)", "Km Reading", "Hire Rate (N)", "Purchase Cost", "Landed Cost"]);
+
+  const dataRows = rows.map((row, ri) => {
     const isAlt = ri % 2 === 1;
-    cellsXml += `<row r="${exRow}" ht="18" customHeight="1">`;
-    row.forEach((val, ci) => {
-      const colDef = cols[ci];
-      const colIdx = ci + 1;
-      const strVal = String(val ?? "");
+    const suffix = isAlt ? "A" : "W";
+    const cells = row.map((val, ci) => {
+      const colLabel = cols[ci].label;
+      const colKey   = cols[ci].key;
+      const strVal   = String(val ?? "");
 
-      if (colDef.label === "Fleet No.") {
-        cellsXml += sc(exRow, colIdx, strVal, isAlt ? 8 : 7);
-      } else if (["Hour Meter (Hrs)","Km Reading","Hire Rate (N)","Purchase Cost","Landed Cost"].includes(colDef.label)) {
-        const num = typeof val === "number" ? val : (parseFloat(strVal) || 0);
-        cellsXml += nc(exRow, colIdx, num, isAlt ? 12 : 11);
-      } else if (colDef.label === "Status") {
-        // Inline font colour for status — we use a shared string with the value
-        cellsXml += sc(exRow, colIdx, strVal, isAlt ? 10 : 9);
-      } else if (colDef.label === "Condition") {
-        cellsXml += sc(exRow, colIdx, strVal, isAlt ? 10 : 9);
-      } else {
-        cellsXml += sc(exRow, colIdx, strVal, isAlt ? 10 : 9);
+      if (colKey === "fleet_number") {
+        return `<ss:Cell ss:StyleID="fleet${suffix}"><ss:Data ss:Type="String">${xmlEsc(strVal)}</ss:Data></ss:Cell>`;
       }
-    });
-    cellsXml += `</row>\n`;
-  });
+      if (colKey === "operational_status") {
+        const sId = `st_${strVal.replace(/ /g, "_")}_${suffix}`;
+        return `<ss:Cell ss:StyleID="${sId}"><ss:Data ss:Type="String">${xmlEsc(strVal)}</ss:Data></ss:Cell>`;
+      }
+      if (colKey === "assessment") {
+        const sId = `cd_${strVal.replace(/-| /g, "_")}_${suffix}`;
+        return `<ss:Cell ss:StyleID="${sId}"><ss:Data ss:Type="String">${xmlEsc(strVal)}</ss:Data></ss:Cell>`;
+      }
+      if (numericLabels.has(colLabel)) {
+        const num = typeof val === "number" ? val : (parseFloat(strVal) || 0);
+        return `<ss:Cell ss:StyleID="num${suffix}"><ss:Data ss:Type="Number">${num}</ss:Data></ss:Cell>`;
+      }
+      return `<ss:Cell ss:StyleID="data${suffix}"><ss:Data ss:Type="String">${xmlEsc(strVal)}</ss:Data></ss:Cell>`;
+    }).join("\n      ");
+
+    return `
+    <ss:Row ss:Height="18">
+      ${cells}
+    </ss:Row>`;
+  }).join("");
 
   // Footer row
-  const footerRow = rows.length + 6;
-  merges.push(`A${footerRow}:${lastCol}${footerRow}`);
-  const footerStr = "CONFIDENTIAL — For internal use only. Generated by BuildFleet\u2122 — A product of Ultimate Tech Lab (UTL)";
-  cellsXml += `<row r="${footerRow}" ht="16" customHeight="1"><c r="A${footerRow}" t="s" s="3"><v>${si(footerStr)}</v></c></row>\n`;
+  const footerRow = `
+    <ss:Row ss:Height="16">
+      <ss:Cell ss:StyleID="footer" ss:MergeAcross="${numCols - 1}">
+        <ss:Data ss:Type="String">CONFIDENTIAL — For internal use only. Generated by BuildFleet™ — A product of Ultimate Tech Lab (UTL)</ss:Data>
+      </ss:Cell>
+    </ss:Row>`;
 
-  // Column widths
-  const colWidths: Record<string, number> = {
-    "Fleet No.": 12, "Description": 30, "Category": 20, "Make": 14, "Model": 14,
-    "Year": 8, "Allocated User": 26, "Department": 22, "Site": 28, "Region": 16,
-    "Status": 14, "Yard / Location": 28, "Condition": 12, "Hour Meter (Hrs)": 16,
-    "Km Reading": 14, "Reg. No.": 14, "Serial No.": 18, "Chassis No.": 18,
-    "Engine Power": 14, "Size / Capacity": 16, "Tank Capacity": 14, "Meter Device": 14,
-    "Commission Date": 16, "Hire Rate (N)": 16, "Purchase Cost": 16, "Landed Cost": 16,
-    "Supplier": 22, "Life Expectancy": 16,
-  };
-  const colsXml = cols.map((c, i) =>
-    `<col min="${i+1}" max="${i+1}" width="${colWidths[c.label] ?? 16}" customWidth="1"/>`
-  ).join("");
+  // ── Freeze panes ─────────────────────────────────────────
+  const freezePane = `
+    <x:WorksheetOptions>
+      <x:FreezePanes/>
+      <x:FrozenNoSplit/>
+      <x:SplitHorizontal>5</x:SplitHorizontal>
+      <x:TopRowBottomPane>5</x:TopRowBottomPane>
+      <x:ActivePane>2</x:ActivePane>
+      <x:PageSetup>
+        <x:Layout x:Orientation="Landscape"/>
+        <x:Paper>9</x:Paper>
+      </x:PageSetup>
+    </x:WorksheetOptions>`;
 
-  const wsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-           xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheetViews>
-    <sheetView workbookViewId="0">
-      <pane ySplit="5" topLeftCell="A6" activePane="bottomLeft" state="frozen"/>
-    </sheetView>
-  </sheetViews>
-  <cols>${colsXml}</cols>
-  <sheetData>
-${cellsXml}  </sheetData>
-  <mergeCells count="${merges.length}">
-    ${merges.map(m => `<mergeCell ref="${m}"/>`).join("\n    ")}
-  </mergeCells>
-  <autoFilter ref="A5:${lastCol}5"/>
-  <pageSetup paperSize="9" orientation="landscape" fitToPage="1" fitToWidth="1" fitToHeight="0"/>
-</worksheet>`;
-
-  // ── Workbook XML ──────────────────────────────────────────
-  const wbXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheets>
-    <sheet name="Plant List" sheetId="1" r:id="rId1"/>
-  </sheets>
-</workbook>`;
-
-  const wbRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
-  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-</Relationships>`;
-
-  const relsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-</Relationships>`;
-
-  const ctXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-  <Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
-  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-</Types>`;
-
-  return { wbXml, wbRelsXml, relsXml, ctXml, wsXml, sharedStrXml, styleXml };
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<ss:Workbook
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:x="urn:schemas-microsoft-com:office:excel"
+  xmlns:o="urn:schemas-microsoft-com:office:office">
+  ${styles}
+  <ss:Worksheet ss:Name="Plant List">
+    <ss:Table>
+      ${colDefs}
+      ${row1}
+      ${row2}
+      ${row3}
+      ${row4}
+      ${row5}
+      ${dataRows}
+      ${footerRow}
+    </ss:Table>
+    ${freezePane}
+  </ss:Worksheet>
+</ss:Workbook>`;
 }
 
-// Build the zip and download — uses fflate which Next.js ships by default
-async function downloadXLSX(
+function downloadExcel(
   cols: { key: string; label: string }[],
   rows: (string | number)[][],
   totalEquipment: number,
   generatedBy: string,
 ) {
-  const { strToU8, zip } = await import("fflate");
-  const parts = generateXLSX(cols, rows, totalEquipment, generatedBy);
-
-  const files: Record<string, Uint8Array> = {
-    "[Content_Types].xml":           strToU8(parts.ctXml),
-    "_rels/.rels":                   strToU8(parts.relsXml),
-    "xl/workbook.xml":               strToU8(parts.wbXml),
-    "xl/_rels/workbook.xml.rels":    strToU8(parts.wbRelsXml),
-    "xl/worksheets/sheet1.xml":      strToU8(parts.wsXml),
-    "xl/sharedStrings.xml":          strToU8(parts.sharedStrXml),
-    "xl/styles.xml":                 strToU8(parts.styleXml),
-  };
-
-  return new Promise<void>((resolve, reject) => {
-    zip(files, { level: 6 }, (err, data) => {
-      if (err) { reject(err); return; }
-      const blob = new Blob([data], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
-      const url = URL.createObjectURL(blob);
-      const a   = document.createElement("a");
-      a.href     = url;
-      a.download = `Hartland_Plant_List_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
-      resolve();
-    });
-  });
+  const xml  = buildExcelXML(cols, rows, totalEquipment, generatedBy);
+  const blob = new Blob([xml], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `Hartland_Plant_List_${new Date().toISOString().slice(0, 10)}.xls`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -386,8 +455,6 @@ function ExportModal({ equipment, onClose, userName, totalEquipment }: {
   const [selected, setSelected] = useState<Set<string>>(
     new Set(EXPORT_COLUMNS.filter(c => c.defaultOn).map(c => c.key))
   );
-  const [exporting, setExporting] = useState(false);
-  const [error,     setError]     = useState<string | null>(null);
 
   function toggle(key: string) {
     setSelected(prev => {
@@ -400,26 +467,19 @@ function ExportModal({ equipment, onClose, userName, totalEquipment }: {
   function selectNone()    { setSelected(new Set()); }
   function selectDefault() { setSelected(new Set(EXPORT_COLUMNS.filter(c => c.defaultOn).map(c => c.key))); }
 
-  async function doExport() {
-    setExporting(true); setError(null);
-    try {
-      const cols = EXPORT_COLUMNS.filter(c => selected.has(c.key));
-      const rows = equipment.map(e => cols.map(c => {
-        if (c.key === "current_yard")       return (e as any).current_yard ?? "";
-        if (c.key === "allocated_to")       return (e as any).allocated_to ?? "";
-        if (c.key === "allocated_position") return (e as any).allocated_position ?? "";
-        if (c.key === "hire_rate")          return (e as any).hire_rate ?? 0;
-        if (c.key === "current_hour_meter") return (e as any).current_hour_meter ?? 0;
-        if (c.key === "current_kilometer")  return (e as any).current_kilometer ?? 0;
-        return (e as any)[c.key] ?? "";
-      }));
-      await downloadXLSX(cols, rows, totalEquipment, userName);
-      onClose();
-    } catch (e: any) {
-      setError("Export failed. Please try again.");
-    } finally {
-      setExporting(false);
-    }
+  function doExport() {
+    const cols = EXPORT_COLUMNS.filter(c => selected.has(c.key));
+    const rows = equipment.map(e => cols.map(c => {
+      if (c.key === "current_yard")       return (e as any).current_yard ?? "";
+      if (c.key === "allocated_to")       return (e as any).allocated_to ?? "";
+      if (c.key === "allocated_position") return (e as any).allocated_position ?? "";
+      if (c.key === "hire_rate")          return (e as any).hire_rate ?? 0;
+      if (c.key === "current_hour_meter") return (e as any).current_hour_meter ?? 0;
+      if (c.key === "current_kilometer")  return (e as any).current_kilometer ?? 0;
+      return (e as any)[c.key] ?? "";
+    }));
+    downloadExcel(cols, rows, totalEquipment, userName);
+    onClose();
   }
 
   const onCount  = EXPORT_COLUMNS.filter(c => selected.has(c.key)).length;
@@ -432,7 +492,7 @@ function ExportModal({ equipment, onClose, userName, totalEquipment }: {
         <div className="flex items-start justify-between mb-1">
           <div>
             <h3 className="font-bold text-slate-800 text-lg">Export Plant List</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Formatted Excel (.xlsx) — Hartland branding</p>
+            <p className="text-xs text-slate-400 mt-0.5">Formatted Excel (.xls) — Hartland branding</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none mt-0.5">×</button>
         </div>
@@ -487,23 +547,14 @@ function ExportModal({ equipment, onClose, userName, totalEquipment }: {
           </div>
         </div>
 
-        {error && (
-          <div className="mt-3 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-xs text-red-700">⚠️ {error}</div>
-        )}
-
         <div className="flex gap-3 pt-4 border-t border-slate-100 mt-4">
-          <button onClick={onClose} disabled={exporting}
-            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-40">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-500 hover:bg-slate-50">
             Cancel
           </button>
-          <button onClick={doExport} disabled={onCount === 0 || exporting}
-            className="flex-1 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-40 flex items-center justify-center gap-2">
-            {exporting ? (
-              <><svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-              </svg>Generating...</>
-            ) : <>📊 Export {onCount} cols</>}
+          <button onClick={doExport} disabled={onCount === 0}
+            className="flex-1 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-40">
+            📊 Export {onCount} cols
           </button>
         </div>
       </div>
