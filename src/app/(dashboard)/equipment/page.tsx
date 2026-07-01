@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-expressions */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -10,6 +8,7 @@ import Link from "next/link";
 import { useEquipment } from "@/hooks/use-equipment";
 import { useAuth } from "@/hooks/use-auth";
 import { dbu } from "@/lib/db";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import type { Equipment, OperationalStatus } from "@/types";
 
 // ─────────────────────────────────────────────────────────────
@@ -79,7 +78,7 @@ const EXPORT_COLUMNS: { key: string; label: string; defaultOn: boolean }[] = [
   { key: "tank_capacity",      label: "Tank Capacity",    defaultOn: false },
   { key: "meter_device",       label: "Meter Device",     defaultOn: false },
   { key: "commission_date",    label: "Commission Date",  defaultOn: false },
-  { key: "hire_rate",          label: "Hire Rate (N)",    defaultOn: false },
+  { key: "hire_rate",          label: "Hire Rate (₦)",    defaultOn: false },
   { key: "purchase_cost",      label: "Purchase Cost",    defaultOn: false },
   { key: "landed_cost",        label: "Landed Cost",      defaultOn: false },
   { key: "supplier",           label: "Supplier",         defaultOn: false },
@@ -87,370 +86,263 @@ const EXPORT_COLUMNS: { key: string; label: string; defaultOn: boolean }[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────
-// EXPORT — Excel XML Spreadsheet (zero dependencies, pure string)
+// EXPORT — PDF via print (same proven approach as Rental List)
 // ─────────────────────────────────────────────────────────────
-const STATUS_COLOR: Record<string, string> = {
-  "Working":      "#16A34A",
-  "Under Repair": "#CA8A04",
-  "Break Down":   "#EA580C",
-  "Storage":      "#475569",
-  "Scrapped":     "#DC2626",
+const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
+  "Working":      { bg: "#dcfce7", text: "#15803d" },
+  "Under Repair": { bg: "#fef9c3", text: "#a16207" },
+  "Break Down":   { bg: "#ffedd5", text: "#c2410c" },
+  "Storage":      { bg: "#f1f5f9", text: "#475569" },
+  "Scrapped":     { bg: "#fee2e2", text: "#dc2626" },
 };
-const CONDITION_COLOR: Record<string, string> = {
-  "Very Good": "#15803D",
-  "Good":      "#16A34A",
-  "Fair-Good": "#65A30D",
-  "Fair":      "#CA8A04",
-  "Poor-Fair": "#EA580C",
-  "Poor":      "#DC2626",
-  "Scrapped":  "#475569",
-};
-const COL_WIDTHS: Record<string, number> = {
-  "Fleet No.": 80, "Description": 200, "Category": 130, "Make": 90, "Model": 90,
-  "Year": 50, "Allocated User": 170, "Department": 150, "Site": 185, "Region": 110,
-  "Status": 95, "Yard / Location": 185, "Condition": 80, "Hour Meter (Hrs)": 110,
-  "Km Reading": 95, "Reg. No.": 95, "Serial No.": 120, "Chassis No.": 120,
-  "Engine Power": 95, "Size / Capacity": 110, "Tank Capacity": 95, "Meter Device": 95,
-  "Commission Date": 110, "Hire Rate (N)": 110, "Purchase Cost": 110,
-  "Landed Cost": 110, "Supplier": 150, "Life Expectancy": 110,
+const CONDITION_COLOR: Record<string, { bg: string; text: string }> = {
+  "Very Good": { bg: "#dcfce7", text: "#15803d" },
+  "Good":      { bg: "#bbf7d0", text: "#166534" },
+  "Fair-Good": { bg: "#d9f99d", text: "#3f6212" },
+  "Fair":      { bg: "#fef9c3", text: "#a16207" },
+  "Poor-Fair": { bg: "#ffedd5", text: "#c2410c" },
+  "Poor":      { bg: "#fee2e2", text: "#dc2626" },
+  "Scrapped":  { bg: "#f1f5f9", text: "#475569" },
 };
 
-function xmlEsc(v: string) {
-  return v
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
-function cell(
-  value: string | number,
-  styleId: string,
-  type: "String" | "Number" = "String",
-  color?: string,
-): string {
-  const data = type === "Number"
-    ? `<ss:Data ss:Type="Number">${value}</ss:Data>`
-    : `<ss:Data ss:Type="String">${xmlEsc(String(value ?? ""))}</ss:Data>`;
-
-  // Inline font colour override via NamedCell trick not available in SpreadsheetML,
-  // so we encode colour in the style name and define per-status styles in Styles block.
-  return `<ss:Cell ss:StyleID="${styleId}">${data}</ss:Cell>`;
-}
-
-function buildExcelXML(
+function buildPrintHTML(
   cols: { key: string; label: string }[],
-  rows: (string | number)[][],
-  totalEquipment: number,
+  equipment: Equipment[],
+  counts: { total: number; working: number; repair: number; storage: number; scrapped: number },
   generatedBy: string,
 ): string {
-  const numCols = cols.length;
   const dateStr = new Date().toLocaleDateString("en-GB", {
     day: "2-digit", month: "long", year: "numeric",
   });
 
-  // ── Styles ───────────────────────────────────────────────
-  const styles = `
-  <ss:Styles>
-    <ss:Style ss:ID="Default">
-      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Color="#1E293B"/>
-      <ss:Alignment ss:Vertical="Center"/>
-    </ss:Style>
+  const esc = (v: any) => String(v ?? "")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
-    <ss:Style ss:ID="banner">
-      <ss:Font ss:FontName="Arial" ss:Size="18" ss:Bold="1" ss:Color="#FFFFFF"/>
-      <ss:Interior ss:Color="#080D1A" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-    </ss:Style>
+  const headerCells = cols.map(c =>
+    `<th>${esc(c.label)}</th>`
+  ).join("");
 
-    <ss:Style ss:ID="subtitle">
-      <ss:Font ss:FontName="Arial" ss:Size="13" ss:Bold="1" ss:Color="#F5A623"/>
-      <ss:Interior ss:Color="#1A2744" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-    </ss:Style>
-
-    <ss:Style ss:ID="metaL">
-      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Italic="1" ss:Color="#64748B"/>
-      <ss:Interior ss:Color="#F8F9FA" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:Indent="1"/>
-    </ss:Style>
-
-    <ss:Style ss:ID="metaR">
-      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Italic="1" ss:Color="#64748B"/>
-      <ss:Interior ss:Color="#F8F9FA" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Right" ss:Vertical="Center" ss:Indent="1"/>
-    </ss:Style>
-
-    <ss:Style ss:ID="amber">
-      <ss:Interior ss:Color="#F5A623" ss:Pattern="Solid"/>
-    </ss:Style>
-
-    <ss:Style ss:ID="colHeader">
-      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
-      <ss:Interior ss:Color="#080D1A" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
-      <ss:Borders>
-        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#F5A623"/>
-      </ss:Borders>
-    </ss:Style>
-
-    <ss:Style ss:ID="fleetW">
-      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="#92400E"/>
-      <ss:Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-      <ss:Borders>
-        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-      </ss:Borders>
-    </ss:Style>
-    <ss:Style ss:ID="fleetA">
-      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="#92400E"/>
-      <ss:Interior ss:Color="#FFF3CD" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-      <ss:Borders>
-        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-      </ss:Borders>
-    </ss:Style>
-
-    <ss:Style ss:ID="dataW">
-      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Color="#1E293B"/>
-      <ss:Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:Indent="1"/>
-      <ss:Borders>
-        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-      </ss:Borders>
-    </ss:Style>
-    <ss:Style ss:ID="dataA">
-      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Color="#1E293B"/>
-      <ss:Interior ss:Color="#FFF3CD" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:Indent="1"/>
-      <ss:Borders>
-        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-      </ss:Borders>
-    </ss:Style>
-
-    <ss:Style ss:ID="numW">
-      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Color="#1E293B"/>
-      <ss:Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-      <ss:NumberFormat ss:Format="#,##0"/>
-      <ss:Borders>
-        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-      </ss:Borders>
-    </ss:Style>
-    <ss:Style ss:ID="numA">
-      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Color="#1E293B"/>
-      <ss:Interior ss:Color="#FFF3CD" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-      <ss:NumberFormat ss:Format="#,##0"/>
-      <ss:Borders>
-        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-      </ss:Borders>
-    </ss:Style>
-
-    ${Object.entries(STATUS_COLOR).map(([status, color]) => `
-    <ss:Style ss:ID="st_${status.replace(/ /g,"_")}_W">
-      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="${color}"/>
-      <ss:Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-      <ss:Borders>
-        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-      </ss:Borders>
-    </ss:Style>
-    <ss:Style ss:ID="st_${status.replace(/ /g,"_")}_A">
-      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="${color}"/>
-      <ss:Interior ss:Color="#FFF3CD" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-      <ss:Borders>
-        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-      </ss:Borders>
-    </ss:Style>`).join("")}
-
-    ${Object.entries(CONDITION_COLOR).map(([cond, color]) => `
-    <ss:Style ss:ID="cd_${cond.replace(/-| /g,"_")}_W">
-      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="${color}"/>
-      <ss:Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-      <ss:Borders>
-        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-      </ss:Borders>
-    </ss:Style>
-    <ss:Style ss:ID="cd_${cond.replace(/-| /g,"_")}_A">
-      <ss:Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="${color}"/>
-      <ss:Interior ss:Color="#FFF3CD" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-      <ss:Borders>
-        <ss:Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-        <ss:Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
-      </ss:Borders>
-    </ss:Style>`).join("")}
-
-    <ss:Style ss:ID="footer">
-      <ss:Font ss:FontName="Arial" ss:Size="8" ss:Italic="1" ss:Color="#64748B"/>
-      <ss:Interior ss:Color="#F8F9FA" ss:Pattern="Solid"/>
-      <ss:Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-    </ss:Style>
-  </ss:Styles>`;
-
-  // ── Column widths ────────────────────────────────────────
-  const colDefs = cols.map(c =>
-    `<ss:Column ss:Width="${COL_WIDTHS[c.label] ?? 100}"/>`
-  ).join("\n      ");
-
-  // ── Rows ─────────────────────────────────────────────────
-  // Row 1: Banner
-  const row1 = `
-    <ss:Row ss:Height="40">
-      <ss:Cell ss:StyleID="banner" ss:MergeAcross="${numCols - 1}">
-        <ss:Data ss:Type="String">HARTLAND NIGERIA LIMITED</ss:Data>
-      </ss:Cell>
-    </ss:Row>`;
-
-  // Row 2: Subtitle
-  const row2 = `
-    <ss:Row ss:Height="26">
-      <ss:Cell ss:StyleID="subtitle" ss:MergeAcross="${numCols - 1}">
-        <ss:Data ss:Type="String">PLANT &amp; EQUIPMENT REGISTER</ss:Data>
-      </ss:Cell>
-    </ss:Row>`;
-
-  // Row 3: Meta
-  const mid = Math.ceil(numCols / 2);
-  const row3 = `
-    <ss:Row ss:Height="20">
-      <ss:Cell ss:StyleID="metaL" ss:MergeAcross="${mid - 1}">
-        <ss:Data ss:Type="String">Generated: ${dateStr}</ss:Data>
-      </ss:Cell>
-      <ss:Cell ss:StyleID="metaR" ss:MergeAcross="${numCols - mid - 1}">
-        <ss:Data ss:Type="String">Total Equipment: ${totalEquipment}   |   Prepared by: ${xmlEsc(generatedBy)}</ss:Data>
-      </ss:Cell>
-    </ss:Row>`;
-
-  // Row 4: Amber divider
-  const row4 = `
-    <ss:Row ss:Height="4">
-      <ss:Cell ss:StyleID="amber" ss:MergeAcross="${numCols - 1}"><ss:Data ss:Type="String"></ss:Data></ss:Cell>
-    </ss:Row>`;
-
-  // Row 5: Column headers
-  const row5 = `
-    <ss:Row ss:Height="30">
-      ${cols.map(c => `<ss:Cell ss:StyleID="colHeader"><ss:Data ss:Type="String">${xmlEsc(c.label.toUpperCase())}</ss:Data></ss:Cell>`).join("\n      ")}
-    </ss:Row>`;
-
-  // Data rows
-  const numericLabels = new Set(["Hour Meter (Hrs)", "Km Reading", "Hire Rate (N)", "Purchase Cost", "Landed Cost"]);
-
-  const dataRows = rows.map((row, ri) => {
-    const isAlt = ri % 2 === 1;
-    const suffix = isAlt ? "A" : "W";
-    const cells = row.map((val, ci) => {
-      const colLabel = cols[ci].label;
-      const colKey   = cols[ci].key;
-      const strVal   = String(val ?? "");
-
-      if (colKey === "fleet_number") {
-        return `<ss:Cell ss:StyleID="fleet${suffix}"><ss:Data ss:Type="String">${xmlEsc(strVal)}</ss:Data></ss:Cell>`;
+  const dataRows = equipment.map((item, ri) => {
+    const rowBg = ri % 2 === 0 ? "#ffffff" : "#fffbeb";
+    const cells = cols.map(c => {
+      let val: any = (item as any)[c.key] ?? "";
+      if (c.key === "current_yard")       val = (item as any).current_yard ?? "";
+      if (c.key === "allocated_to")       val = (item as any).allocated_to ?? "";
+      if (c.key === "allocated_position") val = (item as any).allocated_position ?? "";
+      if (c.key === "current_hour_meter") val = `${((item as any).current_hour_meter || 0).toLocaleString()} hrs`;
+      if (c.key === "current_kilometer")  val = `${((item as any).current_kilometer  || 0).toLocaleString()} km`;
+      if (c.key === "hire_rate" || c.key === "purchase_cost" || c.key === "landed_cost") {
+        val = val ? `₦${Number(val).toLocaleString()}` : "";
       }
-      if (colKey === "operational_status") {
-        const sId = `st_${strVal.replace(/ /g, "_")}_${suffix}`;
-        return `<ss:Cell ss:StyleID="${sId}"><ss:Data ss:Type="String">${xmlEsc(strVal)}</ss:Data></ss:Cell>`;
-      }
-      if (colKey === "assessment") {
-        const sId = `cd_${strVal.replace(/-| /g, "_")}_${suffix}`;
-        return `<ss:Cell ss:StyleID="${sId}"><ss:Data ss:Type="String">${xmlEsc(strVal)}</ss:Data></ss:Cell>`;
-      }
-      if (numericLabels.has(colLabel)) {
-        const num = typeof val === "number" ? val : (parseFloat(strVal) || 0);
-        return `<ss:Cell ss:StyleID="num${suffix}"><ss:Data ss:Type="Number">${num}</ss:Data></ss:Cell>`;
-      }
-      return `<ss:Cell ss:StyleID="data${suffix}"><ss:Data ss:Type="String">${xmlEsc(strVal)}</ss:Data></ss:Cell>`;
-    }).join("\n      ");
 
-    return `
-    <ss:Row ss:Height="18">
-      ${cells}
-    </ss:Row>`;
+      if (c.key === "fleet_number") {
+        return `<td style="font-weight:700;color:#92400e;text-align:center">${esc(val)}</td>`;
+      }
+      if (c.key === "operational_status") {
+        const s = STATUS_COLOR[String(val)] || { bg: "#f1f5f9", text: "#475569" };
+        return `<td style="text-align:center"><span style="background:${s.bg};color:${s.text};padding:2px 8px;border-radius:999px;font-weight:600;font-size:9px;white-space:nowrap">${esc(val)}</span></td>`;
+      }
+      if (c.key === "assessment") {
+        const s = CONDITION_COLOR[String(val)] || { bg: "#f1f5f9", text: "#475569" };
+        return `<td style="text-align:center"><span style="background:${s.bg};color:${s.text};padding:2px 8px;border-radius:999px;font-weight:600;font-size:9px;white-space:nowrap">${esc(val)}</span></td>`;
+      }
+      return `<td>${esc(val)}</td>`;
+    }).join("");
+    return `<tr style="background:${rowBg}">${cells}</tr>`;
   }).join("");
 
-  // Footer row
-  const footerRow = `
-    <ss:Row ss:Height="16">
-      <ss:Cell ss:StyleID="footer" ss:MergeAcross="${numCols - 1}">
-        <ss:Data ss:Type="String">CONFIDENTIAL — For internal use only. Generated by BuildFleet™ — A product of Ultimate Tech Lab (UTL)</ss:Data>
-      </ss:Cell>
-    </ss:Row>`;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Hartland Plant List — ${dateStr}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Arial, sans-serif; font-size: 9pt; color: #1e293b; background: #fff; }
 
-  // ── Freeze panes ─────────────────────────────────────────
-  const freezePane = `
-    <x:WorksheetOptions>
-      <x:FreezePanes/>
-      <x:FrozenNoSplit/>
-      <x:SplitHorizontal>5</x:SplitHorizontal>
-      <x:TopRowBottomPane>5</x:TopRowBottomPane>
-      <x:ActivePane>2</x:ActivePane>
-      <x:PageSetup>
-        <x:Layout x:Orientation="Landscape"/>
-        <x:Paper>9</x:Paper>
-      </x:PageSetup>
-    </x:WorksheetOptions>`;
+  /* ── Header banner ── */
+  .banner {
+    background: #080D1A;
+    color: #fff;
+    text-align: center;
+    padding: 14px 24px 10px;
+  }
+  .banner h1 { font-size: 18pt; font-weight: 800; letter-spacing: 1px; }
+  .banner h2 { font-size: 11pt; color: #F5A623; font-weight: 700; margin-top: 3px; }
+  .banner p  { font-size: 8pt; color: #94a3b8; margin-top: 4px; }
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<ss:Workbook
-  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
-  xmlns:x="urn:schemas-microsoft-com:office:excel"
-  xmlns:o="urn:schemas-microsoft-com:office:office">
-  ${styles}
-  <ss:Worksheet ss:Name="Plant List">
-    <ss:Table>
-      ${colDefs}
-      ${row1}
-      ${row2}
-      ${row3}
-      ${row4}
-      ${row5}
-      ${dataRows}
-      ${footerRow}
-    </ss:Table>
-    ${freezePane}
-  </ss:Worksheet>
-</ss:Workbook>`;
+  /* ── KPI summary bar ── */
+  .summary {
+    display: flex; gap: 0;
+    border-bottom: 3px solid #F5A623;
+  }
+  .kpi {
+    flex: 1; padding: 8px 12px; text-align: center;
+    border-right: 1px solid #e2e8f0;
+  }
+  .kpi:last-child { border-right: none; }
+  .kpi .num  { font-size: 16pt; font-weight: 800; }
+  .kpi .lbl  { font-size: 7pt; color: #64748b; text-transform: uppercase; letter-spacing:.5px; }
+  .kpi.total { background: #080D1A; color: #fff; }
+  .kpi.total .lbl { color: #94a3b8; }
+  .kpi.working  { background: #f0fdf4; } .kpi.working  .num { color: #16a34a; }
+  .kpi.repair   { background: #fffbeb; } .kpi.repair   .num { color: #d97706; }
+  .kpi.storage  { background: #f8fafc; } .kpi.storage  .num { color: #475569; }
+  .kpi.scrapped { background: #fef2f2; } .kpi.scrapped .num { color: #dc2626; }
+
+  /* ── Meta row ── */
+  .meta {
+    display: flex; justify-content: space-between;
+    padding: 6px 16px; background: #f8fafc;
+    font-size: 8pt; color: #64748b;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  /* ── Table ── */
+  .wrap { padding: 0; }
+  table { width: 100%; border-collapse: collapse; }
+  thead tr { background: #080D1A; }
+  thead th {
+    color: #fff; font-size: 8pt; font-weight: 700;
+    padding: 7px 6px; text-align: left;
+    text-transform: uppercase; letter-spacing: .4px;
+    white-space: nowrap;
+    border-right: 1px solid #1a2744;
+  }
+  thead th:last-child { border-right: none; }
+  tbody td {
+    padding: 5px 6px; font-size: 8.5pt; color: #1e293b;
+    border-bottom: 1px solid #f1f5f9;
+    border-right: 1px solid #f1f5f9;
+  }
+  tbody td:last-child { border-right: none; }
+  tbody tr:hover { background: #fffbeb !important; }
+
+  /* ── Footer ── */
+  .footer {
+    margin-top: 16px; padding: 10px 16px;
+    border-top: 2px solid #F5A623;
+    display: flex; justify-content: space-between; align-items: flex-end;
+  }
+  .sig-block { text-align: center; width: 200px; }
+  .sig-line  { border-top: 1px solid #1e293b; padding-top: 4px; margin-top: 28px;
+               font-size: 8pt; color: #475569; }
+  .footer-note { font-size: 7.5pt; color: #94a3b8; text-align: center; flex: 1; padding: 0 12px; }
+
+  /* ── Print setup ── */
+  @media print {
+    @page { size: A3 landscape; margin: 8mm; }
+    body  { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .no-print { display: none; }
+  }
+
+  /* ── Print button (screen only) ── */
+  .print-bar {
+    position: sticky; top: 0; z-index: 99;
+    background: #F5A623; padding: 10px 20px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .print-bar span { color: #fff; font-weight: 700; font-size: 10pt; }
+  .print-btn {
+    background: #080D1A; color: #fff; border: none;
+    padding: 8px 24px; border-radius: 8px; font-size: 10pt;
+    font-weight: 700; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<!-- Print bar (hidden when printing) -->
+<div class="print-bar no-print">
+  <span>📄 Hartland Plant &amp; Equipment Register — ${esc(dateStr)}</span>
+  <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+</div>
+
+<!-- Header -->
+<div class="banner">
+  <h1>HARTLAND NIGERIA LIMITED</h1>
+  <h2>PLANT &amp; EQUIPMENT REGISTER</h2>
+  <p>Confidential — For internal use only &nbsp;|&nbsp; A BuildFleet™ Report</p>
+</div>
+
+<!-- KPI Summary -->
+<div class="summary">
+  <div class="kpi total">
+    <div class="num">${counts.total}</div>
+    <div class="lbl">Total Fleet</div>
+  </div>
+  <div class="kpi working">
+    <div class="num">${counts.working}</div>
+    <div class="lbl">Working</div>
+  </div>
+  <div class="kpi repair">
+    <div class="num">${counts.repair}</div>
+    <div class="lbl">Under Repair</div>
+  </div>
+  <div class="kpi storage">
+    <div class="num">${counts.storage}</div>
+    <div class="lbl">Storage</div>
+  </div>
+  <div class="kpi scrapped">
+    <div class="num">${counts.scrapped}</div>
+    <div class="lbl">Scrapped</div>
+  </div>
+</div>
+
+<!-- Meta -->
+<div class="meta">
+  <span>Generated: <strong>${esc(dateStr)}</strong></span>
+  <span>Prepared by: <strong>${esc(generatedBy)}</strong></span>
+  <span>Showing: <strong>${equipment.length}</strong> equipment</span>
+</div>
+
+<!-- Table -->
+<div class="wrap">
+  <table>
+    <thead><tr>${headerCells}</tr></thead>
+    <tbody>${dataRows}</tbody>
+  </table>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <div class="sig-block">
+    <div class="sig-line">Plant Admin<br/>Name &amp; Signature</div>
+  </div>
+  <div class="footer-note">
+    Generated by <strong>BuildFleet™</strong> — A product of Ultimate Tech Lab (UTL)<br/>
+    <span style="color:#cbd5e1">${esc(dateStr)}</span>
+  </div>
+  <div class="sig-block">
+    <div class="sig-line">Plant Manager<br/>Name &amp; Signature</div>
+  </div>
+</div>
+
+</body>
+</html>`;
 }
 
-function downloadExcel(
+function printPlantList(
   cols: { key: string; label: string }[],
-  rows: (string | number)[][],
-  totalEquipment: number,
+  equipment: Equipment[],
+  counts: { total: number; working: number; repair: number; storage: number; scrapped: number },
   generatedBy: string,
 ) {
-  const xml  = buildExcelXML(cols, rows, totalEquipment, generatedBy);
-  const blob = new Blob([xml], { type: "application/vnd.ms-excel;charset=utf-8" });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement("a");
-  a.href     = url;
-  a.download = `Hartland_Plant_List_${new Date().toISOString().slice(0, 10)}.xls`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const html = buildPrintHTML(cols, equipment, counts, generatedBy);
+  const win  = window.open("", "_blank");
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
 }
 
 // ─────────────────────────────────────────────────────────────
 // EXPORT MODAL
 // ─────────────────────────────────────────────────────────────
-function ExportModal({ equipment, onClose, userName, totalEquipment }: {
+function ExportModal({ equipment, onClose, userName, counts }: {
   equipment: Equipment[];
   onClose: () => void;
   userName: string;
-  totalEquipment: number;
+  counts: { total: number; working: number; repair: number; storage: number; scrapped: number };
 }) {
   const [selected, setSelected] = useState<Set<string>>(
     new Set(EXPORT_COLUMNS.filter(c => c.defaultOn).map(c => c.key))
@@ -459,6 +351,7 @@ function ExportModal({ equipment, onClose, userName, totalEquipment }: {
   function toggle(key: string) {
     setSelected(prev => {
       const next = new Set(prev);
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
@@ -469,16 +362,7 @@ function ExportModal({ equipment, onClose, userName, totalEquipment }: {
 
   function doExport() {
     const cols = EXPORT_COLUMNS.filter(c => selected.has(c.key));
-    const rows = equipment.map(e => cols.map(c => {
-      if (c.key === "current_yard")       return (e as any).current_yard ?? "";
-      if (c.key === "allocated_to")       return (e as any).allocated_to ?? "";
-      if (c.key === "allocated_position") return (e as any).allocated_position ?? "";
-      if (c.key === "hire_rate")          return (e as any).hire_rate ?? 0;
-      if (c.key === "current_hour_meter") return (e as any).current_hour_meter ?? 0;
-      if (c.key === "current_kilometer")  return (e as any).current_kilometer ?? 0;
-      return (e as any)[c.key] ?? "";
-    }));
-    downloadExcel(cols, rows, totalEquipment, userName);
+    printPlantList(cols, equipment, counts, userName);
     onClose();
   }
 
@@ -492,7 +376,7 @@ function ExportModal({ equipment, onClose, userName, totalEquipment }: {
         <div className="flex items-start justify-between mb-1">
           <div>
             <h3 className="font-bold text-slate-800 text-lg">Export Plant List</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Formatted Excel (.xls) — Hartland branding</p>
+            <p className="text-xs text-slate-400 mt-0.5">Branded PDF — Hartland formatting</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none mt-0.5">×</button>
         </div>
@@ -554,7 +438,7 @@ function ExportModal({ equipment, onClose, userName, totalEquipment }: {
           </button>
           <button onClick={doExport} disabled={onCount === 0}
             className="flex-1 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-40">
-            📊 Export {onCount} cols
+            📄 Generate PDF
           </button>
         </div>
       </div>
@@ -742,6 +626,8 @@ export default function EquipmentPage() {
     scrapped: equipment.filter(e => e.operational_status === "Scrapped").length,
   };
 
+  const exportEquipment = filtered.length > 0 ? filtered : equipment;
+
   return (
     <div className="space-y-6 pb-10">
 
@@ -757,7 +643,7 @@ export default function EquipmentPage() {
           <button
             onClick={() => setShowExportModal(true)}
             className="border border-slate-200 bg-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50 flex items-center gap-2">
-            📊 Export Plant List
+            📄 Export Plant List
           </button>
           {canTransfer && (
             <Link href="/transfer"
@@ -997,8 +883,8 @@ export default function EquipmentPage() {
       {/* MODALS */}
       {showExportModal && (
         <ExportModal
-          equipment={filtered.length > 0 ? filtered : equipment}
-          totalEquipment={equipment.length}
+          equipment={exportEquipment}
+          counts={counts}
           onClose={() => setShowExportModal(false)}
           userName={profile?.full_name || "BuildFleet"}
         />
