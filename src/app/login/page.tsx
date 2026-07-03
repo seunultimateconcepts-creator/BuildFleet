@@ -65,6 +65,7 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true); setError(null);
     const { error: err } = await dbu.auth.signInWithPassword({ email, password });
+    sessionStorage.setItem("bf_tab_auth", "1");
     if (err) {
       setError(err.message);
       setLoading(false);
