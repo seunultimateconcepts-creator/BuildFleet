@@ -10,31 +10,67 @@ import { useAuth } from "@/hooks/use-auth";
 const iCls = "w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 
 const TYPE_STYLE: Record<string, { header: string; row: string; badge: string; icon: string }> = {
-  "Central Workshop":  { header: "bg-red-600 text-white",     row: "bg-red-50    hover:bg-red-100",    badge: "bg-red-100    text-red-700",    icon: "🏭" },
-  "Regional Workshop": { header: "bg-orange-500 text-white",  row: "bg-orange-50 hover:bg-orange-100", badge: "bg-orange-100 text-orange-700", icon: "🔧" },
-  "Field Workshop":    { header: "bg-amber-500 text-white",   row: "bg-amber-50  hover:bg-amber-100",  badge: "bg-amber-100  text-amber-700",  icon: "⚙️" },
-  "Repair Yard":       { header: "bg-blue-600 text-white",    row: "bg-blue-50   hover:bg-blue-100",   badge: "bg-blue-100   text-blue-700",   icon: "🔩" },
-  "Storage Yard":      { header: "bg-slate-600 text-white",   row: "bg-slate-50  hover:bg-slate-100",  badge: "bg-slate-100  text-slate-600",  icon: "📦" },
-  "Project":           { header: "bg-emerald-600 text-white", row: "bg-emerald-50 hover:bg-emerald-100",badge: "bg-emerald-100 text-emerald-700",icon: "🏗️" },
-  "Office":            { header: "bg-purple-600 text-white",  row: "bg-purple-50 hover:bg-purple-100", badge: "bg-purple-100 text-purple-700", icon: "🏢" },
+  "Central Workshop":  { header: "bg-red-600 text-white",      row: "bg-red-50    hover:bg-red-100",    badge: "bg-red-100    text-red-700",    icon: "🏭" },
+  "Regional Workshop": { header: "bg-orange-500 text-white",   row: "bg-orange-50 hover:bg-orange-100", badge: "bg-orange-100 text-orange-700", icon: "🔧" },
+  "Field Workshop":    { header: "bg-amber-500 text-white",    row: "bg-amber-50  hover:bg-amber-100",  badge: "bg-amber-100  text-amber-700",  icon: "⚙️" },
+  "Repair Yard":       { header: "bg-blue-600 text-white",     row: "bg-blue-50   hover:bg-blue-100",   badge: "bg-blue-100   text-blue-700",   icon: "🔩" },
+  "Storage Yard":      { header: "bg-slate-600 text-white",    row: "bg-slate-50  hover:bg-slate-100",  badge: "bg-slate-100  text-slate-600",  icon: "📦" },
+  "Project":           { header: "bg-emerald-600 text-white",  row: "bg-emerald-50 hover:bg-emerald-100",badge: "bg-emerald-100 text-emerald-700",icon: "🏗️" },
+  "Office":            { header: "bg-purple-600 text-white",   row: "bg-purple-50 hover:bg-purple-100", badge: "bg-purple-100 text-purple-700", icon: "🏢" },
 };
+
+// ── Decode new code to explain cluster ──────────────────────────────
+function CodeBadge({ code }: { code: string }) {
+  const suffix = code.slice(-2) === "SR" ? "SR" : code.slice(-1);
+  const base   = suffix === "SR" ? code.slice(0, -2) : code.slice(0, -1);
+  const isStandalone = /^\d{3}$/.test(code); // 010-099
+
+  const suffixLabel: Record<string, string> = {
+    W: "Workshop", P: "Project", R: "Repair", S: "Storage", SR: "Scrap",
+  };
+  const suffixColor: Record<string, string> = {
+    W: "bg-amber-100 text-amber-700",
+    P: "bg-emerald-100 text-emerald-700",
+    R: "bg-blue-100 text-blue-700",
+    S: "bg-slate-100 text-slate-600",
+    SR:"bg-red-100 text-red-600",
+  };
+
+  if (isStandalone) {
+    return (
+      <span className="font-bold text-slate-700 font-mono text-sm">{code}</span>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="font-bold text-slate-800 font-mono text-sm">{code}</span>
+      {suffix && (
+        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${suffixColor[suffix] || "bg-slate-100 text-slate-600"}`}>
+          {suffixLabel[suffix] || suffix}
+        </span>
+      )}
+      {!isStandalone && base && (
+        <span className="text-[10px] text-slate-400 font-mono">#{base}</span>
+      )}
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────
 // ADD SITE MODAL
 // ─────────────────────────────────────────────────────────────────
-function AddSiteModal({ onClose, onSave }: {
-  onClose: () => void; onSave: () => void;
-}) {
+function AddSiteModal({ onClose, onSave }: { onClose: () => void; onSave: () => void }) {
   const [form, setForm] = useState({
     code: "", name: "", site_type: "Project",
-    region: "", cost_code: "", parent_code: "",
+    region: "", cost_code: "", legacy_code: "",
   });
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState("");
 
   function set(k: string, v: string) { setForm(p => ({ ...p, [k]: v })); }
 
-  // Auto-suggest code based on site_type suffix
+  // Auto-suggest new code from cluster number + suffix
   function suggestCode() {
     const suffix =
       form.site_type === "Central Workshop"  ? "W" :
@@ -42,20 +78,24 @@ function AddSiteModal({ onClose, onSave }: {
       form.site_type === "Field Workshop"    ? "W" :
       form.site_type === "Repair Yard"       ? "R" :
       form.site_type === "Storage Yard"      ? "S" :
-      form.site_type === "Office"            ? "O" : "P";
-    if (form.parent_code) {
-      setForm(p => ({ ...p, code: `${form.parent_code}${suffix}` }));
-    }
+      form.site_type === "Office"            ? "" : "P";
+    const base = form.cost_code.replace(/\D/g, "");
+    if (base) setForm(p => ({ ...p, code: `${base}${suffix}` }));
   }
 
   async function handleSave() {
     if (!form.code || !form.name || !form.region) {
       setError("Code, name and region are required."); return;
     }
+    // Validate: max 4 chars unless SR
+    const isSR = form.code.endsWith("SR");
+    if (!isSR && form.code.length > 4) {
+      setError("Code must be max 4 characters (only 100SR is allowed as 5 characters)."); return;
+    }
     setSaving(true);
     const { error: err } = await dbu.from("sites").insert([{
       ...form,
-      legacy_code: "NEW",
+      legacy_code: form.legacy_code || "NEW",
       is_active: true,
     }]);
     if (err) { setError(err.message); setSaving(false); return; }
@@ -65,7 +105,7 @@ function AddSiteModal({ onClose, onSave }: {
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden">
         <div className="px-6 py-5 bg-slate-900 flex items-center justify-between">
           <div>
             <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-0.5">New Site</p>
@@ -75,27 +115,34 @@ function AddSiteModal({ onClose, onSave }: {
         </div>
 
         <div className="p-6 space-y-4">
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
-            💡 New site code format: Parent + Type suffix.
-            e.g. parent <strong>100</strong> + Workshop = <strong>100W</strong>,
-            + Repair = <strong>100R</strong>, + Storage = <strong>100S</strong>
+          {/* Code guide */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-800 space-y-1.5">
+            <p className="font-bold">Hartland Sequential Code System</p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-amber-700">
+              <span>🏭 Workshop → <strong>100W, 101W...</strong></span>
+              <span>🏗️ Project → <strong>103P, 110P...</strong></span>
+              <span>🔩 Repair Yard → <strong>100R, 103R...</strong></span>
+              <span>📦 Storage Yard → <strong>100S, 103S...</strong></span>
+              <span>♻️ Scrap (only 1) → <strong>100SR</strong></span>
+              <span>🏢 Standalone → <strong>010, 011...</strong></span>
+            </div>
+            <p className="text-amber-600">Max 4 characters. Exception: 100SR only.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">
-                Parent Code
+                Cluster No. <span className="text-slate-400 font-normal">(e.g. 100, 103, 010)</span>
               </label>
-              <input className={iCls} placeholder="e.g. 100, 210, 400"
-                value={form.parent_code}
-                onChange={e => set("parent_code", e.target.value.toUpperCase())} />
+              <input className={iCls} placeholder="e.g. 150, 151"
+                value={form.cost_code}
+                onChange={e => set("cost_code", e.target.value)} />
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">
                 Site Type <span className="text-red-400">*</span>
               </label>
-              <select className={iCls} value={form.site_type}
-                onChange={e => { set("site_type", e.target.value); }}>
+              <select className={iCls} value={form.site_type} onChange={e => set("site_type", e.target.value)}>
                 {Object.keys(TYPE_STYLE).map(t => <option key={t}>{t}</option>)}
               </select>
             </div>
@@ -111,7 +158,7 @@ function AddSiteModal({ onClose, onSave }: {
                 Auto-suggest →
               </button>
             </div>
-            <input className={iCls} placeholder="e.g. 100W, 210R, 400S"
+            <input className={iCls} placeholder="e.g. 150W, 151P, 032"
               value={form.code}
               onChange={e => set("code", e.target.value.toUpperCase())} />
           </div>
@@ -120,7 +167,7 @@ function AddSiteModal({ onClose, onSave }: {
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">
               Site Name <span className="text-red-400">*</span>
             </label>
-            <input className={iCls} placeholder="e.g. Field Workshop - Ohafia - Abia"
+            <input className={iCls} placeholder="e.g. Workshop (Field) - Location - State"
               value={form.name} onChange={e => set("name", e.target.value)} />
           </div>
 
@@ -138,10 +185,10 @@ function AddSiteModal({ onClose, onSave }: {
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1.5">
-                Cost Code
+                Old Hartland Code
               </label>
-              <input className={iCls} placeholder="e.g. 100W"
-                value={form.cost_code} onChange={e => set("cost_code", e.target.value)} />
+              <input className={iCls} placeholder="e.g. RY01, SY01, 801"
+                value={form.legacy_code} onChange={e => set("legacy_code", e.target.value)} />
             </div>
           </div>
 
@@ -166,22 +213,54 @@ function AddSiteModal({ onClose, onSave }: {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// CLUSTER LEGEND PANEL
+// ─────────────────────────────────────────────────────────────────
+function ClusterLegend() {
+  return (
+    <div className="bg-slate-900 rounded-2xl p-5 text-white">
+      <p className="text-amber-400 text-[11px] font-bold uppercase tracking-widest mb-3">Code System</p>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+        {[
+          { code: "100W",  label: "Central Workshop",  color: "text-red-400" },
+          { code: "101W",  label: "Regional Workshop", color: "text-orange-400" },
+          { code: "103W",  label: "Field Workshop",    color: "text-amber-400" },
+          { code: "103P",  label: "Project",           color: "text-emerald-400" },
+          { code: "100R",  label: "Repair Yard",       color: "text-blue-400" },
+          { code: "100S",  label: "Storage Yard",      color: "text-slate-400" },
+          { code: "100SR", label: "Scrap Yard (only 1)", color: "text-red-300" },
+          { code: "010",   label: "Standalone (Office/Camp/Misc)", color: "text-purple-400" },
+        ].map(r => (
+          <div key={r.code} className="flex items-center gap-2">
+            <span className={`font-mono font-bold ${r.color}`}>{r.code}</span>
+            <span className="text-slate-400">{r.label}</span>
+          </div>
+        ))}
+      </div>
+      <p className="text-slate-500 text-xs mt-3">
+        Each cluster number (100, 101, 103...) groups one location &apos;  W + P + R + S sites together.
+        010–099 reserved for standalone sites.
+      </p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
 // MAIN PAGE
 // ─────────────────────────────────────────────────────────────────
 export default function SitesPage() {
   const { profile } = useAuth();
-  const [sites,      setSites]      = useState<any[]>([]);
-  const [loading,    setLoading]    = useState(true);
-  const [search,     setSearch]     = useState("");
-  const [filterType, setFilterType] = useState("");
+  const [sites,        setSites]        = useState<any[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [search,       setSearch]       = useState("");
+  const [filterType,   setFilterType]   = useState("");
   const [filterRegion, setFilterRegion] = useState("");
-  const [addModal,   setAddModal]   = useState(false);
-  const [deleting,   setDeleting]   = useState<string | null>(null);
-  const [view,       setView]       = useState<"grouped"|"table">("grouped");
+  const [addModal,     setAddModal]     = useState(false);
+  const [deleting,     setDeleting]     = useState<string | null>(null);
+  const [view,         setView]         = useState<"grouped"|"table">("grouped");
+  const [showLegend,   setShowLegend]   = useState(false);
 
   const roles: string[] = profile?.roles || [];
-  const canManage = roles.some(r =>
-    ["super_admin","plant_admin","plant_manager"].includes(r));
+  const canManage = roles.some(r => ["super_admin","plant_admin","plant_manager"].includes(r));
 
   useEffect(() => { fetchSites(); }, []);
 
@@ -209,10 +288,9 @@ export default function SitesPage() {
       (s.region||"").toLowerCase().includes(q);
     return matchQ &&
       (!filterType   || s.site_type === filterType) &&
-      (!filterRegion || s.region === filterRegion);
+      (!filterRegion || s.region    === filterRegion);
   });
 
-  // Group by site_type
   const grouped = filtered.reduce((acc: any, s: any) => {
     const t = s.site_type || "Project";
     if (!acc[t]) acc[t] = [];
@@ -222,18 +300,18 @@ export default function SitesPage() {
 
   const typeOrder = [
     "Central Workshop","Regional Workshop","Field Workshop",
-    "Repair Yard","Storage Yard","Project","Office"
+    "Repair Yard","Storage Yard","Project","Office",
   ];
 
   const regions = [...new Set(sites.map(s => s.region).filter(Boolean))].sort();
 
   const stats = {
-    total:    sites.length,
+    total:     sites.length,
     workshops: sites.filter(s => s.site_type?.includes("Workshop")).length,
-    repair:   sites.filter(s => s.site_type === "Repair Yard").length,
-    storage:  sites.filter(s => s.site_type === "Storage Yard").length,
-    projects: sites.filter(s => s.site_type === "Project").length,
-    newSites: sites.filter(s => s.legacy_code === "NEW").length,
+    repair:    sites.filter(s => s.site_type === "Repair Yard").length,
+    storage:   sites.filter(s => s.site_type === "Storage Yard").length,
+    projects:  sites.filter(s => s.site_type === "Project").length,
+    offices:   sites.filter(s => s.site_type === "Office").length,
   };
 
   return (
@@ -244,26 +322,35 @@ export default function SitesPage() {
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Sites</h1>
           <p className="text-slate-500 mt-1 text-sm">
-            All Hartland project sites, workshops, repair yards and storage yards.
+            All Hartland project sites, workshops, repair yards and storage yards — sequential code system.
           </p>
         </div>
-        {canManage && (
-          <button onClick={() => setAddModal(true)}
-            className="bg-amber-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-600 shadow-sm shrink-0">
-            + Add Site
+        <div className="flex flex-wrap gap-3 shrink-0">
+          <button onClick={() => setShowLegend(l => !l)}
+            className="border border-slate-200 bg-white px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50">
+            {showLegend ? "Hide" : "?"} Code Guide
           </button>
-        )}
+          {canManage && (
+            <button onClick={() => setAddModal(true)}
+              className="bg-amber-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-600 shadow-sm">
+              + Add Site
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Legend */}
+      {showLegend && <ClusterLegend />}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
         {[
-          { label: "Total Sites",  value: stats.total,     bg: "bg-slate-900 text-white" },
-          { label: "Workshops",    value: stats.workshops,  bg: "bg-red-100 text-red-700" },
-          { label: "Repair Yards", value: stats.repair,    bg: "bg-blue-100 text-blue-700" },
-          { label: "Storage Yards",value: stats.storage,   bg: "bg-slate-100 text-slate-700" },
-          { label: "Projects",     value: stats.projects,  bg: "bg-emerald-100 text-emerald-700" },
-          { label: "🆕 New",       value: stats.newSites,  bg: "bg-amber-100 text-amber-700" },
+          { label: "Total Sites",   value: stats.total,     bg: "bg-slate-900 text-white" },
+          { label: "Workshops",     value: stats.workshops,  bg: "bg-red-100 text-red-700" },
+          { label: "Repair Yards",  value: stats.repair,    bg: "bg-blue-100 text-blue-700" },
+          { label: "Storage Yards", value: stats.storage,   bg: "bg-slate-100 text-slate-700" },
+          { label: "Projects",      value: stats.projects,  bg: "bg-emerald-100 text-emerald-700" },
+          { label: "Offices / Misc",value: stats.offices,   bg: "bg-purple-100 text-purple-700" },
         ].map(k => (
           <div key={k.label} className={`${k.bg} rounded-2xl p-4`}>
             <p className="text-2xl font-bold">{loading ? "..." : k.value}</p>
@@ -294,7 +381,7 @@ export default function SitesPage() {
           <div className="flex gap-2">
             {(["grouped","table"] as const).map(v => (
               <button key={v} onClick={() => setView(v)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium capitalize transition-colors ${
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   view === v ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"
                 }`}>
                 {v === "grouped" ? "🗂 Grouped" : "☰ Table"}
@@ -313,20 +400,18 @@ export default function SitesPage() {
             const style = TYPE_STYLE[type] || TYPE_STYLE["Project"];
             return (
               <div key={type} className="rounded-2xl overflow-hidden shadow-sm border border-slate-200">
-                {/* Coloured header */}
                 <div className={`px-6 py-4 flex items-center gap-3 ${style.header}`}>
                   <span className="text-xl">{style.icon}</span>
                   <div>
                     <h3 className="font-bold">{type}</h3>
-                    <p className="text-xs opacity-75">{typeSites.length} sites</p>
+                    <p className="text-xs opacity-75">{typeSites.length} site{typeSites.length > 1 ? "s" : ""}</p>
                   </div>
                 </div>
-                {/* White table body — always light, always readable */}
                 <div className="bg-white overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-slate-50 border-b border-slate-100">
                       <tr>
-                        {["New Code","Old Code","Site Name","Region","Cost Code","Status",""].map(h => (
+                        {["Code","Old Code","Site Name","Region","Status",""].map(h => (
                           <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
@@ -335,25 +420,19 @@ export default function SitesPage() {
                       {typeSites.map((s: any) => (
                         <tr key={s.id} className={`group transition-colors ${style.row}`}>
                           <td className="px-5 py-3">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-slate-800 font-mono">{s.code}</span>
-                              {s.legacy_code === "NEW" && (
-                                <span className="px-1.5 py-0.5 bg-amber-400 text-white text-[10px] font-bold rounded">NEW</span>
-                              )}
-                            </div>
+                            <CodeBadge code={s.code}/>
                           </td>
                           <td className="px-5 py-3">
                             {s.legacy_code && s.legacy_code !== "NEW" ? (
-                              <span className="font-mono text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                              <span className="font-mono text-xs text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded">
                                 {s.legacy_code}
                               </span>
                             ) : (
                               <span className="text-xs text-slate-300 italic">—</span>
                             )}
                           </td>
-                          <td className="px-5 py-3 font-medium text-slate-700 max-w-72 truncate">{s.name}</td>
+                          <td className="px-5 py-3 font-medium text-slate-700 max-w-72">{s.name}</td>
                           <td className="px-5 py-3 text-slate-500 text-xs whitespace-nowrap">{s.region}</td>
-                          <td className="px-5 py-3 text-slate-400 text-xs font-mono">{s.cost_code || "—"}</td>
                           <td className="px-5 py-3">
                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                               s.is_active ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"
@@ -363,9 +442,7 @@ export default function SitesPage() {
                           </td>
                           <td className="px-5 py-3">
                             {canManage && (
-                              <button
-                                onClick={() => handleDelete(s)}
-                                disabled={deleting === s.id}
+                              <button onClick={() => handleDelete(s)} disabled={deleting === s.id}
                                 className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 disabled:opacity-50 whitespace-nowrap">
                                 {deleting === s.id ? "..." : "Delete"}
                               </button>
@@ -389,43 +466,33 @@ export default function SitesPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
                 <tr>
-                  {["New Code","Old Code","Site Name","Type","Region","Cost Code","Status",""].map(h => (
+                  {["Code","Old Code","Site Name","Type","Region","Status",""].map(h => (
                     <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {loading ? (
-                  <tr><td colSpan={8} className="px-5 py-16 text-center text-slate-400">Loading sites...</td></tr>
+                  <tr><td colSpan={7} className="px-5 py-16 text-center text-slate-400">Loading sites...</td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={8} className="px-5 py-16 text-center text-slate-400">No sites match your filters.</td></tr>
+                  <tr><td colSpan={7} className="px-5 py-16 text-center text-slate-400">No sites match your filters.</td></tr>
                 ) : filtered.map((s: any) => {
                   const style = TYPE_STYLE[s.site_type] || TYPE_STYLE["Project"];
                   return (
                     <tr key={s.id} className="hover:bg-amber-50/20 group transition-colors">
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-800 font-mono">{s.code}</span>
-                          {s.legacy_code === "NEW" && (
-                            <span className="px-1.5 py-0.5 bg-amber-400 text-white text-[10px] font-bold rounded">NEW</span>
-                          )}
-                        </div>
-                      </td>
+                      <td className="px-5 py-3"><CodeBadge code={s.code}/></td>
                       <td className="px-5 py-3">
                         {s.legacy_code && s.legacy_code !== "NEW" ? (
-                          <span className="font-mono text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
-                            {s.legacy_code}
-                          </span>
+                          <span className="font-mono text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded">{s.legacy_code}</span>
                         ) : null}
                       </td>
                       <td className="px-5 py-3 font-medium text-slate-700 max-w-64 truncate">{s.name}</td>
                       <td className="px-5 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${style.badge || "bg-slate-100 text-slate-600"}`}>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${style.badge}`}>
                           {style.icon} {s.site_type}
                         </span>
                       </td>
                       <td className="px-5 py-3 text-slate-500 text-xs whitespace-nowrap">{s.region}</td>
-                      <td className="px-5 py-3 text-slate-400 text-xs font-mono">{s.cost_code || "—"}</td>
                       <td className="px-5 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                           s.is_active ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"
@@ -435,9 +502,7 @@ export default function SitesPage() {
                       </td>
                       <td className="px-5 py-3">
                         {canManage && (
-                          <button
-                            onClick={() => handleDelete(s)}
-                            disabled={deleting === s.id}
+                          <button onClick={() => handleDelete(s)} disabled={deleting === s.id}
                             className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 disabled:opacity-50 whitespace-nowrap">
                             {deleting === s.id ? "Deleting..." : "Delete"}
                           </button>
@@ -452,9 +517,7 @@ export default function SitesPage() {
         </div>
       )}
 
-      {addModal && (
-        <AddSiteModal onClose={() => setAddModal(false)} onSave={fetchSites} />
-      )}
+      {addModal && <AddSiteModal onClose={() => setAddModal(false)} onSave={fetchSites}/>}
     </div>
   );
 }
