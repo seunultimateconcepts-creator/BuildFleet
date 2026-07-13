@@ -440,15 +440,57 @@ export default function SitesPage() {
   }
 
   async function handleToggleActive(site: any) {
-    const newState = !site.is_active;
-    const { error } = await dbu
-      .from("sites")
-      .update({ is_active: newState })
-      .eq("id", site.id);
-    if (!error) {
-      setSites(prev => prev.map(s =>
-        s.id === site.id ? { ...s, is_active: newState } : s
-      ));
+    const newState  = !site.is_active;
+    const code: string = site.code || "";
+
+    // ── Cluster cascade logic ──────────────────────────────────
+    // Extract the cluster number from the site code.
+    // e.g. "103P" → "103", "100SR" → "100", "010" → null (standalone)
+    // If the site being toggled is a PROJECT (suffix P), we toggle the
+    // entire cluster: P + W + R + S (and SR if it exists).
+    // For W, R, S toggled individually, only that one site changes.
+    // Standalone offices (3-digit codes like "010") toggle individually.
+
+    const isSR         = code.endsWith("SR");
+    const suffix       = isSR ? "SR" : code.slice(-1);
+    const clusterNum   = isSR ? code.slice(0, -2) : code.slice(0, -1);
+    const isStandalone = /^\d{3}$/.test(code); // "010" to "099"
+    const isProject    = suffix === "P";
+
+    if (isProject && !isStandalone && clusterNum) {
+      // Toggling a project → cascade to whole cluster (W, R, S, SR, P)
+      // Find all site IDs that share this cluster number
+      const clusterCodes = [
+        `${clusterNum}P`,
+        `${clusterNum}W`,
+        `${clusterNum}R`,
+        `${clusterNum}S`,
+        `${clusterNum}SR`,
+      ];
+
+      const { error } = await dbu
+        .from("sites")
+        .update({ is_active: newState })
+        .in("code", clusterCodes);
+
+      if (!error) {
+        // Update all matching sites in local state instantly
+        setSites(prev => prev.map(s =>
+          clusterCodes.includes(s.code) ? { ...s, is_active: newState } : s
+        ));
+      }
+    } else {
+      // Single site toggle (W, R, S, SR, Office, standalone)
+      const { error } = await dbu
+        .from("sites")
+        .update({ is_active: newState })
+        .eq("id", site.id);
+
+      if (!error) {
+        setSites(prev => prev.map(s =>
+          s.id === site.id ? { ...s, is_active: newState } : s
+        ));
+      }
     }
   }
 
@@ -512,6 +554,16 @@ export default function SitesPage() {
 
   // ── Shared action buttons for each row ──
   function RowActions({ s }: { s: any }) {
+    const code       = s.code || "";
+    const isSR       = code.endsWith("SR");
+    const suffix     = isSR ? "SR" : code.slice(-1);
+    const isStandalone = /^\d{3}$/.test(code);
+    const isProject  = suffix === "P" && !isStandalone;
+
+    const toggleLabel = s.is_active
+      ? isProject ? "Deactivate Cluster" : "Deactivate"
+      : isProject ? "Activate Cluster"   : "Activate";
+
     return (
       <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
         {canManage && (<>
@@ -522,7 +574,7 @@ export default function SitesPage() {
                 ? "bg-slate-100 text-slate-600 hover:bg-orange-100 hover:text-orange-700"
                 : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
             }`}>
-            {s.is_active ? "Deactivate" : "Activate"}
+            {toggleLabel}
           </button>
           <button
             onClick={() => setEditSite(s)}
