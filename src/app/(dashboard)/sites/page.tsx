@@ -439,6 +439,19 @@ export default function SitesPage() {
     setDeleting(null);
   }
 
+  async function handleToggleActive(site: any) {
+    const newState = !site.is_active;
+    const { error } = await dbu
+      .from("sites")
+      .update({ is_active: newState })
+      .eq("id", site.id);
+    if (!error) {
+      setSites(prev => prev.map(s =>
+        s.id === site.id ? { ...s, is_active: newState } : s
+      ));
+    }
+  }
+
   const filtered = sites.filter(s => {
     const q = search.toLowerCase();
     const matchQ = !q ||
@@ -502,6 +515,15 @@ export default function SitesPage() {
     return (
       <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
         {canManage && (<>
+          <button
+            onClick={() => handleToggleActive(s)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap ${
+              s.is_active
+                ? "bg-slate-100 text-slate-600 hover:bg-orange-100 hover:text-orange-700"
+                : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+            }`}>
+            {s.is_active ? "Deactivate" : "Activate"}
+          </button>
           <button
             onClick={() => setEditSite(s)}
             className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100 whitespace-nowrap">
