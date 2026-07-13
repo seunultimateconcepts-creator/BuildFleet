@@ -427,7 +427,7 @@ export function PlantListUploadModal({ open, onClose }: {
         year_of_manufacturing: year,
         life_expectancy:       "",
         date_received:         null,
-        date_commissioned:     commDate || new Date().toISOString().slice(0, 10),
+        date_commissioned:     commDate ||  null,
         equipment_condition:   mapCondition(rawCond),
         depreciation:          "",
         condition_at_receipt:  "Second Hand",

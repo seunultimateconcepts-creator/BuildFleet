@@ -63,6 +63,28 @@ function AddSiteModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
 
     setSaving(true); setError("");
 
+    // ── Duplicate check ──────────────────────────────────────
+    // Before inserting, check if any of the codes we're about to
+    // create already exist in the sites table.
+    // For a project cluster we check all 4 codes (P, W, R, S).
+    // For a single site we just check the one code.
+    const codesToCheck = isProject && previewRows
+      ? previewRows.map(r => r.code)
+      : [code];
+
+    const { data: existing } = await dbu
+      .from("sites")
+      .select("code")
+      .in("code", codesToCheck);
+
+    if (existing && existing.length > 0) {
+      const taken = existing.map((s: any) => s.code).join(", ");
+      setError(`Code${existing.length > 1 ? "s" : ""} already exist: ${taken}. Choose a different cluster number.`);
+      setSaving(false);
+      return;
+    }
+    // ─────────────────────────────────────────────────────────
+
     if (isProject && previewRows) {
       // Insert all 4 cluster rows at once
       const rows = previewRows.map(r => ({
@@ -443,6 +465,29 @@ export default function SitesPage() {
 
   const regions = [...new Set(sites.map(s => s.region).filter(Boolean))].sort();
 
+  // ── Export sites as CSV ───────────────────────────────────
+  function exportSites() {
+    const headers = ["Code","Old Code","Site Name","Type","Region","Status"];
+    const rows = filtered.map(s => [
+      s.code,
+      (s.legacy_code && !["NEW","GENERATED"].includes(s.legacy_code)) ? s.legacy_code : "",
+      s.name,
+      s.site_type,
+      s.region,
+      s.is_active ? "Active" : "Inactive",
+    ]);
+    const csv = [headers, ...rows]
+      .map(row => row.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `Hartland_Sites_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const stats = {
     total:     sites.length,
     workshops: sites.filter(s => s.site_type?.includes("Workshop")).length,
@@ -488,6 +533,10 @@ export default function SitesPage() {
           <button onClick={() => setShowLegend(l => !l)}
             className="border border-slate-200 bg-white px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50">
             {showLegend ? "Hide" : "?"} Code Guide
+          </button>
+          <button onClick={exportSites}
+            className="border border-slate-200 bg-white px-5 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-50 flex items-center gap-2">
+            ⬇ Export Sites
           </button>
           {canManage && (
             <button onClick={() => setAddModal(true)}
