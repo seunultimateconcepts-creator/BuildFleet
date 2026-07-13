@@ -6,22 +6,27 @@ import { useState, useRef } from "react";
 import { dbu } from "@/lib/db";
 import { useAuth } from "@/hooks/use-auth";
 
+// ─────────────────────────────────────────────────────────────
+// HELPER FUNCTIONS
+// ─────────────────────────────────────────────────────────────
+
+// Guess the region from a location string
 function extractRegion(location: string): string {
   if (!location) return "Nigeria";
-  const parts = location.split(" - ");
-  const last = parts[parts.length - 1].trim();
-  const valid = ["Edo","Abia","Delta","Imo","Abuja","Cross River","Kaduna","North"];
-  if (valid.includes(last)) return last;
-  if (/\bEdo\b/i.test(location))      return "Edo";
-  if (/\bAbia\b/i.test(location))     return "Abia";
-  if (/\bDelta\b/i.test(location))    return "Delta";
-  if (/\bImo\b/i.test(location))      return "Imo";
-  if (/\bAbuja\b/i.test(location))    return "Abuja, FCT";
-  if (/cross.?river/i.test(location)) return "Cross River";
-  if (/kaduna/i.test(location))       return "North";
+  const l = location.toLowerCase();
+  if (/\bedo\b/.test(l))         return "Edo";
+  if (/\babia\b/.test(l))        return "South East";
+  if (/\bdelta\b/.test(l))       return "Delta";
+  if (/\bimo\b/.test(l))         return "South East";
+  if (/\babuja\b|fct/.test(l))   return "Abuja, FCT";
+  if (/cross.?river/.test(l))    return "South South";
+  if (/kaduna/.test(l))          return "North";
+  if (/abia|ohafia|aba|umuahia/.test(l)) return "South East";
   return "Nigeria";
 }
 
+// Map raw condition / operational status from the plant list
+// to BuildFleet's assessment values
 function mapCondition(raw: string): string {
   const r = (raw || "").toLowerCase().trim();
   if (r === "working")      return "Good";
@@ -30,13 +35,26 @@ function mapCondition(raw: string): string {
   if (r === "scrapped")     return "Scrapped";
   if (r === "stand by")     return "Fair-Good";
   if (r === "under repair") return "Poor-Fair";
-  const map: Record<string,string> = {
-    "very good":"Very Good","good":"Good","fair-good":"Fair-Good",
-    "fair":"Fair","poor-fair":"Poor-Fair","poor":"Poor","scrapped":"Scrapped"
+  if (r === "storage")      return "Fair";
+  const map: Record<string, string> = {
+    "very good": "Very Good", "good": "Good", "fair-good": "Fair-Good",
+    "fair": "Fair", "poor-fair": "Poor-Fair", "poor": "Poor", "scrapped": "Scrapped",
   };
   return map[r] || "Good";
 }
 
+// Map raw condition to operational_status used in the equipment table
+function mapOperationalStatus(raw: string): string {
+  const r = (raw || "").toLowerCase().trim();
+  if (r === "working")      return "Working";
+  if (r === "break down")   return "Break Down";
+  if (r === "scrapped")     return "Scrapped";
+  if (r === "under repair") return "Under Repair";
+  if (r === "storage" || r === "idle" || r === "stand by") return "Storage";
+  return "Working";
+}
+
+// Map description text → equipment category
 function mapCategory(desc: string): string {
   const t = (desc || "").toLowerCase();
   if (t.includes("asphalt")||t.includes("hot mix")||t.includes("paver")||
@@ -60,165 +78,341 @@ function mapCategory(desc: string): string {
   if (t.includes("truck")||t.includes("tipper")||t.includes("trailer")||
       t.includes("articulated")||t.includes("rigid dump")||t.includes("haulage"))
     return "Heavy Transport";
-  if (t.includes("piling")||t.includes("boring")) return "Piling Equipment";
-  if (t.includes("survey")||t.includes("total station")) return "Survey Equipment";
   if (t.includes("welding")||t.includes("workshop")||t.includes("lathe"))
     return "Workshop Equipment";
   return "Other";
 }
 
+// Strip trailing ~ and bracket notes from fleet numbers
 function cleanFleet(raw: string): string {
-  return String(raw||"").replace(/~+$/,"").replace(/\s*\(.*?\)\s*$/g,"").trim();
+  return String(raw || "").replace(/~+$/, "").replace(/\s*\(.*?\)\s*$/g, "").trim();
 }
 
-// Get a value from a row trying multiple key variations
-function get(row: Record<string,string>, ...keys: string[]): string {
-  for (const k of keys) {
-    const val = row[k] || row[k.toLowerCase()] || row[k.toUpperCase()] || "";
-    if (val && val.trim()) return val.trim();
+// Parse "MM/DD/YYYY" → "YYYY-MM-DD" for Postgres
+// Returns null if the date is blank or invalid
+function parseCommDate(raw: string): string | null {
+  const cleaned = (raw || "").trim();
+  // These are the "no date" placeholders in the Hartland file
+  if (!cleaned || cleaned === "  -   -" || cleaned === "-   -" || cleaned === "- -") return null;
+  const parts = cleaned.split("/");
+  if (parts.length === 3) {
+    const [m, d, y] = parts;
+    if (y.length === 4 && parseInt(y) > 1990) {
+      return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    }
   }
-  return "";
+  return null;
 }
 
+// ─────────────────────────────────────────────────────────────
+// CATEGORY HIRE RATES (same as commissioning page)
+// ─────────────────────────────────────────────────────────────
+const CATEGORY_HIRE_RATES: Record<string, number> = {
+  "Light Vehicle":                        7000,
+  "Heavy Transport":                      25000,
+  "Earth Moving Equipment":               15000,
+  "Asphalt & Road Maintenance Equipment": 55000,
+  "Concrete Equipment":                   35000,
+  "Crane & Lifting Equipment":            95000,
+  "Generator & Power Equipment":          12000,
+  "Pneumatic Equipment":                  6500,
+  "Workshop Equipment":                   0,
+};
+
+// ─────────────────────────────────────────────────────────────
+// MAIN COMPONENT
+// ─────────────────────────────────────────────────────────────
 export function PlantListUploadModal({ open, onClose }: {
   open: boolean; onClose: () => void;
 }) {
   const { profile } = useAuth();
 
-  const [file,     setFile]     = useState<File | null>(null);
-  const [preview,  setPreview]  = useState<Record<string,string>[]>([]);
-  const [total,    setTotal]    = useState(0);
-  const [allRows,  setAllRows]  = useState<Record<string,string>[]>([]);
-  const [step,     setStep]     = useState<"pick"|"preview"|"importing"|"done">("pick");
-  const [progress, setProgress] = useState(0);
-  const [imported, setImported] = useState(0);
-  const [skipped,  setSkipped]  = useState(0);
-  const [error,    setError]    = useState<string|null>(null);
-  const fileRef                 = useRef<HTMLInputElement>(null);
+  // ── State ─────────────────────────────────────────────────
+  const [file,      setFile]      = useState<File | null>(null);
+  const [step,      setStep]      = useState<"pick"|"preview"|"importing"|"done">("pick");
+  const [error,     setError]     = useState<string | null>(null);
 
+  // All parsed rows from the Excel file
+  const [allRows,   setAllRows]   = useState<Record<string, string>[]>([]);
+
+  // After checking DB: split into 3 buckets
+  const [toUpdate,  setToUpdate]  = useState<Record<string, string>[]>([]);
+  const [toInsert,  setToInsert]  = useState<Record<string, string>[]>([]);
+  const [toSkip,    setToSkip]    = useState<number>(0);
+
+  // Progress during import
+  const [progress,  setProgress]  = useState(0);
+  const [updated,   setUpdated]   = useState(0);
+  const [inserted,  setInserted]  = useState(0);
+  const [failed,    setFailed]    = useState(0);
+
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // ── STEP 1: Parse the uploaded Excel file ─────────────────
   async function handleFile(f: File) {
     setError(null);
     setFile(f);
+
     try {
+      // Dynamically import SheetJS — it's already in your project
       const XLSX = await import("xlsx");
       const buf  = await f.arrayBuffer();
-      const wb   = XLSX.read(buf, { type:"array", cellDates:false });
 
-      const allValid: Record<string,string>[] = [];
+      // cellDates:false means dates come as raw strings, not JS Date objects
+      // This is safer for parsing Hartland's mixed date formats
+      const wb = XLSX.read(buf, { type: "array", cellDates: false });
+
+      const allValid: Record<string, string>[] = [];
 
       for (const sheetName of wb.SheetNames) {
-        const ws  = wb.Sheets[sheetName];
+        const ws = wb.Sheets[sheetName];
 
-        // Get raw array of arrays first to find header row
+        // sheet_to_json with header:1 gives us a 2D array (array of arrays)
+        // Each inner array is one row, we handle headers manually
         const aoa: unknown[][] = XLSX.utils.sheet_to_json(ws, {
-          header: 1, defval: "", raw: false
+          header: 1, defval: "", raw: false,
         });
 
-        // Find the header row — look for row containing "Fleet no" or "fleet no"
+        // ── Find the header row ──
+        // We look for a row that contains "fleet no" in one of its cells
+        // The Hartland file has a title row first, then the header row
         let headerRowIdx = -1;
         let headers: string[] = [];
+
         for (let i = 0; i < Math.min(aoa.length, 10); i++) {
-          const row = aoa[i] as string[];
-          const rowStr = row.map(c => String(c||"").toLowerCase().trim());
+          const row    = aoa[i] as string[];
+          const rowStr = row.map(c => String(c || "").toLowerCase().trim());
           if (rowStr.some(c => c === "fleet no" || c === "fleet non" || c === "fleetno")) {
             headerRowIdx = i;
-            headers = row.map(c => String(c||"").toLowerCase().trim());
+            // Store headers in lowercase so we can look them up case-insensitively
+            headers = row.map(c => String(c || "").toLowerCase().trim());
             break;
           }
         }
 
-        if (headerRowIdx === -1) continue; // no header row found in this sheet
+        if (headerRowIdx === -1) continue; // this sheet has no recognised header
 
-        // Build rows from header row onwards
+        // ── Parse data rows ──
+        // Every row after the header row is a potential equipment record
         for (let i = headerRowIdx + 1; i < aoa.length; i++) {
           const row = aoa[i] as string[];
-          const obj: Record<string,string> = {};
+
+          // Build a plain object: { "fleet no": "AC-07", "make": "Atlas Copco", ... }
+          const obj: Record<string, string> = {};
           headers.forEach((h, idx) => {
             obj[h] = String(row[idx] ?? "").trim();
           });
 
-          // Must have a valid fleet number
+          // Clean the fleet number — skip rows with invalid/empty fleet numbers
           const fn = cleanFleet(
-            obj["fleet no"] || obj["fleet non"] || obj["fleetno"] || obj["fullfleetn"] || ""
+            obj["fleet no"] || obj["fleet non"] || obj["fleetno"] || ""
           );
-          if (fn.length >= 3 && /[A-Z]/.test(fn)) {
-            obj["_fleet"] = fn; // store cleaned fleet number
+
+          // A valid fleet number is at least 3 chars and contains a letter
+          // (rules out blank rows and pure-number serial rows)
+          if (fn.length >= 3 && /[A-Z]/i.test(fn)) {
+            obj["_fleet"] = fn; // store cleaned fleet number for easy access later
             allValid.push(obj);
           }
         }
       }
 
-      // Deduplicate by fleet number
-      const seen = new Set<string>();
+      // ── Deduplicate by fleet number ──
+      // If the same fleet number appears twice in the file, keep the first occurrence
+      const seen    = new Set<string>();
       const deduped = allValid.filter(r => {
-        const fn = r["_fleet"];
-        if (seen.has(fn)) return false;
-        seen.add(fn);
+        if (seen.has(r["_fleet"])) return false;
+        seen.add(r["_fleet"]);
         return true;
       });
 
+      if (deduped.length === 0) {
+        setError("No valid equipment records found. Check the file format.");
+        return;
+      }
+
       setAllRows(deduped);
-      setTotal(deduped.length);
 
-      const prev = deduped.slice(0, 10).map(r => ({
-        fleet_number: r["_fleet"],
-        description:  (r["type"] || r["descriptio"] || "—").slice(0, 50),
-        make:         r["make"] || "—",
-        location:     (r["location"] || "—").slice(0, 45),
-        region:       extractRegion(r["location"] || ""),
-        condition:    r["condition"] || r["assessment"] || "—",
-      }));
+      // ── Check which fleet numbers already exist in the DB ──
+      // We fetch ALL fleet numbers from equipment table in one query
+      const { data: existingData } = await dbu
+        .from("equipment")
+        .select("fleet_number");
 
-      setPreview(prev);
+      const existingSet = new Set(
+        (existingData || []).map((e: any) => e.fleet_number)
+      );
+
+      // Split rows into: update existing / insert new
+      const updates: Record<string, string>[] = [];
+      const inserts: Record<string, string>[] = [];
+      let   skipCount = 0;
+
+      for (const row of deduped) {
+        const fn = row["_fleet"];
+        if (!fn) { skipCount++; continue; }
+        if (existingSet.has(fn)) {
+          updates.push(row); // fleet already in DB → we will UPDATE it
+        } else {
+          inserts.push(row); // new fleet → we will INSERT it
+        }
+      }
+
+      setToUpdate(updates);
+      setToInsert(inserts);
+      setToSkip(skipCount);
       setStep("preview");
+
     } catch (e) {
       console.error(e);
-      setError("Could not read file. Please use the Hartland Master Plant List .xls or .xlsx.");
+      setError("Could not read file. Please use the Hartland Master Plant List (.xls or .xlsx).");
     }
   }
 
+  // ── STEP 2: Run the actual import ─────────────────────────
   async function handleImport() {
-    if (!allRows.length) return;
     setStep("importing");
     setProgress(0);
-    let ok = 0, fail = 0;
+    setUpdated(0);
+    setInserted(0);
+    setFailed(0);
 
-    // Get existing fleet numbers to skip duplicates
-    const { data: existingData } = await dbu
-      .from("equipment").select("fleet_number");
-    const existingFleets = new Set((existingData || []).map((e: any) => e.fleet_number));
+    // ── Fetch sites table to build proj_code → site lookup ──
+    // This is the key improvement: instead of hardcoding the mapping,
+    // we read from our own sites table where legacy_code = old Hartland proj code
+    const { data: sitesData } = await dbu
+      .from("sites")
+      .select("legacy_code, name, region, code");
 
-    // Build all records first
-    const records: any[] = [];
-    for (let i = 0; i < allRows.length; i++) {
-      const r       = allRows[i];
-      const fleetNo = r["_fleet"];
-      if (!fleetNo || existingFleets.has(fleetNo)) {
-        fail++;
-        setProgress(i + 1);
-        setSkipped(fail);
-        continue;
+    // Build a map: old_proj_code → { name, region, code }
+    const projToSite: Record<string, { name: string; region: string; code: string }> = {};
+    (sitesData || []).forEach((s: any) => {
+      if (s.legacy_code && !["NEW", "GENERATED"].includes(s.legacy_code)) {
+        projToSite[s.legacy_code.trim()] = {
+          name:   s.name,
+          region: s.region,
+          code:   s.code,
+        };
+      }
+    });
+
+    let ok_update = 0;
+    let ok_insert = 0;
+    let fail      = 0;
+    const total   = toUpdate.length + toInsert.length;
+
+    // ── PART A: UPDATE existing equipment ──
+    // For each existing fleet number, we update:
+    //   equipment.site         → new site name (from proj code → sites table)
+    //   equipment.region       → from new site
+    //   equipment.commission_date → from "date comm." column
+    //   equipment.assessment   → from condition
+    //   equipment.operational_status → from condition
+    for (let i = 0; i < toUpdate.length; i++) {
+      const row      = toUpdate[i];
+      const fn       = row["_fleet"];
+      const projCode = (row["proj code"] || row["projcode"] || "").trim();
+      const rawDate  = row["date comm."] || row["datecomm"] || row["date comm"] || "";
+      const rawCond  = row["condition"] || row["assessment"] || "";
+      const desc     = (row["type"] || row["descriptio"] || "").slice(0, 200);
+
+      // Look up the new site using the old proj code
+      const siteMatch = projToSite[projCode];
+
+      // Build the UPDATE payload — only update what we have data for
+      const equipUpdate: Record<string, any> = {};
+
+      if (siteMatch) {
+        // We found a matching site in our new system
+        equipUpdate.site   = siteMatch.name;
+        equipUpdate.region = siteMatch.region;
       }
 
-      const location  = (r["location"] || "").trim();
-      const region    = extractRegion(location);
-      const rawCond   = r["condition"] || r["assessment"] || r["cond"] || "";
-      const desc      = (r["type"] || r["descriptio"] || fleetNo).slice(0,200).trim();
-      const make      = (r["make"] || "Unknown").trim();
-      const model     = (r["model"] || "").trim();
-      const typeCode  = (r["type code"] || r["typecode"] || "").trim();
-      const regNo     = (r["reg no"] || r["regno"] || r["vin"] || "").trim();
-      const projCode  = (r["proj code"] || r["projcode"] || "").trim();
-      let   year      = parseInt(r["maf year"] || r["mfgyear"] || "0") || 0;
-      if (year > 2100 || year < 1900) year = 0;
-      const lc        = parseFloat((r["landed cost"]||r["landedcost"]||"0").replace(/,/g,""))||0;
+      const commDate = parseCommDate(rawDate);
+      if (commDate) {
+        equipUpdate.commission_date = commDate;
+      }
 
-      // Build record as plain object — no strict typing issues
-      const record = {
-        fleet_number:          fleetNo,
+      if (rawCond) {
+        equipUpdate.assessment         = mapCondition(rawCond);
+        equipUpdate.operational_status = mapOperationalStatus(rawCond);
+      }
+
+      if (desc) {
+        // Update category from description in case it was wrong before
+        const cat = mapCategory(desc);
+        if (cat !== "Other") {
+          equipUpdate.category  = cat;
+          equipUpdate.hire_rate = CATEGORY_HIRE_RATES[cat] ?? 0;
+        }
+      }
+
+      // Only run the update if we have something to update
+      if (Object.keys(equipUpdate).length > 0) {
+        const { error: err } = await dbu
+          .from("equipment")
+          .update(equipUpdate)
+          .eq("fleet_number", fn);
+
+        if (!err) {
+          ok_update++;
+          // Also update the commissioning table for the same fleet
+          const commUpdate: Record<string, any> = {};
+          if (siteMatch)   commUpdate.location          = siteMatch.name;
+          if (siteMatch)   commUpdate.region            = siteMatch.region;
+          if (commDate)    commUpdate.date_commissioned = commDate;
+          if (rawCond)     commUpdate.equipment_condition = mapCondition(rawCond);
+
+          if (Object.keys(commUpdate).length > 0) {
+            await dbu.from("commissioning")
+              .update(commUpdate)
+              .eq("fleet_number", fn);
+          }
+        } else {
+          fail++;
+          console.error(`Update failed for ${fn}:`, err.message);
+        }
+      } else {
+        ok_update++; // nothing to update = still a success (row matched, no data to change)
+      }
+
+      setProgress(i + 1);
+      setUpdated(ok_update);
+      setFailed(fail);
+    }
+
+    // ── PART B: INSERT new equipment ──
+    // For fleet numbers not already in the DB, we insert fresh records
+    // Same logic as before but now we use proj code → site name mapping
+    const BATCH = 50; // insert 50 at a time to avoid timeouts
+    const newRecords: any[] = [];
+
+    for (const row of toInsert) {
+      const fn       = row["_fleet"];
+      const projCode = (row["proj code"] || row["projcode"] || "").trim();
+      const rawDate  = row["date comm."] || row["datecomm"] || row["date comm"] || "";
+      const rawCond  = row["condition"] || row["assessment"] || "";
+      const desc     = (row["type"] || row["descriptio"] || fn).slice(0, 200).trim();
+      const make     = (row["make"] || "Unknown").trim();
+      const model    = (row["model"] || "").trim();
+      const typeCode = (row["type code"] || row["typecode"] || "").trim();
+      const regNo    = (row["reg no"] || row["regno"] || row["vin"] || "").trim();
+      let   year     = parseInt(row["maf year"] || row["mfgyear"] || "0") || 0;
+      if (year > 2100 || year < 1900) year = 0;
+      const lc       = parseFloat((row["landed cost"] || "0").replace(/,/g, "")) || 0;
+
+      // Use the new site from proj code lookup, or fall back to the Location column
+      const siteMatch   = projToSite[projCode];
+      const siteName    = siteMatch?.name  || (row["location"] || "").trim();
+      const siteRegion  = siteMatch?.region || extractRegion(row["location"] || "");
+      const commDate    = parseCommDate(rawDate);
+      const category    = mapCategory(desc);
+
+      newRecords.push({
+        fleet_number:          fn,
         fleet_status:          "Addition",
         description:           desc,
-        category:              mapCategory(desc),
+        category,
         make,
         model,
         type_code:             typeCode,
@@ -233,7 +427,7 @@ export function PlantListUploadModal({ open, onClose }: {
         year_of_manufacturing: year,
         life_expectancy:       "",
         date_received:         null,
-        date_commissioned:     new Date().toISOString().slice(0,10),
+        date_commissioned:     commDate || new Date().toISOString().slice(0, 10),
         equipment_condition:   mapCondition(rawCond),
         depreciation:          "",
         condition_at_receipt:  "Second Hand",
@@ -241,10 +435,10 @@ export function PlantListUploadModal({ open, onClose }: {
         supplier_code:         "",
         order_no:              "",
         invoice_no:            "",
-        area_project:          location,
-        location,
+        area_project:          siteName,
+        location:              siteName,
         cost_code:             projCode,
-        region:                region || "Nigeria",
+        region:                siteRegion,
         policy_cover_no:       "",
         insurance_expiry:      null,
         total_loss:            false,
@@ -265,25 +459,21 @@ export function PlantListUploadModal({ open, onClose }: {
         opening_kilometer:     0,
         plant_engineer:        "",
         plant_manager:         "",
-        remarks:               `Imported ${new Date().toLocaleDateString("en-GB")}`,
+        remarks:               `Uploaded ${new Date().toLocaleDateString("en-GB")}`,
         commissioned_by:       profile?.id || "",
-      };
-
-      records.push(record);
-      setProgress(i + 1);
+      });
     }
 
-    // Bulk insert in batches of 50
-    const BATCH = 50;
-    for (let b = 0; b < records.length; b += BATCH) {
-      const batch = records.slice(b, b + BATCH);
+    // Batch INSERT into commissioning then equipment
+    for (let b = 0; b < newRecords.length; b += BATCH) {
+      const batch = newRecords.slice(b, b + BATCH);
       try {
-        // Insert into commissioning
         const { data: commData, error: commErr } = await dbu
-          .from("commissioning").insert(batch).select("id,fleet_number,description,location,region,equipment_condition,fleet_status,opening_hour_meter,opening_kilometer,make,model,type_code,reg_no,year_of_manufacturing,purchase_cost,landed_cost,meter_device,policy_cover_no,insurance_expiry,supplier,supplier_code,order_no,invoice_no,date_commissioned,cost_code");
+          .from("commissioning")
+          .insert(batch)
+          .select("id,fleet_number,description,location,region,equipment_condition,fleet_status,opening_hour_meter,opening_kilometer,make,model,type_code,reg_no,year_of_manufacturing,purchase_cost,landed_cost,meter_device,policy_cover_no,insurance_expiry,supplier,date_commissioned,cost_code");
 
         if (!commErr && commData) {
-          // Build equipment records from commissioning data
           const equipRecords = commData.map((c: any) => ({
             code:                  c.fleet_number,
             fleet_number:          c.fleet_number,
@@ -304,192 +494,276 @@ export function PlantListUploadModal({ open, onClose }: {
             meter_device:          c.meter_device || "Hours",
             site:                  c.location || "",
             region:                c.region || "",
-            operational_status:    mapCondition(c.equipment_condition || "") === "Scrapped" ? "Scrapped" : "Working",
-            assessment:            c.equipment_condition || "Good",
+            operational_status:    mapOperationalStatus(c.equipment_condition || ""),
+            assessment:            mapCondition(c.equipment_condition || ""),
             fleet_status:          c.fleet_status || "Addition",
             current_hour_meter:    c.opening_hour_meter || 0,
             current_kilometer:     c.opening_kilometer || 0,
-            commission_date:       c.date_commissioned || new Date().toISOString().slice(0,10),
+            commission_date:       c.date_commissioned || new Date().toISOString().slice(0, 10),
             purchase_cost:         c.purchase_cost || 0,
             landed_cost:           c.landed_cost || 0,
             insurance_policy:      c.policy_cover_no || "",
             insurance_expiry:      c.insurance_expiry || null,
             supplier:              c.supplier || "",
-            supplier_code:         c.supplier_code || "",
-            order_no:              c.order_no || "",
-            invoice_no:            c.invoice_no || "",
+            hire_rate:             CATEGORY_HIRE_RATES[mapCategory(c.description || "")] ?? 0,
           }));
 
           const { error: eqErr } = await dbu.from("equipment").insert(equipRecords);
           if (!eqErr) {
-            ok += batch.length;
+            ok_insert += batch.length;
           } else {
             fail += batch.length;
-            console.error("Equipment batch error:", eqErr.message);
+            console.error("Equipment insert error:", eqErr.message);
           }
         } else {
           fail += batch.length;
-          console.error("Commissioning batch error:", commErr?.message);
+          console.error("Commissioning insert error:", commErr?.message);
         }
       } catch (e) {
         fail += batch.length;
         console.error("Batch error:", e);
       }
 
-      setImported(ok);
-      setSkipped(fail);
-      // Small delay between batches to avoid rate limiting
+      setProgress(toUpdate.length + b + BATCH);
+      setInserted(ok_insert);
+      setFailed(fail);
+
+      // Small pause between batches to avoid hitting Supabase rate limits
       await new Promise(r => setTimeout(r, 300));
     }
 
     setStep("done");
   }
 
+  // ── Reset everything back to initial state ─────────────────
   function reset() {
-    setFile(null); setPreview([]); setAllRows([]); setTotal(0);
-    setStep("pick"); setProgress(0); setImported(0); setSkipped(0); setError(null);
+    setFile(null); setAllRows([]); setToUpdate([]); setToInsert([]); setToSkip(0);
+    setStep("pick"); setProgress(0); setUpdated(0); setInserted(0); setFailed(0);
+    setError(null);
   }
+
   function handleClose() { reset(); onClose(); }
+
   if (!open) return null;
+
+  const total = toUpdate.length + toInsert.length;
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden">
-        <div className="px-7 py-5 bg-slate-900 flex items-center justify-between">
+      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+
+        {/* Header */}
+        <div className="px-7 py-5 bg-slate-900 flex items-center justify-between shrink-0">
           <div>
-            <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-0.5">Bulk Import</p>
+            <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-0.5">
+              Smart Import
+            </p>
             <h2 className="text-lg font-bold text-white">Upload Master Plant List</h2>
+            <p className="text-slate-400 text-xs mt-0.5">
+              Updates existing equipment · Inserts new · Maps sites from proj codes
+            </p>
           </div>
           {step !== "importing" && (
             <button onClick={handleClose} className="text-slate-400 hover:text-white text-2xl">×</button>
           )}
         </div>
 
-        <div className="p-7 space-y-5">
+        <div className="p-7 space-y-5 overflow-y-auto flex-1">
 
+          {/* ── PICK FILE ── */}
           {step === "pick" && (
             <>
-              <div onClick={() => fileRef.current?.click()}
+              <div
+                onClick={() => fileRef.current?.click()}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
                 className="border-2 border-dashed border-amber-300 rounded-xl p-10 text-center cursor-pointer hover:border-amber-500 hover:bg-amber-50 transition-all">
                 <div className="text-5xl mb-3">📊</div>
                 <p className="font-bold text-slate-700 text-lg">Click to select file</p>
                 <p className="text-slate-400 text-sm mt-1">Hartland Master Plant List (.xls or .xlsx)</p>
+                <p className="text-slate-300 text-xs mt-2">
+                  Existing equipment will be updated · New equipment will be inserted
+                </p>
                 <input ref={fileRef} type="file" accept=".xls,.xlsx" className="hidden"
                   onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
               </div>
-              {error && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">⚠️ {error}</div>}
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">
+                  ⚠️ {error}
+                </div>
+              )}
             </>
           )}
 
+          {/* ── PREVIEW ── */}
           {step === "preview" && (
             <>
-              <div className={`${total>0?"bg-emerald-50 border-emerald-200":"bg-red-50 border-red-200"} border rounded-xl p-4 flex items-center gap-3`}>
-                <span className="text-2xl">{total>0?"✅":"⚠️"}</span>
-                <div>
-                  <p className={`font-bold text-sm ${total>0?"text-emerald-800":"text-red-800"}`}>
-                    {total>0 ? `${total} valid equipment records found` : "No valid records found — wrong file?"}
-                  </p>
-                  <p className={`text-xs mt-0.5 ${total>0?"text-emerald-600":"text-red-600"}`}>{file?.name}</p>
+              {/* Summary cards */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                  <p className="text-2xl font-bold text-blue-600">{toUpdate.length}</p>
+                  <p className="text-xs text-blue-700 font-semibold mt-1">Will Update</p>
+                  <p className="text-xs text-blue-500 mt-0.5">Already in BuildFleet</p>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+                  <p className="text-2xl font-bold text-emerald-600">{toInsert.length}</p>
+                  <p className="text-xs text-emerald-700 font-semibold mt-1">Will Insert</p>
+                  <p className="text-xs text-emerald-500 mt-0.5">New to BuildFleet</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
+                  <p className="text-2xl font-bold text-slate-500">{toSkip}</p>
+                  <p className="text-xs text-slate-500 font-semibold mt-1">Skipped</p>
+                  <p className="text-xs text-slate-400 mt-0.5">No valid fleet no.</p>
                 </div>
               </div>
 
-              {total > 0 && (
+              {/* What will be updated */}
+              <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-800 space-y-1">
+                <p className="font-bold">For existing equipment, we will update:</p>
+                <ul className="list-disc list-inside space-y-0.5 text-blue-700">
+                  <li>Site name → mapped from old Proj Code to new site system</li>
+                  <li>Commission date → from &quot;date comm.&quot; column</li>
+                  <li>Assessment / Condition → from &quot;Condition&quot; column</li>
+                  <li>Operational status → from &quot;Condition&quot; column</li>
+                  <li>Category & hire rate → re-derived from description</li>
+                </ul>
+              </div>
+
+              {/* Preview table — show first 8 rows to be updated */}
+              {toUpdate.length > 0 && (
                 <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Preview — first 10 records</p>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                    Preview — first records to UPDATE
+                  </p>
                   <div className="overflow-x-auto border border-slate-200 rounded-xl">
                     <table className="w-full text-xs">
                       <thead className="bg-slate-50">
-                        <tr>{["Fleet No.","Description","Make","Site","Region","Status"].map(h=>(
-                          <th key={h} className="text-left px-3 py-2 font-semibold text-slate-500">{h}</th>
-                        ))}</tr>
+                        <tr>
+                          {["Fleet No.", "Proj Code", "New Site (mapped)", "Comm. Date", "Condition"].map(h => (
+                            <th key={h} className="text-left px-3 py-2 font-semibold text-slate-500">{h}</th>
+                          ))}
+                        </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {preview.map((r,i)=>(
-                          <tr key={i} className="hover:bg-slate-50">
-                            <td className="px-3 py-2 font-mono font-bold text-amber-700">{r.fleet_number}</td>
-                            <td className="px-3 py-2 truncate max-w-35 text-slate-700">{r.description}</td>
-                            <td className="px-3 py-2 text-slate-600">{r.make}</td>
-                            <td className="px-3 py-2 truncate max-w-27.5 text-slate-500">{r.location}</td>
-                            <td className="px-3 py-2 text-slate-500">{r.region}</td>
-                            <td className="px-3 py-2">
-                              <span className={`px-2 py-0.5 rounded-full font-semibold text-xs ${
-                                r.condition==="Working"?"bg-emerald-100 text-emerald-700":
-                                r.condition==="Scrapped"?"bg-red-100 text-red-600":
-                                r.condition==="Break Down"?"bg-orange-100 text-orange-700":
-                                "bg-slate-100 text-slate-500"}`}>{r.condition||"—"}</span>
-                            </td>
-                          </tr>
-                        ))}
+                        {toUpdate.slice(0, 8).map((r, i) => {
+                          const pc   = (r["proj code"] || r["projcode"] || "").trim();
+                          const date = parseCommDate(r["date comm."] || r["datecomm"] || "");
+                          return (
+                            <tr key={i} className="hover:bg-blue-50">
+                              <td className="px-3 py-2 font-mono font-bold text-blue-700">{r["_fleet"]}</td>
+                              <td className="px-3 py-2 text-slate-500 font-mono">{pc || "—"}</td>
+                              <td className="px-3 py-2 text-slate-600 max-w-40 truncate">
+                                {pc ? (
+                                  <span className="text-emerald-700">mapped from {pc}</span>
+                                ) : (
+                                  <span className="text-slate-400">no proj code</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-slate-600">
+                                {date ? (
+                                  <span className="text-emerald-700">{date}</span>
+                                ) : (
+                                  <span className="text-slate-300">no date</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-slate-600">
+                                {r["condition"] || r["assessment"] || "—"}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
-                  <p className="text-xs text-slate-400 mt-2">Showing first 10 of {total} records.</p>
+                  {toUpdate.length > 8 && (
+                    <p className="text-xs text-slate-400 mt-1.5">
+                      ...and {toUpdate.length - 8} more to update
+                    </p>
+                  )}
                 </div>
               )}
 
               <div className="flex justify-between gap-3">
-                <button onClick={reset} className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-500 hover:bg-slate-50">
+                <button onClick={reset}
+                  className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-500 hover:bg-slate-50">
                   ← Change File
                 </button>
                 {total > 0 && (
-                  <button onClick={handleImport} className="px-8 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600">
-                    Import All {total} Records →
+                  <button onClick={handleImport}
+                    className="px-8 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600">
+                    Run Import ({toUpdate.length} updates + {toInsert.length} new) →
                   </button>
                 )}
               </div>
             </>
           )}
 
+          {/* ── IMPORTING ── */}
           {step === "importing" && (
             <div className="py-6 space-y-5">
               <div className="text-center">
                 <div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"/>
-                <p className="font-bold text-slate-800 text-lg">Importing equipment...</p>
-                <p className="text-slate-500 text-sm mt-1">Please keep this tab open</p>
+                <p className="font-bold text-slate-800 text-lg">Running import...</p>
+                <p className="text-slate-500 text-sm mt-1">Updating existing · Inserting new · Please keep this tab open</p>
               </div>
               <div>
                 <div className="flex justify-between text-xs text-slate-500 mb-1.5">
                   <span>{progress} of {total} processed</span>
-                  <span>{Math.round((progress/Math.max(total,1))*100)}%</span>
+                  <span>{Math.round((progress / Math.max(total, 1)) * 100)}%</span>
                 </div>
                 <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
                   <div className="h-full bg-amber-500 rounded-full transition-all duration-300"
-                    style={{width:`${(progress/Math.max(total,1))*100}%`}}/>
+                    style={{ width: `${(progress / Math.max(total, 1)) * 100}%` }}/>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
-                  <p className="text-2xl font-bold text-emerald-600">{imported}</p>
-                  <p className="text-xs text-emerald-700 font-medium mt-1">Imported</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                  <p className="text-2xl font-bold text-blue-600">{updated}</p>
+                  <p className="text-xs text-blue-700 font-medium mt-1">Updated</p>
                 </div>
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
-                  <p className="text-2xl font-bold text-slate-500">{skipped}</p>
-                  <p className="text-xs text-slate-500 font-medium mt-1">Skipped</p>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+                  <p className="text-2xl font-bold text-emerald-600">{inserted}</p>
+                  <p className="text-xs text-emerald-700 font-medium mt-1">Inserted</p>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                  <p className="text-2xl font-bold text-red-500">{failed}</p>
+                  <p className="text-xs text-red-600 font-medium mt-1">Failed</p>
                 </div>
               </div>
             </div>
           )}
 
+          {/* ── DONE ── */}
           {step === "done" && (
             <div className="py-6 text-center space-y-4">
               <div className="text-6xl">🎉</div>
               <p className="font-bold text-slate-800 text-xl">Import Complete!</p>
-              <p className="text-slate-500 text-sm">{imported} records created · {skipped} skipped</p>
-              <div className="grid grid-cols-2 gap-4 max-w-xs mx-auto">
+              <div className="grid grid-cols-3 gap-3 max-w-sm mx-auto">
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                  <p className="text-2xl font-bold text-blue-600">{updated}</p>
+                  <p className="text-xs text-blue-700 font-medium mt-1">Updated</p>
+                </div>
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
-                  <p className="text-2xl font-bold text-emerald-600">{imported}</p>
-                  <p className="text-xs text-emerald-700 font-medium mt-1">Imported</p>
+                  <p className="text-2xl font-bold text-emerald-600">{inserted}</p>
+                  <p className="text-xs text-emerald-700 font-medium mt-1">Inserted</p>
                 </div>
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
-                  <p className="text-2xl font-bold text-slate-600">{skipped}</p>
-                  <p className="text-xs text-slate-500 font-medium mt-1">Skipped</p>
+                  <p className="text-2xl font-bold text-slate-500">{failed}</p>
+                  <p className="text-xs text-slate-500 font-medium mt-1">Failed</p>
                 </div>
               </div>
-              <button onClick={handleClose} className="px-8 py-3 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800">
+              {failed > 0 && (
+                <p className="text-xs text-slate-400">
+                  Failed records may have duplicate codes or RLS issues. Check console for details.
+                </p>
+              )}
+              <button onClick={handleClose}
+                className="px-8 py-3 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800">
                 Done — View Equipment →
               </button>
             </div>
           )}
+
         </div>
       </div>
     </div>
