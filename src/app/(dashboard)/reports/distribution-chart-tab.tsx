@@ -314,7 +314,7 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
   tbody td { padding:3px 4px; font-size:7.5pt; border-bottom:1px solid #f1f5f9; border-right:1px solid #f1f5f9; vertical-align:middle; }
   tbody tr:nth-child(even) { background:#fafbfc; }
   td.code { font-weight:800; color:#92400e; text-align:center; background:#fffbeb; }
-  td.type { color:#1e293b; white-space:nowrap; }
+  td.type { color:#1e293b; white-space:normal; max-width:170px; word-break:break-word; line-height:1.3; }
   td.fleetlist { color:#475569; font-size:7pt; }
   td.num { text-align:center; font-weight:600; }
   td.num.total { font-weight:800; color:#080D1A; background:#f8fafc; }
@@ -378,7 +378,7 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
   <thead>
     <tr>
       <th rowspan="2">Code</th>
-      <th rowspan="2">Equipment Type</th>
+      <th rowspan="2" style="width:170px">Equipment Type</th>
       ${siteHeaderCells}
       <th rowspan="2">Total</th>
       <th rowspan="2">Working</th>
@@ -432,16 +432,30 @@ export function DistributionChartTab() {
     categories: number; types: number; locations: number; equipment: number; date: string;
   } | null>(null);
 
-  async function fetchEquipment(): Promise<any[]> {
+  // Only equipment sitting at an ACTIVE Project or Workshop site belongs on
+  // this chart — Repair Yards, Storage Yards and Offices are excluded, same
+  // eligibility rule used for daily logging.
+  async function fetchEligibleSiteNames(): Promise<string[]> {
+    const { data } = await dbu.from("sites")
+      .select("name,site_type,is_active")
+      .in("site_type", ["Project", "Central Workshop", "Regional Workshop", "Field Workshop"])
+      .eq("is_active", true);
+    return (data || []).map((s: any) => s.name);
+  }
+
+  async function fetchEquipment(eligibleSites: string[]): Promise<any[]> {
+    if (eligibleSites.length === 0) return [];
     const [p1, p2] = await Promise.all([
       dbu.from("equipment")
         .select("fleet_number,category,name,site,operational_status")
         .neq("operational_status", "Scrapped")
+        .in("site", eligibleSites)
         .order("fleet_number")
         .range(0, 999),
       dbu.from("equipment")
         .select("fleet_number,category,name,site,operational_status")
         .neq("operational_status", "Scrapped")
+        .in("site", eligibleSites)
         .order("fleet_number")
         .range(1000, 1999),
     ]);
@@ -452,9 +466,15 @@ export function DistributionChartTab() {
     setLoading(true);
     setError("");
     try {
-      const equipment = await fetchEquipment();
+      const eligibleSites = await fetchEligibleSiteNames();
+      if (eligibleSites.length === 0) {
+        setError("No active Project or Workshop sites found.");
+        setLoading(false);
+        return;
+      }
+      const equipment = await fetchEquipment(eligibleSites);
       if (equipment.length === 0) {
-        setError("No equipment found to build the chart from.");
+        setError("No equipment found at active Project or Workshop sites.");
         setLoading(false);
         return;
       }
@@ -491,8 +511,10 @@ export function DistributionChartTab() {
               Fleet distribution by category and location
             </h3>
             <p className="text-sm text-slate-500 mt-1 max-w-xl">
-              One row per equipment type, one column per location — showing exactly which fleet
-              numbers are where, with Working / B.D / Storage totals. Built for management review.
+              One row per equipment type, one column per active Project/Workshop location —
+              showing exactly which fleet numbers are where, with Working / B.D / Storage
+              totals. Repair Yards, Storage Yards and Offices are excluded. Built for
+              management review.
             </p>
           </div>
           <div className="flex gap-3 shrink-0">
@@ -517,7 +539,7 @@ export function DistributionChartTab() {
           <div className="mt-5 grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-slate-900 text-white rounded-2xl p-4">
               <p className="text-2xl font-bold">{lastRun.equipment}</p>
-              <p className="text-xs opacity-70 mt-1">Equipment (excl. Scrapped)</p>
+              <p className="text-xs opacity-70 mt-1">Equipment at active Project/Workshop sites</p>
             </div>
             <div className="bg-amber-500 text-white rounded-2xl p-4">
               <p className="text-2xl font-bold">{lastRun.categories}</p>
