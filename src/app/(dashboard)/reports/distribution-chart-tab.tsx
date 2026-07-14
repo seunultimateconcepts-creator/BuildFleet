@@ -244,7 +244,7 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
 
   const dataRows = orderedRows.map((row, i) => {
     const catCell = spanStartRows.has(i)
-      ? `<td class="code" rowspan="${spanCountByStart.get(i)}">${esc(row.code)}</td>`
+      ? `<td class="code col-code" rowspan="${spanCountByStart.get(i)}">${esc(row.code)}</td>`
       : "";
     const siteCells = locations.map(loc => {
       const cell = row.perSite[loc];
@@ -262,7 +262,7 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
     }).join("");
     return `<tr>
       ${catCell}
-      <td class="type">${esc(row.name)}</td>
+      <td class="type col-type">${esc(row.name)}</td>
       ${siteCells}
       <td class="num total">${row.total}</td>
       <td class="num" style="color:${STATUS_COLOR.working}">${row.working || ""}</td>
@@ -306,7 +306,10 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
 
   table { width:100%; border-collapse:collapse; }
   thead th { background:#080D1A; color:#fff; font-size:7pt; font-weight:700; padding:5px 4px;
-    text-align:center; text-transform:uppercase; letter-spacing:.3px; border-right:1px solid #1a2744; white-space:nowrap; }
+    text-align:center; text-transform:uppercase; letter-spacing:.3px; border-right:1px solid #1a2744; white-space:nowrap;
+    position:sticky; z-index:20; }
+  thead tr:first-child th { top:52px; }   /* sits right below the sticky orange print bar */
+  thead tr:last-child  th { top:76px; }   /* second header row (Fleet No / N sub-labels) */
   thead th:last-child { border-right:none; }
   thead .loc-head { background:#1a2744; }
   thead .sub { background:#2a3a5c; font-size:6.5pt; }
@@ -315,6 +318,16 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
   tbody tr:nth-child(even) { background:#fafbfc; }
   td.code { font-weight:800; color:#92400e; text-align:center; background:#fffbeb; }
   td.type { color:#1e293b; white-space:normal; max-width:170px; word-break:break-word; line-height:1.3; }
+
+  /* Frozen columns — Code + Equipment Type stay visible while scrolling right,
+     same idea as freeze panes in Excel. */
+  .col-code  { position:sticky; left:0;    z-index:15; width:42px; min-width:42px; max-width:42px; }
+  .col-type  { position:sticky; left:42px; z-index:15; width:170px; min-width:170px; max-width:170px; }
+  th.col-code, th.col-type { z-index:25; } /* header frozen cells sit above frozen body cells */
+  td.col-code { background:#fffbeb; }      /* opaque so scrolled content doesn't show through */
+  td.col-type { background:inherit; }
+  tbody tr:nth-child(even) td.col-type { background:#fafbfc; }
+  tbody tr:nth-child(odd)  td.col-type { background:#fff; }
   td.fleetlist { color:#475569; font-size:7pt; }
   td.num { text-align:center; font-weight:600; }
   td.num.total { font-weight:800; color:#080D1A; background:#f8fafc; }
@@ -333,6 +346,7 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
     body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     .no-print { display:none; }
     thead { display: table-header-group; }
+    thead th, .col-code, .col-type { position: static !important; }
   }
 
   .print-bar { position:sticky; top:0; z-index:99; background:#F5A623; padding:10px 20px;
@@ -377,8 +391,8 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
 <table>
   <thead>
     <tr>
-      <th rowspan="2">Code</th>
-      <th rowspan="2" style="width:170px">Equipment Type</th>
+      <th rowspan="2" class="col-code">Code</th>
+      <th rowspan="2" class="col-type">Equipment Type</th>
       ${siteHeaderCells}
       <th rowspan="2">Total</th>
       <th rowspan="2">Working</th>
