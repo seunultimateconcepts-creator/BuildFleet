@@ -48,6 +48,7 @@ function locationKey(siteName: string): string {
 
 interface Row {
   code: string;
+  typeCode: string;
   name: string;
   perSite: Record<string, { items: { fleetNo: string; status: string }[]; count: number }>;
   working: number;
@@ -65,23 +66,24 @@ interface Matrix {
 
 // ── Shared data build — used by both the Excel and PDF exports ──────
 function buildMatrix(equipment: any[]): Matrix {
-  const rowMap = new Map<string, Row>();          // key = code|||name
+  const rowMap = new Map<string, Row>();          // key = code|||typeCode|||name
   const codeOrder: string[] = [];                  // preserves first-seen code order
-  const typeOrderByCode: Record<string, string[]> = {};
+  const rowKeysByCode: Record<string, string[]> = {}; // composite keys, in first-seen order
   const locationSet = new Set<string>();
 
   for (const e of equipment) {
-    const code = fleetPrefix(e.fleet_number);
-    const type = e.name || "Unspecified";
-    const loc  = e.site ? locationKey(e.site) : "Unassigned";
+    const code     = fleetPrefix(e.fleet_number);
+    const typeCode = e.type_code || "";
+    const type     = e.name || "Unspecified";
+    const loc      = e.site ? locationKey(e.site) : "Unassigned";
     locationSet.add(loc);
 
-    const key = `${code}|||${type}`;
+    const key = `${code}|||${typeCode}|||${type}`;
     if (!rowMap.has(key)) {
-      rowMap.set(key, { code, name: type, perSite: {}, working: 0, bd: 0, storage: 0, total: 0 });
+      rowMap.set(key, { code, typeCode, name: type, perSite: {}, working: 0, bd: 0, storage: 0, total: 0 });
       if (!codeOrder.includes(code)) codeOrder.push(code);
-      if (!typeOrderByCode[code]) typeOrderByCode[code] = [];
-      typeOrderByCode[code].push(type);
+      if (!rowKeysByCode[code]) rowKeysByCode[code] = [];
+      rowKeysByCode[code].push(key);
     }
     const row = rowMap.get(key)!;
 
@@ -102,10 +104,10 @@ function buildMatrix(equipment: any[]): Matrix {
   const categorySpans: { code: string; start: number; count: number }[] = [];
   for (const code of codeOrder) {
     const start = orderedRows.length;
-    for (const type of typeOrderByCode[code]) {
-      orderedRows.push(rowMap.get(`${code}|||${type}`)!);
+    for (const key of rowKeysByCode[code]) {
+      orderedRows.push(rowMap.get(key)!);
     }
-    categorySpans.push({ code, start, count: typeOrderByCode[code].length });
+    categorySpans.push({ code, start, count: rowKeysByCode[code].length });
   }
 
   return { orderedRows, categorySpans, locations, equipmentCount: equipment.length };
@@ -115,7 +117,7 @@ function buildMatrix(equipment: any[]): Matrix {
 function exportExcel(matrix: Matrix) {
   const { orderedRows, categorySpans, locations } = matrix;
 
-  const SITE_START_COL = 2;
+  const SITE_START_COL = 3; // 0: Code, 1: Type Code, 2: Equipment Type
   const totalCol   = SITE_START_COL + locations.length * 2;
   const workingCol = totalCol + 1;
   const bdCol      = totalCol + 2;
@@ -134,7 +136,8 @@ function exportExcel(matrix: Matrix) {
 
   const siteHeaderRow = new Array(lastCol + 1).fill("");
   siteHeaderRow[0] = "CODE";
-  siteHeaderRow[1] = "EQUIPMENT TYPE";
+  siteHeaderRow[1] = "TYPE CODE";
+  siteHeaderRow[2] = "EQUIPMENT TYPE";
   locations.forEach((loc, i) => { siteHeaderRow[SITE_START_COL + i * 2] = loc; });
   siteHeaderRow[totalCol]   = "TOTAL";
   siteHeaderRow[workingCol] = "WORKING";
@@ -154,7 +157,8 @@ function exportExcel(matrix: Matrix) {
   for (const row of orderedRows) {
     const line = new Array(lastCol + 1).fill("");
     line[0] = row.code;
-    line[1] = row.name;
+    line[1] = row.typeCode;
+    line[2] = row.name;
     locations.forEach((loc, i) => {
       const cell = row.perSite[loc];
       line[SITE_START_COL + i * 2]     = cell ? cell.items.map(it => it.fleetNo).join(", ") : "";
@@ -188,11 +192,12 @@ function exportExcel(matrix: Matrix) {
     { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
     { s: { r: 1, c: 0 }, e: { r: 2, c: 0 } },
     { s: { r: 1, c: 1 }, e: { r: 2, c: 1 } },
+    { s: { r: 1, c: 2 }, e: { r: 2, c: 2 } },
     { s: { r: 1, c: totalCol },   e: { r: 2, c: totalCol } },
     { s: { r: 1, c: workingCol }, e: { r: 2, c: workingCol } },
     { s: { r: 1, c: bdCol },      e: { r: 2, c: bdCol } },
     { s: { r: 1, c: storageCol }, e: { r: 2, c: storageCol } },
-    { s: { r: grandRowIdx, c: 0 }, e: { r: grandRowIdx, c: 1 } },
+    { s: { r: grandRowIdx, c: 0 }, e: { r: grandRowIdx, c: 2 } },
   ];
   locations.forEach((_, i) => {
     merges.push({ s: { r: 1, c: SITE_START_COL + i * 2 }, e: { r: 1, c: SITE_START_COL + i * 2 + 1 } });
@@ -207,7 +212,7 @@ function exportExcel(matrix: Matrix) {
   }
   ws["!merges"] = merges;
 
-  const colWidths: any[] = [{ wch: 8 }, { wch: 26 }];
+  const colWidths: any[] = [{ wch: 8 }, { wch: 10 }, { wch: 26 }];
   locations.forEach(() => { colWidths.push({ wch: 22 }, { wch: 5 }); });
   colWidths.push({ wch: 8 }, { wch: 9 }, { wch: 7 }, { wch: 9 });
   ws["!cols"] = colWidths;
@@ -276,6 +281,7 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
       }).join("");
       return `<tr>
         ${catCell}
+        <td class="col-typecode">${esc(row.typeCode)}</td>
         <td class="type col-type">${esc(row.name)}</td>
         ${siteCells}
         <td class="num total">${row.total}</td>
@@ -300,6 +306,7 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
       <thead>
         <tr>
           <th rowspan="2" class="col-code">Code</th>
+          <th rowspan="2" class="col-typecode">Type Code</th>
           <th rowspan="2" class="col-type">Equipment Type</th>
           ${siteHeaderCells}
           <th rowspan="2">Total</th>
@@ -312,7 +319,7 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
       <tbody>${dataRows}</tbody>
       <tfoot>
         <tr>
-          <td colspan="2">GRAND TOTAL</td>
+          <td colspan="3">GRAND TOTAL</td>
           ${grandCells}
           <td class="num">${grandTotal}</td>
           <td class="num">${grandWorking}</td>
@@ -374,10 +381,14 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
 
   /* Frozen columns — Code + Equipment Type stay visible while scrolling right,
      same idea as freeze panes in Excel. */
-  .col-code  { position:sticky; left:0;    z-index:15; width:42px; min-width:42px; max-width:42px; }
-  .col-type  { position:sticky; left:42px; z-index:15; width:170px; min-width:170px; max-width:170px; }
-  th.col-code, th.col-type { z-index:25; } /* header frozen cells sit above frozen body cells */
+  .col-code      { position:sticky; left:0;    z-index:15; width:42px;  min-width:42px;  max-width:42px; }
+  .col-typecode  { position:sticky; left:42px; z-index:15; width:56px;  min-width:56px;  max-width:56px; }
+  .col-type      { position:sticky; left:98px; z-index:15; width:170px; min-width:170px; max-width:170px; }
+  th.col-code, th.col-typecode, th.col-type { z-index:25; } /* header frozen cells sit above frozen body cells */
   td.col-code { background:#fffbeb; }      /* opaque so scrolled content doesn't show through */
+  td.col-typecode { font-size:7pt; color:#475569; text-align:center; }
+  tbody tr:nth-child(even) td.col-typecode { background:#fafbfc; }
+  tbody tr:nth-child(odd)  td.col-typecode { background:#fff; }
   td.col-type { background:inherit; }
   tbody tr:nth-child(even) td.col-type { background:#fafbfc; }
   tbody tr:nth-child(odd)  td.col-type { background:#fff; }
@@ -403,7 +414,7 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
     body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     .no-print { display:none; }
     thead { display: table-header-group; }
-    thead th, .col-code, .col-type { position: static !important; }
+    thead th, .col-code, .col-typecode, .col-type { position: static !important; }
     .print-page-block.page-break { page-break-after: always; break-after: page; }
     .print-page-block table { page-break-inside: auto; }
     .print-page-block tr { page-break-inside: avoid; }
@@ -497,13 +508,13 @@ export function DistributionChartTab() {
     if (eligibleSites.length === 0) return [];
     const [p1, p2] = await Promise.all([
       dbu.from("equipment")
-        .select("fleet_number,category,name,site,operational_status")
+        .select("fleet_number,category,name,type_code,site,operational_status")
         .neq("operational_status", "Scrapped")
         .in("site", eligibleSites)
         .order("fleet_number")
         .range(0, 999),
       dbu.from("equipment")
-        .select("fleet_number,category,name,site,operational_status")
+        .select("fleet_number,category,name,type_code,site,operational_status")
         .neq("operational_status", "Scrapped")
         .in("site", eligibleSites)
         .order("fleet_number")
