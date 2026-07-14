@@ -235,45 +235,98 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
   const spanStartRows = new Set(categorySpans.map(s => s.start));
   const spanCountByStart = new Map(categorySpans.map(s => [s.start, s.count]));
 
-  const siteHeaderCells = locations.map(loc =>
-    `<th colspan="2" class="loc-head">${esc(loc)}</th>`
-  ).join("");
-  const siteSubHeaderCells = locations.map(() =>
-    `<th class="sub">Fleet No</th><th class="sub num">N</th>`
-  ).join("");
+  // ── PRINT PAGINATION ──────────────────────────────────────────────
+  // A browser can't scroll a printed page — sticky/frozen CSS only helps
+  // on-screen review. To keep the printed PDF actually legible, split the
+  // location columns into page-sized batches (like Excel's "repeat columns
+  // across pages"). Code + Equipment Type + Total/Working/B.D/Storage
+  // repeat on every page block so each page stands alone and is readable.
+  const LOCATIONS_PER_PAGE = 6;
+  const locationPages: string[][] = [];
+  for (let i = 0; i < locations.length; i += LOCATIONS_PER_PAGE) {
+    locationPages.push(locations.slice(i, i + LOCATIONS_PER_PAGE));
+  }
+  if (locationPages.length === 0) locationPages.push([]);
 
-  const dataRows = orderedRows.map((row, i) => {
-    const catCell = spanStartRows.has(i)
-      ? `<td class="code col-code" rowspan="${spanCountByStart.get(i)}">${esc(row.code)}</td>`
-      : "";
-    const siteCells = locations.map(loc => {
-      const cell = row.perSite[loc];
-      const fleetSpans = cell
-        ? cell.items.map(it => {
-            const color =
-              it.status === "Break Down" || it.status === "Under Repair" ? "#dc2626" :
-              it.status === "Storage" ? "#94a3b8" :
-              "#1e293b"; // Working (and any other status) — black
-            return `<span style="color:${color}">${esc(it.fleetNo)}</span>`;
-          }).join(", ")
+  function renderTableForLocations(pageLocations: string[], pageIndex: number, totalPages: number): string {
+    const siteHeaderCells = pageLocations.map(loc =>
+      `<th colspan="2" class="loc-head">${esc(loc)}</th>`
+    ).join("");
+    const siteSubHeaderCells = pageLocations.map(() =>
+      `<th class="sub">Fleet No</th><th class="sub num">N</th>`
+    ).join("");
+
+    const dataRows = orderedRows.map((row, i) => {
+      const catCell = spanStartRows.has(i)
+        ? `<td class="code col-code" rowspan="${spanCountByStart.get(i)}">${esc(row.code)}</td>`
         : "";
-      return `<td class="fleetlist">${fleetSpans}</td>` +
-             `<td class="num">${cell ? cell.count : ""}</td>`;
+      const siteCells = pageLocations.map(loc => {
+        const cell = row.perSite[loc];
+        const fleetSpans = cell
+          ? cell.items.map(it => {
+              const color =
+                it.status === "Break Down" || it.status === "Under Repair" ? "#dc2626" :
+                it.status === "Storage" ? "#94a3b8" :
+                "#1e293b"; // Working (and any other status) — black
+              return `<span style="color:${color}">${esc(it.fleetNo)}</span>`;
+            }).join(", ")
+          : "";
+        return `<td class="fleetlist">${fleetSpans}</td>` +
+               `<td class="num">${cell ? cell.count : ""}</td>`;
+      }).join("");
+      return `<tr>
+        ${catCell}
+        <td class="type col-type">${esc(row.name)}</td>
+        ${siteCells}
+        <td class="num total">${row.total}</td>
+        <td class="num" style="color:${STATUS_COLOR.working}">${row.working || ""}</td>
+        <td class="num" style="color:${STATUS_COLOR.bd}">${row.bd || ""}</td>
+        <td class="num" style="color:${STATUS_COLOR.storage}">${row.storage || ""}</td>
+      </tr>`;
     }).join("");
-    return `<tr>
-      ${catCell}
-      <td class="type col-type">${esc(row.name)}</td>
-      ${siteCells}
-      <td class="num total">${row.total}</td>
-      <td class="num" style="color:${STATUS_COLOR.working}">${row.working || ""}</td>
-      <td class="num" style="color:${STATUS_COLOR.bd}">${row.bd || ""}</td>
-      <td class="num" style="color:${STATUS_COLOR.storage}">${row.storage || ""}</td>
-    </tr>`;
-  }).join("");
 
-  const grandCells = locations.map(loc => {
-    const count = orderedRows.reduce((s, r) => s + (r.perSite[loc]?.count || 0), 0);
-    return `<td></td><td class="num">${count || ""}</td>`;
+    const grandCells = pageLocations.map(loc => {
+      const count = orderedRows.reduce((s, r) => s + (r.perSite[loc]?.count || 0), 0);
+      return `<td></td><td class="num">${count || ""}</td>`;
+    }).join("");
+
+    const pageLabel = totalPages > 1
+      ? `<div class="page-label">Locations page ${pageIndex + 1} of ${totalPages}</div>`
+      : "";
+
+    return `
+    ${pageLabel}
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2" class="col-code">Code</th>
+          <th rowspan="2" class="col-type">Equipment Type</th>
+          ${siteHeaderCells}
+          <th rowspan="2">Total</th>
+          <th rowspan="2">Working</th>
+          <th rowspan="2">B.D</th>
+          <th rowspan="2">Storage</th>
+        </tr>
+        <tr>${siteSubHeaderCells}</tr>
+      </thead>
+      <tbody>${dataRows}</tbody>
+      <tfoot>
+        <tr>
+          <td colspan="2">GRAND TOTAL</td>
+          ${grandCells}
+          <td class="num">${grandTotal}</td>
+          <td class="num">${grandWorking}</td>
+          <td class="num">${grandBd}</td>
+          <td class="num">${grandStorage}</td>
+        </tr>
+      </tfoot>
+    </table>`;
+  }
+
+  const allTablesHtml = locationPages.map((pageLocations, idx) => {
+    const isLast = idx === locationPages.length - 1;
+    const tableHtml = renderTableForLocations(pageLocations, idx, locationPages.length);
+    return `<div class="print-page-block${isLast ? "" : " page-break"}">${tableHtml}</div>`;
   }).join("");
 
   return `<!DOCTYPE html>
@@ -341,12 +394,19 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
   .sig-line { border-top:1px solid #1e293b; padding-top:4px; margin-top:24px; font-size:7.5pt; color:#475569; }
   .footer-note { font-size:7pt; color:#94a3b8; text-align:center; flex:1; padding:0 12px; }
 
+  .print-page-block { margin-bottom:18px; }
+  .page-label { font-size:8pt; font-weight:700; color:#92400e; background:#fffbeb;
+    padding:4px 10px; border:1px solid #fde68a; border-radius:4px; display:inline-block; margin-bottom:6px; }
+
   @media print {
     @page { size: A3 landscape; margin: 6mm; }
     body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     .no-print { display:none; }
     thead { display: table-header-group; }
     thead th, .col-code, .col-type { position: static !important; }
+    .print-page-block.page-break { page-break-after: always; break-after: page; }
+    .print-page-block table { page-break-inside: auto; }
+    .print-page-block tr { page-break-inside: avoid; }
   }
 
   .print-bar { position:sticky; top:0; z-index:99; background:#F5A623; padding:10px 20px;
@@ -388,31 +448,7 @@ function buildDistributionPrintHTML(matrix: Matrix): string {
   </span>
 </div>
 
-<table>
-  <thead>
-    <tr>
-      <th rowspan="2" class="col-code">Code</th>
-      <th rowspan="2" class="col-type">Equipment Type</th>
-      ${siteHeaderCells}
-      <th rowspan="2">Total</th>
-      <th rowspan="2">Working</th>
-      <th rowspan="2">B.D</th>
-      <th rowspan="2">Storage</th>
-    </tr>
-    <tr>${siteSubHeaderCells}</tr>
-  </thead>
-  <tbody>${dataRows}</tbody>
-  <tfoot>
-    <tr>
-      <td colspan="2">GRAND TOTAL</td>
-      ${grandCells}
-      <td class="num">${grandTotal}</td>
-      <td class="num">${grandWorking}</td>
-      <td class="num">${grandBd}</td>
-      <td class="num">${grandStorage}</td>
-    </tr>
-  </tfoot>
-</table>
+${allTablesHtml}
 
 <div class="footer">
   <div class="sig-block"><div class="sig-line">Plant Admin<br/>Name &amp; Signature</div></div>
