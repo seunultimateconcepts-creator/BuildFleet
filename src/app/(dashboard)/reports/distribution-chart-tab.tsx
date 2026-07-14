@@ -22,6 +22,19 @@ import * as XLSX from "xlsx";
 //   {tab === "distribution" && <DistributionChartTab />}
 // ─────────────────────────────────────────────────────────────
 
+// Site names follow "<Type Label> - <Location> - <Region>", e.g.
+// "Workshop (Central) - Imeke - Edo", "Yard (Storage) - Imeke - Edo",
+// "Project - Benin Model City - Edo". The Project/Workshop/Repair/Storage
+// prefix fragments what is really ONE physical location into up to 4 site
+// rows. For the distribution chart we group by the middle "location"
+// segment so Imeke's P+W+R+S all land in a single column, matching
+// Hartland's original chart (one column per place, not per sub-site).
+function locationKey(siteName: string): string {
+  const parts = siteName.split(" - ").map(p => p.trim());
+  if (parts.length >= 3) return parts.slice(1, -1).join(" - ");
+  return siteName; // fallback for anything that doesn't fit the pattern
+}
+
 interface Row {
   category: string;
   name: string;
@@ -72,7 +85,7 @@ export function DistributionChartTab() {
       for (const e of equipment) {
         const category = e.category || "Uncategorized";
         const type     = e.name     || "Unspecified";
-        const site     = e.site     || "Unassigned";
+        const site     = e.site ? locationKey(e.site) : "Unassigned";
         siteSet.add(site);
 
         const key = `${category}|||${type}`;
@@ -291,7 +304,7 @@ export function DistributionChartTab() {
             </div>
             <div className="bg-emerald-600 text-white rounded-2xl p-4">
               <p className="text-2xl font-bold">{lastRun.sites}</p>
-              <p className="text-xs opacity-70 mt-1">Sites with equipment</p>
+              <p className="text-xs opacity-70 mt-1">Locations with equipment</p>
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl p-4">
               <p className="text-sm font-bold text-slate-700">✓ Downloaded</p>
