@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -5,6 +6,7 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEquipment } from "@/hooks/use-equipment";
 import { useAuth } from "@/hooks/use-auth";
 import { dbu } from "@/lib/db";
@@ -470,7 +472,6 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
 
   useEffect(() => {
     const config = YARD_CONFIG[status];
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!config) { setFilteredYards([]); return; }
     if (config.siteTypes.length === 0) {
       setFilteredYards(allSites);
@@ -578,15 +579,24 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
 export default function EquipmentPage() {
   const { equipment, loading, updateStatus } = useEquipment();
   const { profile, canCommission, canTransfer, isClerk } = useAuth();
+  const searchParams = useSearchParams();
 
   const [search,          setSearch]          = useState("");
   const [filterSt,        setFilterSt]        = useState("");
   const [filterCat,       setFilterCat]       = useState("");
-  const [filterSite,      setFilterSite]      = useState("");
+  // Pre-filter by site when arriving via ?site=<name> (e.g. from the Sites page)
+  const [filterSite,      setFilterSite]      = useState(() => searchParams.get("site") || "");
   const [filterRegion,    setFilterRegion]    = useState("");
   const [statusItem,      setStatusItem]      = useState<Equipment | null>(null);
   const [view,            setView]            = useState<"table"|"grid">("table");
   const [showExportModal, setShowExportModal] = useState(false);
+
+  // Keep filter in sync if the URL param changes while already on this page
+  // (e.g. navigating from Sites → Equipment → Sites → a different site)
+  useEffect(() => {
+    const siteParam = searchParams.get("site");
+    if (siteParam) setFilterSite(siteParam);
+  }, [searchParams]);
 
   const canSeeStatusBtn = profile?.roles?.some((r: string) =>
     ["plant_clerk","site_supervisor","plant_engineer","plant_admin","plant_manager","plant_director","super_admin"].includes(r)
@@ -680,6 +690,19 @@ export default function EquipmentPage() {
           </button>
         ))}
       </div>
+
+      {/* Active site filter banner — shown when arriving from Sites page */}
+      {filterSite && (
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <span className="text-sm text-amber-800">
+            Showing equipment at <span className="font-bold">{filterSite}</span>
+          </span>
+          <button onClick={() => setFilterSite("")}
+            className="ml-auto text-xs font-semibold text-amber-700 hover:text-amber-900 underline">
+            Clear filter
+          </button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5">

@@ -4,6 +4,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { dbu } from "@/lib/db";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -566,6 +567,11 @@ export default function SitesPage() {
 
     return (
       <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Link
+          href={`/equipment?site=${encodeURIComponent(s.name)}`}
+          className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-medium hover:bg-emerald-100 whitespace-nowrap">
+          View Equipment
+        </Link>
         {canManage && (<>
           <button
             onClick={() => handleToggleActive(s)}
@@ -712,7 +718,14 @@ export default function SitesPage() {
                               <span className="text-xs text-slate-300 italic">—</span>
                             )}
                           </td>
-                          <td className="px-5 py-3 font-medium text-slate-700 max-w-72">{s.name}</td>
+                          <td className="px-5 py-3 font-medium max-w-72">
+                            <Link
+                              href={`/equipment?site=${encodeURIComponent(s.name)}`}
+                              className="text-slate-700 hover:text-amber-600 hover:underline"
+                              title="View all equipment at this site">
+                              {s.name}
+                            </Link>
+                          </td>
                           <td className="px-5 py-3 text-slate-500 text-xs whitespace-nowrap">{s.region}</td>
                           <td className="px-5 py-3">
                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
@@ -762,7 +775,14 @@ export default function SitesPage() {
                           <span className="font-mono text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded">{s.legacy_code}</span>
                         ) : null}
                       </td>
-                      <td className="px-5 py-3 font-medium text-slate-700 max-w-64 truncate">{s.name}</td>
+                      <td className="px-5 py-3 font-medium max-w-64 truncate">
+                        <Link
+                          href={`/equipment?site=${encodeURIComponent(s.name)}`}
+                          className="text-slate-700 hover:text-amber-600 hover:underline"
+                          title="View all equipment at this site">
+                          {s.name}
+                        </Link>
+                      </td>
                       <td className="px-5 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${style.badge}`}>
                           {style.icon} {s.site_type}
