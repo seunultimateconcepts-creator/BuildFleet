@@ -22,17 +22,38 @@ import * as XLSX from "xlsx";
 //   {tab === "distribution" && <DistributionChartTab />}
 // ─────────────────────────────────────────────────────────────
 
-// Site names follow "<Type Label> - <Location> - <Region>", e.g.
-// "Workshop (Central) - Imeke - Edo", "Yard (Storage) - Imeke - Edo",
-// "Project - Benin Model City - Edo". The Project/Workshop/Repair/Storage
-// prefix fragments what is really ONE physical location into up to 4 site
-// rows. For the distribution chart we group by the middle "location"
-// segment so Imeke's P+W+R+S all land in a single column, matching
-// Hartland's original chart (one column per place, not per sub-site).
-function locationKey(siteName: string): string {
-  const parts = siteName.split(" - ").map(p => p.trim());
-  if (parts.length >= 3) return parts.slice(1, -1).join(" - ");
-  return siteName; // fallback for anything that doesn't fit the pattern
+// Site names aren't consistently formatted (legacy sites, manually-added
+// sites, etc.) so parsing the name string to find "the location" is
+// unreliable — e.g. "Agbor" and "Agbor Storage Yard" won't match even
+// though they're the same place. Instead we cluster by SITE CODE, using
+// the same P/W/R/S/SR cluster system the Sites page already uses for
+// cascade activate/deactivate. A cluster's display label is taken from
+// whichever site in that cluster has the cleanest name (Project first,
+// then Workshop, Repair, Storage, in that order).
+function clusterKeyForCode(code: string): string {
+  const isStandalone = /^\d{3}$/.test(code); // "010".."099" — no suffix
+  if (isStandalone) return code;
+  const isSR = code.endsWith("SR");
+  return isSR ? code.slice(0, -2) : code.slice(0, -1);
+}
+
+function clusterLabel(clusterKey: string, codeToSite: Map<string, { name: string }>): string {
+  for (const suffix of ["P", "W", "R", "S", "SR"]) {
+    const site = codeToSite.get(clusterKey + suffix);
+    if (site) return site.name;
+  }
+  const standalone = codeToSite.get(clusterKey);
+  if (standalone) return standalone.name;
+  return clusterKey; // shouldn't happen, but keeps the chart from breaking
+}
+
+// Hartland's original chart uses the FLEET NUMBER PREFIX as the category
+// code column (e.g. "BD-08" -> "BD" for dozers, "EL-02" -> "EL" for
+// excavators) — not the long-form `equipment.category` text field. The
+// prefix is everything before the first hyphen in the fleet number.
+function fleetPrefix(fleetNumber: string): string {
+  const code = (fleetNumber || "").split("-")[0].trim();
+  return code || "UNK";
 }
 
 interface Row {
@@ -58,17 +79,21 @@ export function DistributionChartTab() {
     try {
       // Equipment table can exceed Supabase's 1000-row default page size,
       // same pattern used elsewhere in Reports (Utilization / Master List).
-      const [p1, p2] = await Promise.all([
+      const [p1, p2, sitesRes] = await Promise.all([
         dbu.from("equipment")
           .select("fleet_number,category,name,site,operational_status")
           .neq("operational_status", "Scrapped")
+          .order("fleet_number")
           .range(0, 999),
         dbu.from("equipment")
           .select("fleet_number,category,name,site,operational_status")
           .neq("operational_status", "Scrapped")
+          .order("fleet_number")
           .range(1000, 1999),
+        dbu.from("sites").select("code,name"),
       ]);
       const equipment = [...(p1.data || []), ...(p2.data || [])];
+      const sitesData: { code: string; name: string }[] = sitesRes.data || [];
 
       if (equipment.length === 0) {
         setError("No equipment found to build the chart from.");
@@ -76,16 +101,41 @@ export function DistributionChartTab() {
         return;
       }
 
+      // name -> code (to find which cluster an equipment's site belongs to)
+      // code -> {name} (to build a clean label for each cluster)
+      const nameToCode = new Map<string, string>();
+      const codeToSite = new Map<string, { name: string }>();
+      for (const s of sitesData) {
+        nameToCode.set(s.name, s.code);
+        codeToSite.set(s.code, { name: s.name });
+      }
+
       // ── Build category → type → row map ──────────────────────
       const rowMap = new Map<string, Row>();     // key = category|||name
       const categoryOrder: string[] = [];         // preserves first-seen category order
       const typeOrderByCategory: Record<string, string[]> = {};
       const siteSet = new Set<string>();
+      const clusterLabelCache = new Map<string, string>(); // clusterKey -> display label
 
       for (const e of equipment) {
-        const category = e.category || "Uncategorized";
+        const category = fleetPrefix(e.fleet_number);
         const type     = e.name     || "Unspecified";
-        const site     = e.site ? locationKey(e.site) : "Unassigned";
+
+        // Resolve equipment's site name to a cluster (P+W+R+S grouped as
+        // one column). If the site name isn't found in the sites table
+        // (typo, stale reference, etc.) fall back to using the raw name
+        // as its own bucket rather than dropping the equipment.
+        let site: string;
+        if (e.site && nameToCode.has(e.site)) {
+          const code = nameToCode.get(e.site)!;
+          const clusterKey = clusterKeyForCode(code);
+          if (!clusterLabelCache.has(clusterKey)) {
+            clusterLabelCache.set(clusterKey, clusterLabel(clusterKey, codeToSite));
+          }
+          site = clusterLabelCache.get(clusterKey)!;
+        } else {
+          site = e.site || "Unassigned";
+        }
         siteSet.add(site);
 
         const key = `${category}|||${type}`;
