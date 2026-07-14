@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/immutability */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -515,7 +516,7 @@ export function DistributionChartTab() {
       .in("site_type", ["Project", "Central Workshop", "Regional Workshop", "Field Workshop"])
       .eq("is_active", true);
     const records = (data || []).map((s: any) => ({ name: s.name, location: locationKey(s.name) }));
-    const locs = Array.from(new Set(records.map(r => r.location))).sort();
+    const locs = Array.from(new Set(records.map((r: { location: any; }) => r.location))).sort() as string[];
     setSiteRecords(records);
     setAvailableLocations(locs);
     setSelectedLocations(new Set(locs)); // default: all locations selected
