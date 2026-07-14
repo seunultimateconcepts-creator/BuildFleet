@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { dbu } from "@/lib/db";
 import * as XLSX from "xlsx";
 
@@ -487,22 +487,53 @@ function printDistributionChart(matrix: Matrix) {
 // COMPONENT
 // ─────────────────────────────────────────────────────────────
 export function DistributionChartTab() {
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState("");
-  const [lastRun, setLastRun] = useState<{
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState("");
+  const [lastRun,  setLastRun]  = useState<{
     categories: number; types: number; locations: number; equipment: number; date: string;
   } | null>(null);
 
-  // Only equipment sitting at an ACTIVE Project or Workshop site belongs on
-  // this chart — Repair Yards, Storage Yards and Offices are excluded, same
-  // eligibility rule used for daily logging.
-  async function fetchEligibleSiteNames(): Promise<string[]> {
+  // ── Location picker ─────────────────────────────────────────
+  // siteRecords: every ACTIVE Project/Workshop site, with its collapsed
+  // location key. availableLocations: distinct sorted list of those.
+  // selectedLocations: what the user has chosen to include — starts as
+  // "all" (empty set = all, matching prior default behavior).
+  const [siteRecords, setSiteRecords] = useState<{ name: string; location: string }[]>([]);
+  const [availableLocations, setAvailableLocations] = useState<string[]>([]);
+  const [selectedLocations, setSelectedLocations] = useState<Set<string>>(new Set());
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [loadingLocations, setLoadingLocations] = useState(true);
+
+  useEffect(() => {
+    loadEligibleLocations();
+  }, []);
+
+  async function loadEligibleLocations() {
+    setLoadingLocations(true);
     const { data } = await dbu.from("sites")
       .select("name,site_type,is_active")
       .in("site_type", ["Project", "Central Workshop", "Regional Workshop", "Field Workshop"])
       .eq("is_active", true);
-    return (data || []).map((s: any) => s.name);
+    const records = (data || []).map((s: any) => ({ name: s.name, location: locationKey(s.name) }));
+    const locs = Array.from(new Set(records.map(r => r.location))).sort();
+    setSiteRecords(records);
+    setAvailableLocations(locs);
+    setSelectedLocations(new Set(locs)); // default: all locations selected
+    setLoadingLocations(false);
   }
+
+  function toggleLocation(loc: string) {
+    setSelectedLocations(prev => {
+      const next = new Set(prev);
+      if (next.has(loc)) next.delete(loc); else next.add(loc);
+      return next;
+    });
+  }
+  function selectAllLocations()  { setSelectedLocations(new Set(availableLocations)); }
+  function clearAllLocations()   { setSelectedLocations(new Set()); }
+
+  const allSelected  = selectedLocations.size === availableLocations.length && availableLocations.length > 0;
+  const noneSelected = selectedLocations.size === 0;
 
   async function fetchEquipment(eligibleSites: string[]): Promise<any[]> {
     if (eligibleSites.length === 0) return [];
@@ -524,18 +555,27 @@ export function DistributionChartTab() {
   }
 
   async function handleGenerate(format: "pdf" | "excel") {
+    if (noneSelected) {
+      setError("Select at least one location to generate the chart.");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
-      const eligibleSites = await fetchEligibleSiteNames();
+      // Narrow the eligible site list down to whatever locations the user
+      // picked. "All selected" behaves exactly as before.
+      const eligibleSites = siteRecords
+        .filter(s => selectedLocations.has(s.location))
+        .map(s => s.name);
+
       if (eligibleSites.length === 0) {
-        setError("No active Project or Workshop sites found.");
+        setError("No active Project or Workshop sites found for the selected locations.");
         setLoading(false);
         return;
       }
       const equipment = await fetchEquipment(eligibleSites);
       if (equipment.length === 0) {
-        setError("No equipment found at active Project or Workshop sites.");
+        setError("No equipment found at the selected location(s).");
         setLoading(false);
         return;
       }
@@ -579,15 +619,65 @@ export function DistributionChartTab() {
             </p>
           </div>
           <div className="flex gap-3 shrink-0">
-            <button onClick={() => handleGenerate("excel")} disabled={loading}
+            <button onClick={() => handleGenerate("excel")} disabled={loading || loadingLocations || noneSelected}
+              title={noneSelected ? "Select at least one location first" : undefined}
               className="px-5 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 flex items-center gap-2">
               📊 Excel (data)
             </button>
-            <button onClick={() => handleGenerate("pdf")} disabled={loading}
+            <button onClick={() => handleGenerate("pdf")} disabled={loading || loadingLocations || noneSelected}
+              title={noneSelected ? "Select at least one location first" : undefined}
               className="px-6 py-3 bg-amber-500 text-white rounded-xl text-sm font-bold hover:bg-amber-600 disabled:opacity-50 flex items-center gap-2">
               {loading ? "Generating..." : "🎨 Branded PDF"}
             </button>
           </div>
+        </div>
+
+        <div className="mt-5 border-t border-slate-100 pt-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Locations</p>
+              {loadingLocations ? (
+                <p className="text-sm text-slate-400">Loading available locations...</p>
+              ) : (
+                <p className="text-sm text-slate-600">
+                  {allSelected
+                    ? `All ${availableLocations.length} locations selected`
+                    : `${selectedLocations.size} of ${availableLocations.length} locations selected`}
+                </p>
+              )}
+            </div>
+            <button onClick={() => setPickerOpen(o => !o)} disabled={loadingLocations}
+              className="text-xs px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold disabled:opacity-50">
+              {pickerOpen ? "Hide locations" : "Choose locations"}
+            </button>
+          </div>
+
+          {pickerOpen && !loadingLocations && (
+            <div className="mt-3 border border-slate-200 rounded-xl p-4">
+              <div className="flex gap-2 mb-3">
+                <button onClick={selectAllLocations}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 font-medium">
+                  Select All
+                </button>
+                <button onClick={clearAllLocations}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 font-medium">
+                  Clear All
+                </button>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1.5 max-h-64 overflow-y-auto pr-1">
+                {availableLocations.map(loc => (
+                  <label key={loc}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors text-sm ${
+                      selectedLocations.has(loc) ? "bg-amber-50 border border-amber-200 text-amber-800" : "border border-transparent hover:bg-slate-50 text-slate-600"
+                    }`}>
+                    <input type="checkbox" checked={selectedLocations.has(loc)} onChange={() => toggleLocation(loc)}
+                      className="accent-amber-500 w-4 h-4 shrink-0" />
+                    <span className="truncate">{loc}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {error && (
