@@ -8,44 +8,21 @@ import * as XLSX from "xlsx";
 // ─────────────────────────────────────────────────────────────
 // EQUIPMENT DISTRIBUTION CHART TAB
 // ─────────────────────────────────────────────────────────────
-// Generates a category × site matrix, matching the shape of
+// Generates a category × location matrix, matching the shape of
 // Hartland's existing "Equipment Distribution Chart" spreadsheet:
-//   rows    = equipment category + type (e.g. BD / Dozer D6)
-//   columns = one pair per site (Fleet No. list, count)
+//   rows    = fleet number prefix code + equipment type (e.g. BD / Dozer D6)
+//   columns = one pair per location (Fleet No. list, count)
 //   right   = Total / Working / B.D / Storage per row
 // Scrapped equipment is excluded — it isn't part of the active
-// distribution any more.
+// distribution any more. Columns are grouped by LOCATION (Imeke, Agbede...)
+// not by raw site record, so a location's Project/Workshop/Repair/Storage
+// sub-sites collapse into a single column.
 //
 // Add this as a 5th tab on the Reports page:
 //   import { DistributionChartTab } from "./distribution-chart-tab";
 //   { key: "distribution", label: "📐 Equipment Distribution" }
 //   {tab === "distribution" && <DistributionChartTab />}
 // ─────────────────────────────────────────────────────────────
-
-// Site names aren't consistently formatted (legacy sites, manually-added
-// sites, etc.) so parsing the name string to find "the location" is
-// unreliable — e.g. "Agbor" and "Agbor Storage Yard" won't match even
-// though they're the same place. Instead we cluster by SITE CODE, using
-// the same P/W/R/S/SR cluster system the Sites page already uses for
-// cascade activate/deactivate. A cluster's display label is taken from
-// whichever site in that cluster has the cleanest name (Project first,
-// then Workshop, Repair, Storage, in that order).
-function clusterKeyForCode(code: string): string {
-  const isStandalone = /^\d{3}$/.test(code); // "010".."099" — no suffix
-  if (isStandalone) return code;
-  const isSR = code.endsWith("SR");
-  return isSR ? code.slice(0, -2) : code.slice(0, -1);
-}
-
-function clusterLabel(clusterKey: string, codeToSite: Map<string, { name: string }>): string {
-  for (const suffix of ["P", "W", "R", "S", "SR"]) {
-    const site = codeToSite.get(clusterKey + suffix);
-    if (site) return site.name;
-  }
-  const standalone = codeToSite.get(clusterKey);
-  if (standalone) return standalone.name;
-  return clusterKey; // shouldn't happen, but keeps the chart from breaking
-}
 
 // Hartland's original chart uses the FLEET NUMBER PREFIX as the category
 // code column (e.g. "BD-08" -> "BD" for dozers, "EL-02" -> "EL" for
@@ -56,256 +33,445 @@ function fleetPrefix(fleetNumber: string): string {
   return code || "UNK";
 }
 
+// Site names follow "<Type Label> - <Location> - <Region>", e.g.
+// "Workshop (Central) - Imeke - Edo", "Yard (Storage) - Imeke - Edo",
+// "Project - Benin Model City - Edo". The Project/Workshop/Repair/Storage
+// prefix fragments what is really ONE physical location into up to 4 site
+// rows. For the distribution chart we group by the middle "location"
+// segment so Imeke's P+W+R+S all land in a single column, matching
+// Hartland's original chart (one column per place, not per sub-site).
+function locationKey(siteName: string): string {
+  const parts = siteName.split(" - ").map(p => p.trim());
+  if (parts.length >= 3) return parts.slice(1, -1).join(" - ");
+  return siteName; // fallback for anything that doesn't fit the pattern
+}
+
 interface Row {
-  category: string;
+  code: string;
   name: string;
-  perSite: Record<string, { fleetNos: string[]; count: number }>;
+  perSite: Record<string, { items: { fleetNo: string; status: string }[]; count: number }>;
   working: number;
   bd: number;
   storage: number;
   total: number;
 }
 
+interface Matrix {
+  orderedRows: Row[];
+  categorySpans: { code: string; start: number; count: number }[];
+  locations: string[];
+  equipmentCount: number;
+}
+
+// ── Shared data build — used by both the Excel and PDF exports ──────
+function buildMatrix(equipment: any[]): Matrix {
+  const rowMap = new Map<string, Row>();          // key = code|||name
+  const codeOrder: string[] = [];                  // preserves first-seen code order
+  const typeOrderByCode: Record<string, string[]> = {};
+  const locationSet = new Set<string>();
+
+  for (const e of equipment) {
+    const code = fleetPrefix(e.fleet_number);
+    const type = e.name || "Unspecified";
+    const loc  = e.site ? locationKey(e.site) : "Unassigned";
+    locationSet.add(loc);
+
+    const key = `${code}|||${type}`;
+    if (!rowMap.has(key)) {
+      rowMap.set(key, { code, name: type, perSite: {}, working: 0, bd: 0, storage: 0, total: 0 });
+      if (!codeOrder.includes(code)) codeOrder.push(code);
+      if (!typeOrderByCode[code]) typeOrderByCode[code] = [];
+      typeOrderByCode[code].push(type);
+    }
+    const row = rowMap.get(key)!;
+
+    if (!row.perSite[loc]) row.perSite[loc] = { items: [], count: 0 };
+    row.perSite[loc].items.push({ fleetNo: e.fleet_number, status: e.operational_status || "" });
+    row.perSite[loc].count += 1;
+    row.total += 1;
+
+    if (e.operational_status === "Working") row.working += 1;
+    else if (e.operational_status === "Break Down" || e.operational_status === "Under Repair") row.bd += 1;
+    else if (e.operational_status === "Storage") row.storage += 1;
+  }
+
+  codeOrder.sort();
+  const locations = Array.from(locationSet).sort();
+
+  const orderedRows: Row[] = [];
+  const categorySpans: { code: string; start: number; count: number }[] = [];
+  for (const code of codeOrder) {
+    const start = orderedRows.length;
+    for (const type of typeOrderByCode[code]) {
+      orderedRows.push(rowMap.get(`${code}|||${type}`)!);
+    }
+    categorySpans.push({ code, start, count: typeOrderByCode[code].length });
+  }
+
+  return { orderedRows, categorySpans, locations, equipmentCount: equipment.length };
+}
+
+// ── Excel export (data-focused, full fleet-number detail) ───────────
+function exportExcel(matrix: Matrix) {
+  const { orderedRows, categorySpans, locations } = matrix;
+
+  const SITE_START_COL = 2;
+  const totalCol   = SITE_START_COL + locations.length * 2;
+  const workingCol = totalCol + 1;
+  const bdCol      = totalCol + 2;
+  const storageCol = totalCol + 3;
+  const lastCol    = storageCol;
+
+  const dateStr = new Date().toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+
+  const aoa: any[][] = [];
+
+  const titleRow = new Array(lastCol + 1).fill("");
+  titleRow[0] = `HARTLAND NIGERIA LIMITED — EQUIPMENT DISTRIBUTION CHART   [${dateStr}]`;
+  aoa.push(titleRow);
+
+  const siteHeaderRow = new Array(lastCol + 1).fill("");
+  siteHeaderRow[0] = "CODE";
+  siteHeaderRow[1] = "EQUIPMENT TYPE";
+  locations.forEach((loc, i) => { siteHeaderRow[SITE_START_COL + i * 2] = loc; });
+  siteHeaderRow[totalCol]   = "TOTAL";
+  siteHeaderRow[workingCol] = "WORKING";
+  siteHeaderRow[bdCol]      = "B.D";
+  siteHeaderRow[storageCol] = "STORAGE";
+  aoa.push(siteHeaderRow);
+
+  const subHeaderRow = new Array(lastCol + 1).fill("");
+  locations.forEach((_, i) => {
+    subHeaderRow[SITE_START_COL + i * 2]     = "Fleet No";
+    subHeaderRow[SITE_START_COL + i * 2 + 1] = "N";
+  });
+  aoa.push(subHeaderRow);
+
+  const DATA_START_ROW = 3;
+
+  for (const row of orderedRows) {
+    const line = new Array(lastCol + 1).fill("");
+    line[0] = row.code;
+    line[1] = row.name;
+    locations.forEach((loc, i) => {
+      const cell = row.perSite[loc];
+      line[SITE_START_COL + i * 2]     = cell ? cell.items.map(it => it.fleetNo).join(", ") : "";
+      line[SITE_START_COL + i * 2 + 1] = cell ? cell.count : "";
+    });
+    line[totalCol]   = row.total;
+    line[workingCol] = row.working;
+    line[bdCol]      = row.bd;
+    line[storageCol] = row.storage;
+    aoa.push(line);
+  }
+
+  const grandRow = new Array(lastCol + 1).fill("");
+  grandRow[0] = "GRAND TOTAL";
+  let grandTotal = 0, grandWorking = 0, grandBd = 0, grandStorage = 0;
+  locations.forEach((loc, i) => {
+    const siteCount = orderedRows.reduce((s, r) => s + (r.perSite[loc]?.count || 0), 0);
+    grandRow[SITE_START_COL + i * 2 + 1] = siteCount || "";
+  });
+  orderedRows.forEach(r => {
+    grandTotal += r.total; grandWorking += r.working; grandBd += r.bd; grandStorage += r.storage;
+  });
+  grandRow[totalCol] = grandTotal; grandRow[workingCol] = grandWorking;
+  grandRow[bdCol] = grandBd; grandRow[storageCol] = grandStorage;
+  aoa.push(grandRow);
+
+  const grandRowIdx = aoa.length - 1;
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  const merges: any[] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
+    { s: { r: 1, c: 0 }, e: { r: 2, c: 0 } },
+    { s: { r: 1, c: 1 }, e: { r: 2, c: 1 } },
+    { s: { r: 1, c: totalCol },   e: { r: 2, c: totalCol } },
+    { s: { r: 1, c: workingCol }, e: { r: 2, c: workingCol } },
+    { s: { r: 1, c: bdCol },      e: { r: 2, c: bdCol } },
+    { s: { r: 1, c: storageCol }, e: { r: 2, c: storageCol } },
+    { s: { r: grandRowIdx, c: 0 }, e: { r: grandRowIdx, c: 1 } },
+  ];
+  locations.forEach((_, i) => {
+    merges.push({ s: { r: 1, c: SITE_START_COL + i * 2 }, e: { r: 1, c: SITE_START_COL + i * 2 + 1 } });
+  });
+  for (const span of categorySpans) {
+    if (span.count > 1) {
+      merges.push({
+        s: { r: DATA_START_ROW + span.start, c: 0 },
+        e: { r: DATA_START_ROW + span.start + span.count - 1, c: 0 },
+      });
+    }
+  }
+  ws["!merges"] = merges;
+
+  const colWidths: any[] = [{ wch: 8 }, { wch: 26 }];
+  locations.forEach(() => { colWidths.push({ wch: 22 }, { wch: 5 }); });
+  colWidths.push({ wch: 8 }, { wch: 9 }, { wch: 7 }, { wch: 9 });
+  ws["!cols"] = colWidths;
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Equipment Distribution");
+  XLSX.writeFile(wb, `Equipment_Distribution_Chart_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+// ── Branded PDF export (print-to-PDF, same pattern as Rental List / PLT-02 / Equipment Register) ──
+const STATUS_COLOR = { working: "#16a34a", bd: "#d97706", storage: "#475569" };
+
+function buildDistributionPrintHTML(matrix: Matrix): string {
+  const { orderedRows, categorySpans, locations } = matrix;
+  const dateStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+
+  const esc = (v: any) => String(v ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+  const grandTotal   = orderedRows.reduce((s, r) => s + r.total, 0);
+  const grandWorking = orderedRows.reduce((s, r) => s + r.working, 0);
+  const grandBd      = orderedRows.reduce((s, r) => s + r.bd, 0);
+  const grandStorage = orderedRows.reduce((s, r) => s + r.storage, 0);
+
+  // Row index -> is this the first row of its category (for rowspan rendering)?
+  const spanStartRows = new Set(categorySpans.map(s => s.start));
+  const spanCountByStart = new Map(categorySpans.map(s => [s.start, s.count]));
+
+  const siteHeaderCells = locations.map(loc =>
+    `<th colspan="2" class="loc-head">${esc(loc)}</th>`
+  ).join("");
+  const siteSubHeaderCells = locations.map(() =>
+    `<th class="sub">Fleet No</th><th class="sub num">N</th>`
+  ).join("");
+
+  const dataRows = orderedRows.map((row, i) => {
+    const catCell = spanStartRows.has(i)
+      ? `<td class="code" rowspan="${spanCountByStart.get(i)}">${esc(row.code)}</td>`
+      : "";
+    const siteCells = locations.map(loc => {
+      const cell = row.perSite[loc];
+      const fleetSpans = cell
+        ? cell.items.map(it => {
+            const color =
+              it.status === "Break Down" || it.status === "Under Repair" ? "#dc2626" :
+              it.status === "Storage" ? "#94a3b8" :
+              "#1e293b"; // Working (and any other status) — black
+            return `<span style="color:${color}">${esc(it.fleetNo)}</span>`;
+          }).join(", ")
+        : "";
+      return `<td class="fleetlist">${fleetSpans}</td>` +
+             `<td class="num">${cell ? cell.count : ""}</td>`;
+    }).join("");
+    return `<tr>
+      ${catCell}
+      <td class="type">${esc(row.name)}</td>
+      ${siteCells}
+      <td class="num total">${row.total}</td>
+      <td class="num" style="color:${STATUS_COLOR.working}">${row.working || ""}</td>
+      <td class="num" style="color:${STATUS_COLOR.bd}">${row.bd || ""}</td>
+      <td class="num" style="color:${STATUS_COLOR.storage}">${row.storage || ""}</td>
+    </tr>`;
+  }).join("");
+
+  const grandCells = locations.map(loc => {
+    const count = orderedRows.reduce((s, r) => s + (r.perSite[loc]?.count || 0), 0);
+    return `<td></td><td class="num">${count || ""}</td>`;
+  }).join("");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Hartland Equipment Distribution Chart — ${dateStr}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Arial, sans-serif; font-size: 8pt; color: #1e293b; background:#fff; }
+
+  .banner { background:#080D1A; color:#fff; text-align:center; padding:14px 24px 10px; }
+  .banner h1 { font-size:17pt; font-weight:800; letter-spacing:1px; }
+  .banner h2 { font-size:10pt; color:#F5A623; font-weight:700; margin-top:3px; }
+  .banner p  { font-size:7.5pt; color:#94a3b8; margin-top:4px; }
+
+  .summary { display:flex; border-bottom:3px solid #F5A623; }
+  .kpi { flex:1; padding:8px 10px; text-align:center; border-right:1px solid #e2e8f0; }
+  .kpi:last-child { border-right:none; }
+  .kpi .num { font-size:15pt; font-weight:800; }
+  .kpi .lbl { font-size:6.5pt; color:#64748b; text-transform:uppercase; letter-spacing:.5px; }
+  .kpi.total { background:#080D1A; color:#fff; } .kpi.total .lbl { color:#94a3b8; }
+  .kpi.working  { background:#f0fdf4; } .kpi.working  .num { color:#16a34a; }
+  .kpi.bd       { background:#fffbeb; } .kpi.bd       .num { color:#d97706; }
+  .kpi.storage  { background:#f8fafc; } .kpi.storage  .num { color:#475569; }
+  .kpi.locations{ background:#fef3ff; } .kpi.locations .num{ color:#9333ea; }
+
+  .meta { display:flex; justify-content:space-between; padding:5px 14px; background:#f8fafc;
+    font-size:7.5pt; color:#64748b; border-bottom:1px solid #e2e8f0; }
+
+  table { width:100%; border-collapse:collapse; }
+  thead th { background:#080D1A; color:#fff; font-size:7pt; font-weight:700; padding:5px 4px;
+    text-align:center; text-transform:uppercase; letter-spacing:.3px; border-right:1px solid #1a2744; white-space:nowrap; }
+  thead th:last-child { border-right:none; }
+  thead .loc-head { background:#1a2744; }
+  thead .sub { background:#2a3a5c; font-size:6.5pt; }
+
+  tbody td { padding:3px 4px; font-size:7.5pt; border-bottom:1px solid #f1f5f9; border-right:1px solid #f1f5f9; vertical-align:middle; }
+  tbody tr:nth-child(even) { background:#fafbfc; }
+  td.code { font-weight:800; color:#92400e; text-align:center; background:#fffbeb; }
+  td.type { color:#1e293b; white-space:nowrap; }
+  td.fleetlist { color:#475569; font-size:7pt; }
+  td.num { text-align:center; font-weight:600; }
+  td.num.total { font-weight:800; color:#080D1A; background:#f8fafc; }
+
+  tfoot td { padding:6px 4px; font-size:8pt; font-weight:800; background:#1a2744; color:#fff; border-top:2px solid #F5A623; }
+  tfoot td.num { text-align:center; }
+
+  .footer { margin-top:14px; padding:8px 14px; border-top:2px solid #F5A623;
+    display:flex; justify-content:space-between; align-items:flex-end; }
+  .sig-block { text-align:center; width:180px; }
+  .sig-line { border-top:1px solid #1e293b; padding-top:4px; margin-top:24px; font-size:7.5pt; color:#475569; }
+  .footer-note { font-size:7pt; color:#94a3b8; text-align:center; flex:1; padding:0 12px; }
+
+  @media print {
+    @page { size: A3 landscape; margin: 6mm; }
+    body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .no-print { display:none; }
+    thead { display: table-header-group; }
+  }
+
+  .print-bar { position:sticky; top:0; z-index:99; background:#F5A623; padding:10px 20px;
+    display:flex; align-items:center; justify-content:space-between; }
+  .print-bar span { color:#fff; font-weight:700; font-size:10pt; }
+  .print-btn { background:#080D1A; color:#fff; border:none; padding:8px 24px; border-radius:8px;
+    font-size:10pt; font-weight:700; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<div class="print-bar no-print">
+  <span>📐 Hartland Equipment Distribution Chart — ${esc(dateStr)}</span>
+  <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+</div>
+
+<div class="banner">
+  <h1>HARTLAND NIGERIA LIMITED</h1>
+  <h2>EQUIPMENT DISTRIBUTION CHART</h2>
+  <p>Confidential — For internal use only &nbsp;|&nbsp; A BuildFleet™ Report</p>
+</div>
+
+<div class="summary">
+  <div class="kpi total"><div class="num">${grandTotal}</div><div class="lbl">Total Equipment</div></div>
+  <div class="kpi working"><div class="num">${grandWorking}</div><div class="lbl">Working</div></div>
+  <div class="kpi bd"><div class="num">${grandBd}</div><div class="lbl">Break Down</div></div>
+  <div class="kpi storage"><div class="num">${grandStorage}</div><div class="lbl">Storage</div></div>
+  <div class="kpi locations"><div class="num">${locations.length}</div><div class="lbl">Locations</div></div>
+</div>
+
+<div class="meta">
+  <span>Generated: <strong>${esc(dateStr)}</strong></span>
+  <span>Equipment Types: <strong>${orderedRows.length}</strong></span>
+  <span>Categories: <strong>${categorySpans.length}</strong></span>
+  <span>
+    <span style="color:#1e293b;font-weight:700">■</span> Working &nbsp;
+    <span style="color:#dc2626;font-weight:700">■</span> Break Down / Under Repair &nbsp;
+    <span style="color:#94a3b8;font-weight:700">■</span> Storage
+  </span>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th rowspan="2">Code</th>
+      <th rowspan="2">Equipment Type</th>
+      ${siteHeaderCells}
+      <th rowspan="2">Total</th>
+      <th rowspan="2">Working</th>
+      <th rowspan="2">B.D</th>
+      <th rowspan="2">Storage</th>
+    </tr>
+    <tr>${siteSubHeaderCells}</tr>
+  </thead>
+  <tbody>${dataRows}</tbody>
+  <tfoot>
+    <tr>
+      <td colspan="2">GRAND TOTAL</td>
+      ${grandCells}
+      <td class="num">${grandTotal}</td>
+      <td class="num">${grandWorking}</td>
+      <td class="num">${grandBd}</td>
+      <td class="num">${grandStorage}</td>
+    </tr>
+  </tfoot>
+</table>
+
+<div class="footer">
+  <div class="sig-block"><div class="sig-line">Plant Admin<br/>Name &amp; Signature</div></div>
+  <div class="footer-note">
+    Generated by <strong>BuildFleet™</strong> — A product of Ultimate Tech Lab (UTL)<br/>
+    <span style="color:#cbd5e1">${esc(dateStr)}</span>
+  </div>
+  <div class="sig-block"><div class="sig-line">Plant Manager<br/>Name &amp; Signature</div></div>
+</div>
+
+<script>window.onload=()=>{window.print();};</script>
+</body>
+</html>`;
+}
+
+function printDistributionChart(matrix: Matrix) {
+  const html = buildDistributionPrintHTML(matrix);
+  const win = window.open("", "_blank");
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+}
+
+// ─────────────────────────────────────────────────────────────
+// COMPONENT
+// ─────────────────────────────────────────────────────────────
 export function DistributionChartTab() {
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState("");
-  const [lastRun,   setLastRun]   = useState<{
-    categories: number; types: number; sites: number; equipment: number; date: string;
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState("");
+  const [lastRun, setLastRun] = useState<{
+    categories: number; types: number; locations: number; equipment: number; date: string;
   } | null>(null);
 
-  async function generate() {
+  async function fetchEquipment(): Promise<any[]> {
+    const [p1, p2] = await Promise.all([
+      dbu.from("equipment")
+        .select("fleet_number,category,name,site,operational_status")
+        .neq("operational_status", "Scrapped")
+        .order("fleet_number")
+        .range(0, 999),
+      dbu.from("equipment")
+        .select("fleet_number,category,name,site,operational_status")
+        .neq("operational_status", "Scrapped")
+        .order("fleet_number")
+        .range(1000, 1999),
+    ]);
+    return [...(p1.data || []), ...(p2.data || [])];
+  }
+
+  async function handleGenerate(format: "pdf" | "excel") {
     setLoading(true);
     setError("");
     try {
-      // Equipment table can exceed Supabase's 1000-row default page size,
-      // same pattern used elsewhere in Reports (Utilization / Master List).
-      const [p1, p2, sitesRes] = await Promise.all([
-        dbu.from("equipment")
-          .select("fleet_number,category,name,site,operational_status")
-          .neq("operational_status", "Scrapped")
-          .order("fleet_number")
-          .range(0, 999),
-        dbu.from("equipment")
-          .select("fleet_number,category,name,site,operational_status")
-          .neq("operational_status", "Scrapped")
-          .order("fleet_number")
-          .range(1000, 1999),
-        dbu.from("sites").select("code,name"),
-      ]);
-      const equipment = [...(p1.data || []), ...(p2.data || [])];
-      const sitesData: { code: string; name: string }[] = sitesRes.data || [];
-
+      const equipment = await fetchEquipment();
       if (equipment.length === 0) {
         setError("No equipment found to build the chart from.");
         setLoading(false);
         return;
       }
+      const matrix = buildMatrix(equipment);
 
-      // name -> code (to find which cluster an equipment's site belongs to)
-      // code -> {name} (to build a clean label for each cluster)
-      const nameToCode = new Map<string, string>();
-      const codeToSite = new Map<string, { name: string }>();
-      for (const s of sitesData) {
-        nameToCode.set(s.name, s.code);
-        codeToSite.set(s.code, { name: s.name });
+      if (format === "pdf") {
+        printDistributionChart(matrix);
+      } else {
+        exportExcel(matrix);
       }
-
-      // ── Build category → type → row map ──────────────────────
-      const rowMap = new Map<string, Row>();     // key = category|||name
-      const categoryOrder: string[] = [];         // preserves first-seen category order
-      const typeOrderByCategory: Record<string, string[]> = {};
-      const siteSet = new Set<string>();
-      const clusterLabelCache = new Map<string, string>(); // clusterKey -> display label
-
-      for (const e of equipment) {
-        const category = fleetPrefix(e.fleet_number);
-        const type     = e.name     || "Unspecified";
-
-        // Resolve equipment's site name to a cluster (P+W+R+S grouped as
-        // one column). If the site name isn't found in the sites table
-        // (typo, stale reference, etc.) fall back to using the raw name
-        // as its own bucket rather than dropping the equipment.
-        let site: string;
-        if (e.site && nameToCode.has(e.site)) {
-          const code = nameToCode.get(e.site)!;
-          const clusterKey = clusterKeyForCode(code);
-          if (!clusterLabelCache.has(clusterKey)) {
-            clusterLabelCache.set(clusterKey, clusterLabel(clusterKey, codeToSite));
-          }
-          site = clusterLabelCache.get(clusterKey)!;
-        } else {
-          site = e.site || "Unassigned";
-        }
-        siteSet.add(site);
-
-        const key = `${category}|||${type}`;
-        if (!rowMap.has(key)) {
-          rowMap.set(key, {
-            category, name: type, perSite: {},
-            working: 0, bd: 0, storage: 0, total: 0,
-          });
-          if (!categoryOrder.includes(category)) categoryOrder.push(category);
-          if (!typeOrderByCategory[category]) typeOrderByCategory[category] = [];
-          typeOrderByCategory[category].push(type);
-        }
-        const row = rowMap.get(key)!;
-
-        if (!row.perSite[site]) row.perSite[site] = { fleetNos: [], count: 0 };
-        row.perSite[site].fleetNos.push(e.fleet_number);
-        row.perSite[site].count += 1;
-        row.total += 1;
-
-        if (e.operational_status === "Working") row.working += 1;
-        else if (e.operational_status === "Break Down" || e.operational_status === "Under Repair") row.bd += 1;
-        else if (e.operational_status === "Storage") row.storage += 1;
-      }
-
-      categoryOrder.sort();
-      const sites = Array.from(siteSet).sort();
-
-      // Flat ordered row list, grouped by category (needed for merged cells)
-      const orderedRows: Row[] = [];
-      const categorySpans: { category: string; start: number; count: number }[] = [];
-      for (const cat of categoryOrder) {
-        const start = orderedRows.length;
-        for (const type of typeOrderByCategory[cat]) {
-          orderedRows.push(rowMap.get(`${cat}|||${type}`)!);
-        }
-        categorySpans.push({ category: cat, start, count: typeOrderByCategory[cat].length });
-      }
-
-      // ── Column layout ─────────────────────────────────────────
-      // 0: Category | 1: Equipment Type | site pairs... | Total | Working | B.D | Storage
-      const SITE_START_COL = 2;
-      const totalCol   = SITE_START_COL + sites.length * 2;
-      const workingCol = totalCol + 1;
-      const bdCol      = totalCol + 2;
-      const storageCol = totalCol + 3;
-      const lastCol    = storageCol;
-
-      const dateStr = new Date().toLocaleString("en-GB", {
-        day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
-      });
-
-      // ── Build rows (AOA) ─────────────────────────────────────
-      const aoa: any[][] = [];
-
-      // Row 0 — title banner
-      const titleRow = new Array(lastCol + 1).fill("");
-      titleRow[0] = `HARTLAND NIGERIA LIMITED — EQUIPMENT DISTRIBUTION CHART   [${dateStr}]`;
-      aoa.push(titleRow);
-
-      // Row 1 — site names + right-side labels
-      const siteHeaderRow = new Array(lastCol + 1).fill("");
-      siteHeaderRow[0] = "CATEGORY";
-      siteHeaderRow[1] = "EQUIPMENT TYPE";
-      sites.forEach((site, i) => { siteHeaderRow[SITE_START_COL + i * 2] = site; });
-      siteHeaderRow[totalCol]   = "TOTAL";
-      siteHeaderRow[workingCol] = "WORKING";
-      siteHeaderRow[bdCol]      = "B.D";
-      siteHeaderRow[storageCol] = "STORAGE";
-      aoa.push(siteHeaderRow);
-
-      // Row 2 — Fleet No / N sub-headers
-      const subHeaderRow = new Array(lastCol + 1).fill("");
-      sites.forEach((_, i) => {
-        subHeaderRow[SITE_START_COL + i * 2]     = "Fleet No";
-        subHeaderRow[SITE_START_COL + i * 2 + 1] = "N";
-      });
-      aoa.push(subHeaderRow);
-
-      const DATA_START_ROW = 3;
-
-      // Data rows
-      for (const row of orderedRows) {
-        const line = new Array(lastCol + 1).fill("");
-        line[0] = row.category;
-        line[1] = row.name;
-        sites.forEach((site, i) => {
-          const cell = row.perSite[site];
-          line[SITE_START_COL + i * 2]     = cell ? cell.fleetNos.join(", ") : "";
-          line[SITE_START_COL + i * 2 + 1] = cell ? cell.count : "";
-        });
-        line[totalCol]   = row.total;
-        line[workingCol] = row.working;
-        line[bdCol]      = row.bd;
-        line[storageCol] = row.storage;
-        aoa.push(line);
-      }
-
-      // Grand total row
-      const grandRow = new Array(lastCol + 1).fill("");
-      grandRow[0] = "GRAND TOTAL";
-      let grandTotal = 0, grandWorking = 0, grandBd = 0, grandStorage = 0;
-      sites.forEach((site, i) => {
-        const siteCount = orderedRows.reduce((s, r) => s + (r.perSite[site]?.count || 0), 0);
-        grandRow[SITE_START_COL + i * 2 + 1] = siteCount || "";
-      });
-      orderedRows.forEach(r => {
-        grandTotal   += r.total;
-        grandWorking += r.working;
-        grandBd      += r.bd;
-        grandStorage += r.storage;
-      });
-      grandRow[totalCol]   = grandTotal;
-      grandRow[workingCol] = grandWorking;
-      grandRow[bdCol]      = grandBd;
-      grandRow[storageCol] = grandStorage;
-      aoa.push(grandRow);
-
-      const grandRowIdx = aoa.length - 1;
-
-      // ── Build worksheet ───────────────────────────────────────
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-      const merges: any[] = [
-        // Title spans full width
-        { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
-        // Category / Equipment Type header spans rows 1-2
-        { s: { r: 1, c: 0 }, e: { r: 2, c: 0 } },
-        { s: { r: 1, c: 1 }, e: { r: 2, c: 1 } },
-        // Total/Working/B.D/Storage headers span rows 1-2
-        { s: { r: 1, c: totalCol },   e: { r: 2, c: totalCol } },
-        { s: { r: 1, c: workingCol }, e: { r: 2, c: workingCol } },
-        { s: { r: 1, c: bdCol },      e: { r: 2, c: bdCol } },
-        { s: { r: 1, c: storageCol }, e: { r: 2, c: storageCol } },
-        // Grand total label spans Category + Type columns
-        { s: { r: grandRowIdx, c: 0 }, e: { r: grandRowIdx, c: 1 } },
-      ];
-      // Site name headers span their 2 columns
-      sites.forEach((_, i) => {
-        merges.push({
-          s: { r: 1, c: SITE_START_COL + i * 2 },
-          e: { r: 1, c: SITE_START_COL + i * 2 + 1 },
-        });
-      });
-      // Category column merges vertically down each category's rows
-      for (const span of categorySpans) {
-        if (span.count > 1) {
-          merges.push({
-            s: { r: DATA_START_ROW + span.start, c: 0 },
-            e: { r: DATA_START_ROW + span.start + span.count - 1, c: 0 },
-          });
-        }
-      }
-      ws["!merges"] = merges;
-
-      // Column widths — Category, Type wider; Fleet No columns wide enough for lists
-      const colWidths: any[] = [{ wch: 8 }, { wch: 26 }];
-      sites.forEach(() => { colWidths.push({ wch: 22 }, { wch: 5 }); });
-      colWidths.push({ wch: 8 }, { wch: 9 }, { wch: 7 }, { wch: 9 });
-      ws["!cols"] = colWidths;
-
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Equipment Distribution");
-      XLSX.writeFile(wb, `Equipment_Distribution_Chart_${new Date().toISOString().slice(0,10)}.xlsx`);
 
       setLastRun({
-        categories: categoryOrder.length,
-        types: orderedRows.length,
-        sites: sites.length,
-        equipment: equipment.length,
-        date: dateStr,
+        categories: matrix.categorySpans.length,
+        types: matrix.orderedRows.length,
+        locations: matrix.locations.length,
+        equipment: matrix.equipmentCount,
+        date: new Date().toLocaleString("en-GB", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" }),
       });
     } catch (err: any) {
       setError(err.message || "Failed to generate the distribution chart.");
@@ -322,18 +488,23 @@ export function DistributionChartTab() {
               Equipment Distribution Chart
             </p>
             <h3 className="font-bold text-slate-800 text-lg">
-              Fleet distribution by category and site
+              Fleet distribution by category and location
             </h3>
             <p className="text-sm text-slate-500 mt-1 max-w-xl">
-              One row per equipment type, one column per site — showing exactly which fleet
-              numbers are where, with Working / B.D / Storage totals. Built for management
-              review, not day-to-day editing.
+              One row per equipment type, one column per location — showing exactly which fleet
+              numbers are where, with Working / B.D / Storage totals. Built for management review.
             </p>
           </div>
-          <button onClick={generate} disabled={loading}
-            className="px-6 py-3 bg-amber-500 text-white rounded-xl text-sm font-bold hover:bg-amber-600 disabled:opacity-50 shrink-0 flex items-center gap-2">
-            {loading ? "Generating..." : "📐 Generate & Download"}
-          </button>
+          <div className="flex gap-3 shrink-0">
+            <button onClick={() => handleGenerate("excel")} disabled={loading}
+              className="px-5 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 flex items-center gap-2">
+              📊 Excel (data)
+            </button>
+            <button onClick={() => handleGenerate("pdf")} disabled={loading}
+              className="px-6 py-3 bg-amber-500 text-white rounded-xl text-sm font-bold hover:bg-amber-600 disabled:opacity-50 flex items-center gap-2">
+              {loading ? "Generating..." : "🎨 Branded PDF"}
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -353,11 +524,11 @@ export function DistributionChartTab() {
               <p className="text-xs opacity-70 mt-1">Categories · {lastRun.types} types</p>
             </div>
             <div className="bg-emerald-600 text-white rounded-2xl p-4">
-              <p className="text-2xl font-bold">{lastRun.sites}</p>
+              <p className="text-2xl font-bold">{lastRun.locations}</p>
               <p className="text-xs opacity-70 mt-1">Locations with equipment</p>
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl p-4">
-              <p className="text-sm font-bold text-slate-700">✓ Downloaded</p>
+              <p className="text-sm font-bold text-slate-700">✓ Generated</p>
               <p className="text-xs text-slate-400 mt-1">{lastRun.date}</p>
             </div>
           </div>
