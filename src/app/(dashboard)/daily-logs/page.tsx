@@ -1,4 +1,4 @@
-
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -334,10 +334,14 @@ export default function DailyLogsPage() {
   const [logDate,       setLogDate]       = useState(new Date().toISOString().slice(0,10));
   const [saving,        setSaving]        = useState(false);
   const [saved,         setSaved]         = useState(false);
+  const [saveError,     setSaveError]     = useState("");
   const [clerk,         setClerk]         = useState("");
   const [adminOfficer,  setAdminOfficer]  = useState("");
   const [engineer,      setEngineer]      = useState("");
   const initialized = useRef(false);
+
+  // Site types eligible for daily logging — matches PRIORITY 1 fix in handover
+  const DAILY_LOG_ELIGIBLE_TYPES = ["Project", "Central Workshop", "Regional Workshop", "Field Workshop"];
 
   useEffect(() => {
     async function init() {
@@ -352,7 +356,13 @@ export default function DailyLogsPage() {
       const isAdmin = roles.some((r:string) =>
         ["plant_manager","plant_director","plant_admin","plant_engineer","super_admin"].includes(r));
 
-      const { data: sitesData } = await dbu.from("sites").select("code,name,cost_code,site_type").order("name");
+      // PRIORITY 1 FIX: only Projects + Workshops that are active are eligible
+      // for daily logging (108 sites). Repair Yards, Storage Yards, Offices excluded.
+      const { data: sitesData } = await dbu.from("sites")
+        .select("code,name,cost_code,site_type,is_active")
+        .in("site_type", DAILY_LOG_ELIGIBLE_TYPES)
+        .eq("is_active", true)
+        .order("name");
       setSites(sitesData || []);
 
       if (isAdmin) {
@@ -368,7 +378,7 @@ export default function DailyLogsPage() {
   useEffect(() => {
     if (!userSite) return;
     loadEquipmentAndLogs();
-  }, [userSite, logDate]); // eslint-disable-line
+  }, [userSite, logDate]);
 
   async function loadEquipmentAndLogs() {
     const { data: eq } = await dbu.from("equipment")
@@ -416,6 +426,7 @@ export default function DailyLogsPage() {
 
     setRows(builtRows);
     setSaved(false);
+    setSaveError("");
   }
 
   function updateRow(idx: number, field: keyof LogRow, value: any) {
@@ -455,6 +466,24 @@ export default function DailyLogsPage() {
 
   async function saveLog() {
     if (!userSite || rows.length === 0) return;
+
+    // PRIORITY 1 FIX: Hr Meter / KM reading is compulsory before a log entry
+    // can be submitted. Only enforced for rows that actually have a status
+    // set for the day (i.e. being logged) — rows nobody touched are skipped.
+    const missingReadings = rows.filter(r =>
+      r.status !== "" && (!r.hr_km_reading || r.hr_km_reading <= 0)
+    );
+    if (missingReadings.length > 0) {
+      setSaveError(
+        `Hr Meter / Km reading is required for ${missingReadings.length} equipment item(s) ` +
+        `before this log can be saved: ${missingReadings.slice(0,5).map(r => r.fleet_no).join(", ")}` +
+        `${missingReadings.length > 5 ? "…" : ""}`
+      );
+      setSaved(false);
+      return;
+    }
+    setSaveError("");
+
     setSaving(true);
 
     const month = MONTHS[new Date(logDate).getMonth()];
@@ -559,6 +588,11 @@ export default function DailyLogsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3 shrink-0">
+          {saveError && (
+            <span className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-xl text-sm font-semibold max-w-md">
+              ⚠ {saveError}
+            </span>
+          )}
           {saved && (
             <span className="flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-700 rounded-xl text-sm font-semibold">
               ✓ Saved
@@ -711,12 +745,14 @@ export default function DailyLogsPage() {
                       <th className={cellCls + " w-12"}>T.O</th>
                       <th className={cellCls + " w-12"}>H.O</th>
                       <th className={cellCls + " w-12"}>Other</th>
-                      <th className={cellCls + " w-16"}>Hr/Km</th>
+                      <th className={cellCls + " w-16"}>Hr/Km *</th>
                       <th className={cellCls + " w-14"}>Unit</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((row, idx) => (
+                    {rows.map((row, idx) => {
+                      const readingMissing = row.status !== "" && (!row.hr_km_reading || row.hr_km_reading <= 0);
+                      return (
                       <tr key={row.equipment_id}
                         className={`border-b border-slate-100 transition-colors ${
                           row.is_chargeable     ? "bg-emerald-50/40" :
@@ -796,9 +832,9 @@ export default function DailyLogsPage() {
                             placeholder="—" />
                         </td>
 
-                        {/* Hr/Km — no miles */}
+                        {/* Hr/Km — no miles — required when a status is set */}
                         <td className={cellCls + " text-center"}>
-                          <input type="number" className={numInput}
+                          <input type="number" className={numInput + (readingMissing ? " border-red-400 bg-red-50" : "")}
                             value={row.hr_km_reading || ""}
                             onChange={e => updateRow(idx,"hr_km_reading",parseFloat(e.target.value)||0)}
                             placeholder="0" min={0} />
@@ -819,7 +855,8 @@ export default function DailyLogsPage() {
                             placeholder="—" />
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
 
                     {/* Totals row */}
                     <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold">
