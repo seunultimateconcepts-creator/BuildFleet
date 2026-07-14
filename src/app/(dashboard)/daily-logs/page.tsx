@@ -334,7 +334,7 @@ export default function DailyLogsPage() {
   const [logDate,       setLogDate]       = useState(new Date().toISOString().slice(0,10));
   const [saving,        setSaving]        = useState(false);
   const [saved,         setSaved]         = useState(false);
-  const [saveError,     setSaveError]     = useState("");
+  const [saveWarning,   setSaveWarning]   = useState("");
   const [clerk,         setClerk]         = useState("");
   const [adminOfficer,  setAdminOfficer]  = useState("");
   const [engineer,      setEngineer]      = useState("");
@@ -378,7 +378,7 @@ export default function DailyLogsPage() {
   useEffect(() => {
     if (!userSite) return;
     loadEquipmentAndLogs();
-  }, [userSite, logDate]);
+  }, [userSite, logDate]); 
 
   async function loadEquipmentAndLogs() {
     const { data: eq } = await dbu.from("equipment")
@@ -426,7 +426,7 @@ export default function DailyLogsPage() {
 
     setRows(builtRows);
     setSaved(false);
-    setSaveError("");
+    setSaveWarning("");
   }
 
   function updateRow(idx: number, field: keyof LogRow, value: any) {
@@ -467,22 +467,22 @@ export default function DailyLogsPage() {
   async function saveLog() {
     if (!userSite || rows.length === 0) return;
 
-    // PRIORITY 1 FIX: Hr Meter / KM reading is compulsory before a log entry
-    // can be submitted. Only enforced for rows that actually have a status
-    // set for the day (i.e. being logged) — rows nobody touched are skipped.
+    // Hr Meter / Km reading is encouraged but NOT compulsory — some equipment
+    // have broken/non-functional meters and clerks must still be able to save
+    // the rest of the log. Missing readings show as an orange soft-warning
+    // (and highlight the affected cells) instead of blocking Save.
     const missingReadings = rows.filter(r =>
       r.status !== "" && (!r.hr_km_reading || r.hr_km_reading <= 0)
     );
     if (missingReadings.length > 0) {
-      setSaveError(
-        `Hr Meter / Km reading is required for ${missingReadings.length} equipment item(s) ` +
-        `before this log can be saved: ${missingReadings.slice(0,5).map(r => r.fleet_no).join(", ")}` +
+      setSaveWarning(
+        `Hr Meter / Km reading missing for ${missingReadings.length} equipment item(s) — ` +
+        `saved anyway (meter may be faulty): ${missingReadings.slice(0,5).map(r => r.fleet_no).join(", ")}` +
         `${missingReadings.length > 5 ? "…" : ""}`
       );
-      setSaved(false);
-      return;
+    } else {
+      setSaveWarning("");
     }
-    setSaveError("");
 
     setSaving(true);
 
@@ -588,9 +588,9 @@ export default function DailyLogsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3 shrink-0">
-          {saveError && (
-            <span className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-xl text-sm font-semibold max-w-md">
-              ⚠ {saveError}
+          {saveWarning && (
+            <span className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-xl text-sm font-semibold max-w-md">
+              ⚠ {saveWarning}
             </span>
           )}
           {saved && (
@@ -745,7 +745,7 @@ export default function DailyLogsPage() {
                       <th className={cellCls + " w-12"}>T.O</th>
                       <th className={cellCls + " w-12"}>H.O</th>
                       <th className={cellCls + " w-12"}>Other</th>
-                      <th className={cellCls + " w-16"}>Hr/Km *</th>
+                      <th className={cellCls + " w-16"}>Hr/Km</th>
                       <th className={cellCls + " w-14"}>Unit</th>
                     </tr>
                   </thead>
@@ -832,9 +832,9 @@ export default function DailyLogsPage() {
                             placeholder="—" />
                         </td>
 
-                        {/* Hr/Km — no miles — required when a status is set */}
+                        {/* Hr/Km — no miles — flagged (not blocked) when missing */}
                         <td className={cellCls + " text-center"}>
-                          <input type="number" className={numInput + (readingMissing ? " border-red-400 bg-red-50" : "")}
+                          <input type="number" className={numInput + (readingMissing ? " border-amber-400 bg-amber-50" : "")}
                             value={row.hr_km_reading || ""}
                             onChange={e => updateRow(idx,"hr_km_reading",parseFloat(e.target.value)||0)}
                             placeholder="0" min={0} />
