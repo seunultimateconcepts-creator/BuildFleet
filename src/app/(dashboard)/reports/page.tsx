@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from "react";
 import { dbu } from "@/lib/db";
+import { DistributionChartTab } from "./distribution-chart-tab";
 
 const MONTHS = ["January","February","March","April","May","June",
   "July","August","September","October","November","December"];
@@ -965,7 +966,7 @@ function MasterPlantListTab() {
 // MAIN PAGE
 // ─────────────────────────────────────────────────────────────
 export default function ReportsPage() {
-  const [tab,     setTab]     = useState<"rental"|"utilization"|"breakdown"|"masterlist">("rental");
+  const [tab,     setTab]     = useState<"rental"|"utilization"|"breakdown"|"masterlist"|"distribution">("rental");
   const [profile, setProfile] = useState<any>(null);
 
   useEffect(() => {
@@ -996,10 +997,11 @@ export default function ReportsPage() {
   }
 
   const TABS = [
-    { key: "rental",      label: "📋 Rental List" },
-    { key: "utilization", label: "📊 Fleet Utilization" },
-    { key: "breakdown",   label: "⚠️ Breakdown Report" },
-    { key: "masterlist",  label: "📁 Master Plant List" },
+    { key: "rental",       label: "📋 Rental List" },
+    { key: "utilization",  label: "📊 Fleet Utilization" },
+    { key: "breakdown",    label: "⚠️ Breakdown Report" },
+    { key: "masterlist",   label: "📁 Master Plant List" },
+    { key: "distribution", label: "📐 Equipment Distribution" },
   ] as const;
 
   return (
@@ -1020,10 +1022,11 @@ export default function ReportsPage() {
           </button>
         ))}
       </div>
-      {tab === "rental"      && <RentalListTab />}
-      {tab === "utilization" && <UtilizationTab />}
-      {tab === "breakdown"   && <BreakdownReportTab />}
-      {tab === "masterlist"  && <MasterPlantListTab />}
+      {tab === "rental"       && <RentalListTab />}
+      {tab === "utilization"  && <UtilizationTab />}
+      {tab === "breakdown"    && <BreakdownReportTab />}
+      {tab === "masterlist"   && <MasterPlantListTab />}
+      {tab === "distribution" && <DistributionChartTab />}
     </div>
   );
 }
