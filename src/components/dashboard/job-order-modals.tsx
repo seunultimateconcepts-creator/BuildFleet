@@ -1,5 +1,5 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -340,6 +340,7 @@ export function JobCardModal({ record, onClose, onUpdate, profile }: {
   const [outsideInvoice, setOutsideInvoice] = useState(record.outside_invoice_no || "");
   const [outsideRepairCode, setOutsideRepairCode] = useState(record.outside_repair_code || "");
   const [defect,         setDefect]         = useState(!!record.defect);
+  const [meterReading,   setMeterReading]   = useState(record.meter_reading_at_service || "");
   const [saving,         setSaving]         = useState(false);
   const [activeTab,      setActiveTab]      = useState<"details"|"technicians"|"parts"|"costs">("details");
 
@@ -459,11 +460,20 @@ export function JobCardModal({ record, onClose, onUpdate, profile }: {
       remarks,
       repair_start_date:    repairStart || null,
       approved_by:          profile?.full_name || "",
+      meter_reading_at_service: meterReading ? Number(meterReading) : null,
     }).eq("id", record.id);
 
     // Equipment returns to Working (default). If you need Storage instead
     // in some cases, that becomes a choice at this step — flag it if so.
-    await dbu.from("equipment").update({ operational_status: "Working" }).eq("id", record.equipment_id);
+    const equipmentUpdate: any = { operational_status: "Working" };
+    if (meterReading) {
+      // Closes the loop back into the service-due forecast — next time
+      // the WSPT calculation runs, it counts hrs/km from THIS reading,
+      // not the previous service.
+      equipmentUpdate.last_service_reading = Number(meterReading);
+      equipmentUpdate.last_service_date = completionDate || today;
+    }
+    await dbu.from("equipment").update(equipmentUpdate).eq("id", record.equipment_id);
     await dbu.from("equipment_history").insert([{
       equipment_id: record.equipment_id,
       fleet_number: record.equipment_code,
@@ -562,6 +572,12 @@ export function JobCardModal({ record, onClose, onUpdate, profile }: {
                   <input type="checkbox" checked={defect} onChange={e => setDefect(e.target.checked)} className="accent-amber-500 w-4 h-4" />
                   <span className="text-sm text-slate-700">Defect confirmed on inspection</span>
                 </label>
+              </F>
+              <F label="Hr/Km Meter Reading at Service">
+                <input type="number" className={iCls} value={meterReading}
+                  onChange={e => setMeterReading(e.target.value)}
+                  placeholder="Reading when work is completed" />
+                <p className="text-[11px] text-slate-400 mt-1">Feeds the next service-due forecast — enter before marking Complete.</p>
               </F>
               <F label="Remarks">
                 <input className={iCls} value={remarks} onChange={e => setRemarks(e.target.value)} />
@@ -845,7 +861,7 @@ export function NewJobOrderModal({ open, onClose, onSave, profile, restrictEquip
 
   useEffect(() => {
     if (profile?.full_name && open) {
-
+    
       setForm(p => ({ ...p, reported_by: p.reported_by || profile.full_name }));
     }
   }, [profile, open]);
@@ -854,7 +870,7 @@ export function NewJobOrderModal({ open, onClose, onSave, profile, restrictEquip
     if (!open) return;
     if (restrictEquipment) {
       setEquipment(restrictEquipment);
-      dbu.from("sites").select("name,code,cost_code").order("code").then(({ data }: any) => setSites(data || []));
+      dbu.from("sites").select("name,code,cost_code").order("code").then((res: { data: any[] | null }) => setSites(res.data || []));
       return;
     }
     Promise.all([

@@ -11,6 +11,7 @@ import {
   NewJobOrderModal, JobCardModal, printJobOrder,
   STATUS_STYLE, TYPE_STYLE,
 } from "@/components/dashboard/job-order-modals";
+import { ServiceDueTab } from "@/components/dashboard/service-due-tab";
 
 const iCls = "w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 
@@ -19,9 +20,9 @@ const iCls = "w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focu
 // Note: this page now only handles Scheduled / Preventive / Third
 // Party maintenance — anything Breakdown-related lives on the Repair
 // page instead, sourced straight from equipment status rather than
-// requiring someone to remember to log it here first. The WSPT/WMC
-// service-due forecasting rebuild is a separate follow-up (needs the
-// average-usage calculation from Daily Logs before it can work).
+// requiring someone to remember to log it here first. Service-due
+// forecasting (WSPT/WMC) lives in the "Service Due" tab below,
+// computed live from Daily Log usage — see src/lib/service-due.ts.
 // ─────────────────────────────────────────────────────────────
 export default function MaintenancePage() {
   const { profile } = useAuth();
@@ -33,7 +34,7 @@ export default function MaintenancePage() {
   const [filterType,   setFilterType]   = useState("");
   const [filterSite,   setFilterSite]   = useState("");
   const [search,       setSearch]       = useState("");
-  const [tab,          setTab]          = useState<"all"|"scheduled"|"completed">("all");
+  const [tab,          setTab]          = useState<"all"|"scheduled"|"completed"|"service-due">("all");
 
   useEffect(() => {
     if (profile) fetchRecords();
@@ -131,9 +132,10 @@ export default function MaintenancePage() {
       {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit flex-wrap">
         {([
-          ["all",       "📋 All Jobs"],
-          ["scheduled", "🔧 Scheduled / Preventive"],
-          ["completed", `✅ Completed (${stats.completed})`],
+          ["all",         "📋 All Jobs"],
+          ["scheduled",   "🔧 Scheduled / Preventive"],
+          ["completed",   `✅ Completed (${stats.completed})`],
+          ["service-due", "🔔 Service Due (WSPT/WMC)"],
         ] as const).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
@@ -144,86 +146,92 @@ export default function MaintenancePage() {
         ))}
       </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-5">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-          <input placeholder="Search fleet no., issue, site..."
-            value={search} onChange={e => setSearch(e.target.value)}
-            className={iCls + " lg:col-span-2"} />
-          <select className={iCls} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-            <option value="">All Statuses</option>
-            {["Pending","Awaiting Parts","In Progress","Completed","Cancelled"].map(s => <option key={s}>{s}</option>)}
-          </select>
-          <select className={iCls} value={filterSite} onChange={e => setFilterSite(e.target.value)}>
-            <option value="">All Sites</option>
-            {allSites.map(s => <option key={s}>{s}</option>)}
-          </select>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-          <div>
-            <h2 className="font-bold text-slate-800 text-lg">Job Register</h2>
-            <p className="text-slate-400 text-sm">{filtered.length} records</p>
+      {tab === "service-due" ? (
+        <ServiceDueTab />
+      ) : (
+        <>
+          {/* Filters */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+              <input placeholder="Search fleet no., issue, site..."
+                value={search} onChange={e => setSearch(e.target.value)}
+                className={iCls + " lg:col-span-2"} />
+              <select className={iCls} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                <option value="">All Statuses</option>
+                {["Pending","Awaiting Parts","In Progress","Completed","Cancelled"].map(s => <option key={s}>{s}</option>)}
+              </select>
+              <select className={iCls} value={filterSite} onChange={e => setFilterSite(e.target.value)}>
+                <option value="">All Sites</option>
+                {allSites.map(s => <option key={s}>{s}</option>)}
+              </select>
+            </div>
           </div>
-        </div>
-        <div className="overflow-auto max-h-[60vh]">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
-              <tr>
-                {["Job Order","Fleet No.","Type","Site","Issue","Reported","Technician","Status","Cost","Actions"].map(h => (
-                  <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {loading ? (
-                <tr><td colSpan={10} className="px-5 py-16 text-center text-slate-400">Loading...</td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={10} className="px-5 py-16 text-center text-slate-400">
-                  No records found. Click &quot;New Job Order&quot; to log scheduled or preventive work.
-                </td></tr>
-              ) : filtered.map((r:any) => (
-                <tr key={r.id} className="group transition-colors hover:bg-amber-50/30">
-                  <td className="px-4 py-4 font-mono text-xs text-slate-500">{r.job_order_no||`JO-${r.id?.slice(0,6).toUpperCase()}`}</td>
-                  <td className="px-4 py-4 font-bold text-amber-600 font-mono text-xs">{r.equipment_code}</td>
-                  <td className="px-4 py-4">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${TYPE_STYLE[r.maintenance_type]||"bg-slate-100 text-slate-600"}`}>
-                      {r.maintenance_type}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-slate-500 text-xs max-w-32 truncate">{r.site||"—"}</td>
-                  <td className="px-4 py-4 text-slate-700 text-xs max-w-48 truncate">{r.issue}</td>
-                  <td className="px-4 py-4 text-slate-500 text-xs whitespace-nowrap">
-                    {new Date(r.reported_date||r.created_at).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}
-                  </td>
-                  <td className="px-4 py-4 text-slate-600 text-xs">{r.technician||"—"}</td>
-                  <td className="px-4 py-4">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_STYLE[r.status]||""}`}>{r.status}</span>
-                  </td>
-                  <td className="px-4 py-4 text-slate-600 text-xs whitespace-nowrap">
-                    {r.cost ? `₦${Number(r.cost).toLocaleString()}` : "—"}
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => setJobCard(r)}
-                        className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-medium hover:bg-slate-200 whitespace-nowrap">
-                        Job Card
-                      </button>
-                      <button onClick={() => printJobOrder(r)}
-                        className="px-3 py-1.5 bg-amber-100 text-amber-700 rounded-lg text-xs font-medium hover:bg-amber-200 whitespace-nowrap">
-                        PLT-06
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+
+          {/* Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-slate-800 text-lg">Job Register</h2>
+                <p className="text-slate-400 text-sm">{filtered.length} records</p>
+              </div>
+            </div>
+            <div className="overflow-auto max-h-[60vh]">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
+                  <tr>
+                    {["Job Order","Fleet No.","Type","Site","Issue","Reported","Technician","Status","Cost","Actions"].map(h => (
+                      <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {loading ? (
+                    <tr><td colSpan={10} className="px-5 py-16 text-center text-slate-400">Loading...</td></tr>
+                  ) : filtered.length === 0 ? (
+                    <tr><td colSpan={10} className="px-5 py-16 text-center text-slate-400">
+                      No records found. Click &quot;New Job Order&quot; to log scheduled or preventive work.
+                    </td></tr>
+                  ) : filtered.map((r:any) => (
+                    <tr key={r.id} className="group transition-colors hover:bg-amber-50/30">
+                      <td className="px-4 py-4 font-mono text-xs text-slate-500">{r.job_order_no||`JO-${r.id?.slice(0,6).toUpperCase()}`}</td>
+                      <td className="px-4 py-4 font-bold text-amber-600 font-mono text-xs">{r.equipment_code}</td>
+                      <td className="px-4 py-4">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${TYPE_STYLE[r.maintenance_type]||"bg-slate-100 text-slate-600"}`}>
+                          {r.maintenance_type}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-slate-500 text-xs max-w-32 truncate">{r.site||"—"}</td>
+                      <td className="px-4 py-4 text-slate-700 text-xs max-w-48 truncate">{r.issue}</td>
+                      <td className="px-4 py-4 text-slate-500 text-xs whitespace-nowrap">
+                        {new Date(r.reported_date||r.created_at).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}
+                      </td>
+                      <td className="px-4 py-4 text-slate-600 text-xs">{r.technician||"—"}</td>
+                      <td className="px-4 py-4">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_STYLE[r.status]||""}`}>{r.status}</span>
+                      </td>
+                      <td className="px-4 py-4 text-slate-600 text-xs whitespace-nowrap">
+                        {r.cost ? `₦${Number(r.cost).toLocaleString()}` : "—"}
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => setJobCard(r)}
+                            className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-medium hover:bg-slate-200 whitespace-nowrap">
+                            Job Card
+                          </button>
+                          <button onClick={() => printJobOrder(r)}
+                            className="px-3 py-1.5 bg-amber-100 text-amber-700 rounded-lg text-xs font-medium hover:bg-amber-200 whitespace-nowrap">
+                            PLT-06
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
 
       <NewJobOrderModal
         open={modal}
