@@ -1,23 +1,33 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import {
   LayoutDashboard, Truck, MapPin, ArrowLeftRight, Wrench,
   ClipboardList, BookOpen, BarChart3, Users, Settings,
-  ChevronDown, CircleDot, ImageIcon,
+  ChevronDown, CircleDot, ImageIcon, AlertTriangle,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────
 // NAV ITEMS
+// "Maintenance" is now a GROUP with two sub-links (Maintenance,
+// Repair) instead of a single flat link — Jumia-style expandable nav.
 // ─────────────────────────────────────────────────────────────
 const navItems = [
   { label: "Dashboard",     href: "/",            icon: LayoutDashboard, roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
   { label: "Equipment",     href: "/equipment",   icon: Truck,           roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
   { label: "Sites",         href: "/sites",       icon: MapPin,          roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor"] },
   { label: "Transfer",      href: "/transfer",    icon: ArrowLeftRight,  roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
-  { label: "Maintenance",   href: "/maintenance", icon: Wrench,          roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
+  {
+    label: "Maintenance", icon: Wrench,
+    roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"],
+    children: [
+      { label: "Maintenance", href: "/maintenance", icon: Wrench },
+      { label: "Repair",      href: "/repair",      icon: AlertTriangle },
+    ],
+  },
   { label: "Tire Management", href: "/tires",     icon: CircleDot, badge: "TMS", roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
   { label: "Commissioning", href: "/commissioning", icon: ClipboardList, roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer"] },
   { label: "Daily Logs",    href: "/daily-logs",  icon: BookOpen,        roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
@@ -87,6 +97,25 @@ export default function Sidebar() {
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
+  // A group is "active" if any of its children match the current path —
+  // used to auto-expand it and to highlight the parent row.
+  const isGroupActive = (children: { href: string }[]) =>
+    children.some(c => isActive(c.href));
+
+  // Expanded state per group label. Starts expanded if the current page
+  // is already inside that group (e.g. landing on /repair directly).
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    for (const item of navItems) {
+      if (item.children) initial[item.label] = isGroupActive(item.children);
+    }
+    return initial;
+  });
+
+  function toggleGroup(label: string) {
+    setExpanded(prev => ({ ...prev, [label]: !prev[label] }));
+  }
+
   return (
     <aside className="fixed inset-y-0 left-0 w-64 flex flex-col z-40"
       style={{ backgroundColor: "#080D1A", borderRight: "1px solid #1E2235" }}>
@@ -97,18 +126,65 @@ export default function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
         {visibleItems.map(item => {
-          const Icon   = item.icon;
-          const active = isActive(item.href);
+          const Icon = item.icon;
+
+          // ── GROUP (expandable) ──
+          if (item.children) {
+            const groupActive = isGroupActive(item.children);
+            const isOpen = !!expanded[item.label];
+            return (
+              <div key={item.label}>
+                <button
+                  onClick={() => toggleGroup(item.label)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group relative ${
+                    groupActive ? "text-white" : "text-slate-400 hover:text-white"
+                  }`}
+                  style={groupActive ? { backgroundColor: "#1A2744" } : {}}>
+                  {groupActive && (
+                    <div className="absolute left-0 w-1 h-7 rounded-r-full" style={{ backgroundColor: "#F5A623" }} />
+                  )}
+                  <Icon size={17} className={`shrink-0 transition-colors ${
+                    groupActive ? "text-amber-400" : "text-slate-500 group-hover:text-slate-300"
+                  }`} />
+                  <span className="flex-1 text-left truncate">{item.label}</span>
+                  <ChevronDown size={14} className={`shrink-0 transition-transform ${isOpen ? "rotate-180" : ""} ${
+                    groupActive ? "text-amber-400" : "text-slate-500"
+                  }`} />
+                </button>
+
+                {isOpen && (
+                  <div className="ml-4 pl-3 mt-0.5 space-y-0.5 border-l" style={{ borderColor: "#1E2235" }}>
+                    {item.children.map(child => {
+                      const ChildIcon = child.icon;
+                      const active = isActive(child.href);
+                      return (
+                        <Link key={child.href} href={child.href}
+                          className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group ${
+                            active ? "text-white" : "text-slate-400 hover:text-white"
+                          }`}
+                          style={active ? { backgroundColor: "#1A2744" } : {}}>
+                          <ChildIcon size={15} className={`shrink-0 transition-colors ${
+                            active ? "text-amber-400" : "text-slate-500 group-hover:text-slate-300"
+                          }`} />
+                          <span className="flex-1 truncate">{child.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          // ── PLAIN LINK (unchanged behavior) ──
+          const active = isActive(item.href!);
           return (
-            <Link key={item.href} href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group ${
-                active
-                  ? "text-white"
-                  : "text-slate-400 hover:text-white"
+            <Link key={item.href} href={item.href!}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all group relative ${
+                active ? "text-white" : "text-slate-400 hover:text-white"
               }`}
               style={active ? { backgroundColor: "#1A2744" } : {}}>
 
-              {/* Active indicator bar */}
               {active && (
                 <div className="absolute left-0 w-1 h-7 rounded-r-full"
                   style={{ backgroundColor: "#F5A623" }} />
