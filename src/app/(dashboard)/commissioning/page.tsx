@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -24,6 +23,16 @@ const STATUS_COLORS: Record<string, string> = {
   "Poor-Fair": "bg-orange-100  text-orange-700",
   "Poor":      "bg-red-100     text-red-600",
   "Scrapped":  "bg-slate-100   text-slate-500",
+};
+
+// Live operational status — matches the same badge colors used on
+// Equipment/Repair/Maintenance pages, for visual consistency.
+const OP_STATUS_STYLE: Record<string, string> = {
+  "Working":      "bg-emerald-100 text-emerald-700",
+  "Under Repair": "bg-amber-100   text-amber-700",
+  "Break Down":   "bg-orange-100  text-orange-700",
+  "Storage":      "bg-slate-100   text-slate-600",
+  "Scrapped":     "bg-red-100     text-red-600",
 };
 
 // Equipment categories with their hire rates
@@ -606,14 +615,35 @@ export default function CommissioningPage() {
   const [filterCat,  setFilterCat]  = useState("");
   const [filterSite, setFilterSite] = useState("");
 
+  // ── Live status — read fresh from `equipment` on every load, never
+  // stored on the commissioning row. This is what actually answers
+  // "does Commissioning reflect the current status": it's not synced,
+  // it's looked up live, so it can never go stale the way a copied/
+  // duplicated field could.
+  const [liveStatus, setLiveStatus] = useState<Record<string, { status: string; yard: string }>>({});
+
+  useEffect(() => {
+    async function loadLiveStatus() {
+      const { data } = await dbu.from("equipment")
+        .select("fleet_number,operational_status,current_yard");
+      const map: Record<string, { status: string; yard: string }> = {};
+      (data || []).forEach((e: any) => {
+        map[e.fleet_number] = { status: e.operational_status, yard: e.current_yard || "" };
+      });
+      setLiveStatus(map);
+    }
+    loadLiveStatus();
+  }, [commissioningRecords]); // refresh alongside the commissioning list
+
   function exportRegister() {
     const headers = ["Fleet No.","Description","Category","Make","Model",
-      "Site","Region","Cost Code","Comm. Date","Condition","Hire Rate","Supplier","Landed Cost"];
+      "Site","Region","Cost Code","Comm. Date","Condition","Status","Hire Rate","Supplier","Landed Cost"];
     const rows = filtered.map((r: any) => [
       r.fleet_number, r.description, r.category, r.make, r.model,
       r.location, r.region, r.cost_code || "",
       r.date_commissioned ? new Date(r.date_commissioned).toLocaleDateString("en-GB") : "",
       r.equipment_condition || "",
+      liveStatus[r.fleet_number]?.status || "",
       r.hire_rate || 0,
       r.supplier || "",
       r.landed_cost || 0,
@@ -653,6 +683,7 @@ export default function CommissioningPage() {
           <h1 className="text-3xl font-bold text-slate-900">Commissioning</h1>
           <p className="text-slate-500 mt-1 text-sm max-w-lg">
             Register new equipment using the digital PLT-01 form. Hire rates are auto-assigned by category.
+            Status shown here is read live from Equipment — update it from the Equipment page.
           </p>
         </div>
         <div className="flex flex-wrap gap-3 shrink-0">
@@ -729,21 +760,23 @@ export default function CommissioningPage() {
             <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
               <tr>
                 {["Fleet No.","Description","Category","Make","Model",
-                  "Site","Region","Hire Rate","Comm. Date","Condition",""].map(h => (
+                  "Site","Region","Hire Rate","Comm. Date","Condition","Status",""].map(h => (
                   <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {loading ? (
-                <tr><td colSpan={11} className="px-5 py-16 text-center text-slate-400">Loading...</td></tr>
+                <tr><td colSpan={12} className="px-5 py-16 text-center text-slate-400">Loading...</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={11} className="px-5 py-16 text-center text-slate-400">
+                <tr><td colSpan={12} className="px-5 py-16 text-center text-slate-400">
                   {commissioningRecords.length === 0
                     ? 'No records yet. Click "+ New Commission" or upload the Plant List.'
                     : "No records match your filters."}
                 </td></tr>
-              ) : (filtered as any[]).map((item: any) => (
+              ) : (filtered as any[]).map((item: any) => {
+                const live = liveStatus[item.fleet_number];
+                return (
                 <tr key={item.id} className="hover:bg-amber-50/30 transition-colors group">
                   <td className="px-5 py-4 font-bold text-amber-600 font-mono text-xs">{item.fleet_number}</td>
                   <td className="px-5 py-4 text-slate-700 max-w-50 truncate">{item.description}</td>
@@ -771,6 +804,22 @@ export default function CommissioningPage() {
                       {item.equipment_condition || "—"}
                     </span>
                   </td>
+                  <td className="px-5 py-4">
+                    {live ? (
+                      <div>
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                          OP_STATUS_STYLE[live.status] || "bg-slate-100 text-slate-600"
+                        }`}>
+                          {live.status}
+                        </span>
+                        {live.yard && (
+                          <p className="text-[10px] text-slate-400 mt-1 max-w-32 truncate" title={live.yard}>{live.yard}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-300 italic">No equipment record</span>
+                    )}
+                  </td>
                   <td className="px-3 py-4">
                     <button onClick={() => setEditRecord(item)} title="Set commissioning date"
                       className="text-slate-300 hover:text-amber-500 transition-colors text-base">
@@ -778,7 +827,8 @@ export default function CommissioningPage() {
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

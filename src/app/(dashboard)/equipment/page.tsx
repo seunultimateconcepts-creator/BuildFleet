@@ -46,13 +46,6 @@ const CONDITION_STYLE: Record<string, string> = {
 
 const iCls = "w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 
-const YARD_CONFIG: Partial<Record<EquipmentStatus, { label: string; siteTypes: string[] }>> = {
-  "Break Down":   { label: "Repair Yard",               siteTypes: ["Repair Yard"] },
-  "Under Repair": { label: "Workshop",                  siteTypes: ["Central Workshop","Regional Workshop","Field Workshop"] },
-  "Storage":      { label: "Storage Yard",              siteTypes: ["Storage Yard"] },
-  "Scrapped":     { label: "Disposal / Scrap Location", siteTypes: [] },
-};
-
 // ─────────────────────────────────────────────────────────────
 // EXPORT — column config
 // ─────────────────────────────────────────────────────────────
@@ -456,50 +449,67 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
   onSave: (status: EquipmentStatus, yard: string) => Promise<void>;
   isClerk: boolean;
 }) {
-  const [allSites,      setAllSites]      = useState<any[]>([]);
-  const [filteredYards, setFilteredYards] = useState<any[]>([]);
-  const [status,        setStatus]        = useState<EquipmentStatus>(item.operational_status as EquipmentStatus);
-  const [yard,          setYard]          = useState<string>((item as any).current_yard || "");
-  const [saving,        setSaving]        = useState(false);
-  const [error,         setError]         = useState<string | null>(null);
+  const [allSites, setAllSites]   = useState<any[]>([]);
+  const [status,   setStatus]     = useState<EquipmentStatus>(item.operational_status as EquipmentStatus);
+  const [saving,   setSaving]     = useState(false);
+  const [error,    setError]      = useState<string | null>(null);
 
   useEffect(() => {
     dbu.from("sites")
-      .select("id,name,code,site_type,cost_code")
-      .order("code", { ascending: true })
+      .select("id,name,code,site_type")
       .then(({ data }: { data: any[] | null }) => setAllSites(data || []));
   }, []);
 
-  useEffect(() => {
-    const config = YARD_CONFIG[status];
-   
-    if (!config) { setFilteredYards([]); return; }
-    if (config.siteTypes.length === 0) {
-      setFilteredYards(allSites);
-    } else {
-      setFilteredYards(allSites.filter(s => config.siteTypes.includes(s.site_type)));
-    }
-    setYard("");
-  }, [status, allSites]);
+  // Which sibling site-code suffix each status needs within the SAME
+  // cluster as this equipment's own site — e.g. Break Down looks for
+  // "133R" if this equipment sits at "133P" or "133W". No cross-site
+  // picker: moving equipment to a genuinely different site is what
+  // Transfer is for, not a status update.
+  const YARD_SUFFIX: Partial<Record<EquipmentStatus, string>> = {
+    "Break Down":   "R",
+    "Under Repair": "W",
+    "Storage":      "S",
+  };
+
+  const ownSite = allSites.find(s => s.name === item.site);
+
+  function resolveSiblingYard(targetStatus: EquipmentStatus): { site: any | null; standalone: boolean } {
+    const suffix = YARD_SUFFIX[targetStatus];
+    if (!suffix || !ownSite) return { site: null, standalone: false };
+
+    const code = ownSite.code || "";
+    const isStandalone = /^\d{3}$/.test(code); // 010–099, no attached cluster
+    if (isStandalone) return { site: null, standalone: true };
+
+    const isSR = code.endsWith("SR");
+    const clusterNum = isSR ? code.slice(0, -2) : code.slice(0, -1);
+    const targetCode = `${clusterNum}${suffix}`;
+    const sibling = allSites.find(s => s.code === targetCode);
+    return { site: sibling || null, standalone: false };
+  }
+
+  const resolution   = resolveSiblingYard(status);
+  const needsYard     = !!YARD_SUFFIX[status];
+  const resolvedYard  = resolution.site;
+  const noSiblingData = needsYard && !resolution.standalone && !resolvedYard && !!ownSite;
 
   const availableStatuses = isClerk ? CLERK_STATUSES : ALL_STATUSES;
-  const yardConfig = YARD_CONFIG[status];
-  const needsYard  = !!yardConfig;
 
   async function handleSave() {
-    if (needsYard && !yard.trim()) {
-      setError(`Please select the ${yardConfig!.label.toLowerCase()}.`);
+    if (noSiblingData) {
+      setError(`This site doesn't have a ${status === "Break Down" ? "Repair Yard" : status === "Under Repair" ? "Workshop" : "Storage Yard"} set up in its cluster — check Sites page.`);
       return;
     }
     setSaving(true); setError(null);
-    await onSave(status, yard.trim());
+    // Auto-resolved yard name, or "" for standalone sites / statuses that
+    // don't need one — equipment.site itself never changes here.
+    await onSave(status, resolvedYard?.name || "");
     setSaving(false);
     onClose();
   }
 
   function handleStatusChange(s: EquipmentStatus) {
     setStatus(s); setError(null);
-    if (!YARD_CONFIG[s]) setYard("");
   }
 
   return (
@@ -507,16 +517,12 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
         <h3 className="font-bold text-slate-800 text-lg mb-0.5">Update Status</h3>
         <p className="text-amber-600 text-sm font-medium mb-1">{item.fleet_number}</p>
-        <p className="text-slate-500 text-xs mb-5 line-clamp-1">{item.name}</p>
+        <p className="text-slate-500 text-xs mb-1 line-clamp-1">{item.name}</p>
+        <p className="text-slate-400 text-xs mb-5">📍 {item.site}</p>
 
         {isClerk && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 mb-4 text-xs text-blue-700">
             ℹ️ As Plant Clerk you can update to: Working, Break Down or Storage only.
-          </div>
-        )}
-        {(item as any).current_yard && (
-          <div className="bg-slate-50 rounded-xl px-4 py-2.5 mb-4 text-xs text-slate-500">
-            Current location: <span className="font-semibold text-slate-700">{(item as any).current_yard}</span>
           </div>
         )}
 
@@ -532,29 +538,31 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
           ))}
         </div>
 
-        {needsYard && (
-          <div className="mb-4 border-t border-slate-100 pt-4">
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-              {yardConfig!.label} <span className="text-red-400">*</span>
-            </label>
-            <p className="text-xs text-slate-400 mb-2">{filteredYards.length} {yardConfig!.label.toLowerCase()}s available</p>
-            <select className={iCls} value={yard} onChange={e => { setYard(e.target.value); setError(null); }}>
-              <option value="">— Select {yardConfig!.label} —</option>
-              {filteredYards.map(s => (
-                <option key={s.id || s.code} value={s.name}>
-                  {s.code ? `${s.code} — ` : ""}{s.name}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-slate-400 mt-1.5">Select where this equipment is located.</p>
+        {/* Auto-resolved yard — read-only, no picker, always within this equipment's own site */}
+        {needsYard && resolvedYard && (
+          <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-xs text-emerald-700">
+            Will move to <span className="font-semibold">{resolvedYard.name}</span> — within {item.site}.
           </div>
         )}
-
+        {needsYard && resolution.standalone && (
+          <div className="mb-4 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs text-slate-600">
+            {item.site} has no attached yard — status updates without changing location.
+          </div>
+        )}
         {status === "Working" && (
           <div className="mb-4 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 text-xs text-emerald-700">
             Equipment will be marked as operational at its current site.
           </div>
         )}
+        {status === "Scrapped" && (
+          <div className="mb-4 bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-xs text-red-600">
+            Equipment will be marked Scrapped at its current site.
+          </div>
+        )}
+        <div className="mb-4 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-500">
+          Moving equipment to a different site? Use <span className="font-semibold">Transfer</span> instead, so both site supervisors are notified.
+        </div>
+
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-700 text-xs">⚠️ {error}</div>
         )}
