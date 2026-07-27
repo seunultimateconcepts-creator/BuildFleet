@@ -30,6 +30,19 @@ export function useTires() {
     setHistory(data || []);
   }
 
+  // NEW — the per-equipment history that Tyre Pass needs: every Fitted,
+  // Removed and Inspected event ever recorded for a fleet number, in
+  // one query. Works correctly now that inspectTire() below actually
+  // writes fleet_number (previously it didn't, so inspections were
+  // invisible here even though the column always existed).
+  async function fetchHistoryForFleet(fleetNumber: string) {
+    const { data } = await dbu.from("tire_history")
+      .select("*")
+      .eq("fleet_number", fleetNumber)
+      .order("created_at", { ascending: false });
+    return data || [];
+  }
+
   // Add new tire to stock
   async function addTire(payload: any) {
     const { data, error: err } = await dbu
@@ -39,10 +52,26 @@ export function useTires() {
       .single();
     if (err) return { success: false, error: err.message };
     setTires(prev => [data, ...prev]);
+
+    // Log the tire entering the system — completes the history picture
+    // ("where did this tire come from") without changing anything about
+    // how stock additions already worked.
+    dbu.from("tire_history").insert([{
+      tire_id: data.id,
+      tire_number: data.tire_number,
+      action_type: "Added to Stock",
+      performed_by: payload.performed_by || "",
+    }]);
+
     return { success: true, data };
   }
 
   // Fit tire to equipment
+  // treadDepth is NEW — captured once at fitment, stored as
+  // fitted_tread_depth (never overwritten again) so later inspections
+  // can be compared against a true baseline. current_tread_depth is
+  // also seeded with this value so the Fitted tab shows something
+  // sensible before the first inspection happens.
   async function fitTire(
     tireId: string,
     equipmentId: string,
@@ -50,15 +79,19 @@ export function useTires() {
     position: string,
     kmReading: number,
     hrReading: number,
+    treadDepth: number,
     by: string
   ) {
+    const fittedDate = new Date().toISOString().split("T")[0];
+
     // Optimistic update
     setTires(prev => prev.map(t =>
       t.id === tireId
         ? { ...t, status: "Fitted", current_equipment_id: equipmentId,
             current_fleet_number: fleetNumber, current_position: position,
-            fitted_date: new Date().toISOString().split("T")[0],
-            fitted_km_reading: kmReading, fitted_hr_reading: hrReading }
+            fitted_date: fittedDate,
+            fitted_km_reading: kmReading, fitted_hr_reading: hrReading,
+            fitted_tread_depth: treadDepth, current_tread_depth: treadDepth }
         : t
     ));
 
@@ -67,9 +100,11 @@ export function useTires() {
       current_equipment_id: equipmentId,
       current_fleet_number: fleetNumber,
       current_position: position,
-      fitted_date: new Date().toISOString().split("T")[0],
+      fitted_date: fittedDate,
       fitted_km_reading: kmReading,
       fitted_hr_reading: hrReading,
+      fitted_tread_depth: treadDepth,
+      current_tread_depth: treadDepth,
       updated_at: new Date().toISOString(),
     }).eq("id", tireId);
 
@@ -83,6 +118,7 @@ export function useTires() {
       equipment_id: equipmentId,
       fleet_number: fleetNumber,
       position, km_reading: kmReading, hr_reading: hrReading,
+      tread_depth: treadDepth,
       performed_by: by,
     }]);
 
@@ -90,6 +126,8 @@ export function useTires() {
   }
 
   // Remove tire from equipment
+  // Unchanged behavior — newStatus "In Stock" is the reusable path,
+  // "Worn Out"/"Scrapped" the common end-of-life path. Nothing deleted.
   async function removeTire(
     tireId: string,
     kmReading: number,
@@ -124,6 +162,7 @@ export function useTires() {
       tire_id: tireId,
       tire_number: tire?.tire_number,
       action_type: "Removed",
+      equipment_id: tire?.current_equipment_id,
       fleet_number: tire?.current_fleet_number,
       position: tire?.current_position,
       km_reading: kmReading, hr_reading: hrReading,
@@ -135,6 +174,11 @@ export function useTires() {
   }
 
   // Update tread depth inspection
+  // FIXED — this previously wrote a tire_history row with NO
+  // fleet_number, position, or equipment_id, which meant every
+  // inspection event was invisible when querying "history for this
+  // equipment." It now pulls those from the tire's current state
+  // before writing, same as fitTire/removeTire already did correctly.
   async function inspectTire(
     tireId: string,
     treadDepth: number,
@@ -143,6 +187,8 @@ export function useTires() {
     notes: string,
     by: string
   ) {
+    const tire = tires.find(t => t.id === tireId);
+
     setTires(prev => prev.map(t =>
       t.id === tireId ? { ...t, current_tread_depth: treadDepth } : t
     ));
@@ -154,8 +200,11 @@ export function useTires() {
 
     dbu.from("tire_history").insert([{
       tire_id: tireId,
-      tire_number: tires.find(t => t.id === tireId)?.tire_number,
+      tire_number: tire?.tire_number,
       action_type: "Inspected",
+      equipment_id: tire?.current_equipment_id,
+      fleet_number: tire?.current_fleet_number,
+      position: tire?.current_position,
       km_reading: kmReading, hr_reading: hrReading,
       tread_depth: treadDepth, notes,
       performed_by: by,
@@ -166,7 +215,7 @@ export function useTires() {
 
   return {
     tires, history, loading, error,
-    fetchTires, fetchTireHistory,
+    fetchTires, fetchTireHistory, fetchHistoryForFleet,
     addTire, fitTire, removeTire, inspectTire,
   };
 }

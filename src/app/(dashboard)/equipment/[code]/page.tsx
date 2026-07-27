@@ -4,10 +4,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { dbu } from "@/lib/db";
 import { useAuth } from "@/hooks/use-auth";
+import { printTransfer } from "@/lib/transfer-print";
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS — Storage replaces Idle/Stand By
@@ -21,6 +22,15 @@ const STATUS_STYLE: Record<string, string> = {
   "Break Down":   "bg-orange-100  text-orange-700",
   "Storage":      "bg-slate-100   text-slate-600",
   "Scrapped":     "bg-red-100     text-red-600",
+};
+
+const TRANSFER_STATUS_STYLE: Record<string, string> = {
+  "Pending Approval": "bg-orange-100 text-orange-700",
+  "Pending":          "bg-amber-100  text-amber-700",
+  "In Transit":       "bg-blue-100   text-blue-700",
+  "Received":         "bg-emerald-100 text-emerald-700",
+  "Rejected":         "bg-red-100    text-red-600",
+  "Cancelled":        "bg-slate-100  text-slate-500",
 };
 
 const HISTORY_ICONS: Record<string, string> = {
@@ -42,6 +52,11 @@ const YARD_CONFIG: Partial<Record<string, { label: string; siteTypes: string[] }
   "Scrapped":     { label: "Disposal / Scrap Location", siteTypes: [] },
 };
 
+const fmt = (d: string) => d
+  ? new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "—";
+const fmtDateTime = (d: string) => d
+  ? new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
+
 // ─────────────────────────────────────────────────────────────
 // STATUS MODAL
 // ─────────────────────────────────────────────────────────────
@@ -62,7 +77,6 @@ function StatusModal({ equip, isClerk, onClose, onSave }: {
   const yardConfig = YARD_CONFIG[status];
   const needsYard  = !!yardConfig;
 
-  // Always fetch ALL sites with site_type
   useEffect(() => {
     dbu.from("sites")
       .select("id,name,code,region,site_type")
@@ -70,7 +84,6 @@ function StatusModal({ equip, isClerk, onClose, onSave }: {
       .then(({ data }: { data: any[] | null }) => setAllSites(data || []));
   }, []);
 
-  // Filter yards based on selected status
   useEffect(() => {
     const config = YARD_CONFIG[status];
     if (!config) { setFilteredYards([]); return; }
@@ -89,7 +102,6 @@ function StatusModal({ equip, isClerk, onClose, onSave }: {
     (s.region||"").toLowerCase().includes(search.toLowerCase())
   );
 
-  // Show same region sites first
   const sameRegion = filteredSites.filter(s => s.region === equip.region);
   const otherSites = filteredSites.filter(s => s.region !== equip.region);
   const sortedSites = [...sameRegion, ...otherSites];
@@ -130,7 +142,6 @@ function StatusModal({ equip, isClerk, onClose, onSave }: {
             </div>
           )}
 
-          {/* Status options */}
           <div className="space-y-2">
             {availableStatuses.map(s => (
               <label key={s}
@@ -152,7 +163,6 @@ function StatusModal({ equip, isClerk, onClose, onSave }: {
             ))}
           </div>
 
-          {/* Yard / Location selector */}
           {needsYard && (
             <div className="border-t border-slate-100 pt-4 space-y-3">
               <div>
@@ -256,24 +266,138 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+// Small labeled fact used inside the transfer cards below
+function Fact({ label, value }: { label: string; value?: any }) {
+  return (
+    <div>
+      <p className="text-slate-400 text-[10px] uppercase tracking-wide">{label}</p>
+      <p className="font-semibold text-slate-800 mt-0.5">{value || "—"}</p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// TRANSFERS TAB — the comprehensive dispatched/approved/received
+// trail per equipment, sourced straight from the `transfers` table
+// (no new table — this data already exists, just wasn't surfaced
+// per-equipment before).
+// ─────────────────────────────────────────────────────────────
+function TransfersTab({ transfers }: { transfers: any[] }) {
+  if (transfers.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 px-6 py-16 text-center text-slate-400 text-sm">
+        This equipment has never been transferred between sites.
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+      <div className="px-6 py-5 border-b border-slate-100">
+        <h3 className="font-bold text-slate-800">Transfer History</h3>
+        <p className="text-slate-400 text-sm">Every site-to-site movement — who dispatched, who approved, who received</p>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {transfers.map((t: any) => {
+          const isPendingApproval = t.approval_status === "Pending Approval";
+          const isRejected        = t.approval_status === "Rejected";
+          return (
+            <div key={t.id} className="px-6 py-5">
+              {/* Header — from/to, type, current status */}
+              <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-slate-800 text-sm">{t.from_site}</span>
+                  <span className="text-slate-300">→</span>
+                  <span className="font-bold text-slate-800 text-sm">{t.to_site}</span>
+                  <span className={`px-2 py-0.5 rounded-lg text-xs font-medium ${
+                    t.transfer_type === "Final Release" ? "bg-red-50 text-red-600" : "bg-blue-50 text-blue-600"
+                  }`}>{t.transfer_type}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${TRANSFER_STATUS_STYLE[t.status] || "bg-slate-100 text-slate-500"}`}>
+                    {t.status}
+                  </span>
+                  <button onClick={() => printTransfer(t)}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium">
+                    🖨 Print
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* Dispatched */}
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <p className="text-[11px] font-bold text-amber-600 uppercase tracking-wider mb-3">🚚 Dispatched</p>
+                  <div className="space-y-2.5 text-xs">
+                    <Fact label="Officer" value={t.dispatching_officer} />
+                    <Fact label="Plant Engineer" value={t.dispatching_plant_engineer} />
+                    <Fact label="Date" value={fmtDateTime(t.transfer_date)} />
+                    <Fact label="Condition" value={t.equipment_condition_dispatch} />
+                    <Fact label="Transport" value={t.transport_mode} />
+                  </div>
+                </div>
+
+                {/* Approved */}
+                <div className={`rounded-xl p-4 border ${
+                  isRejected ? "bg-red-50 border-red-200" :
+                  isPendingApproval ? "bg-orange-50 border-orange-200" :
+                  "bg-blue-50 border-blue-200"
+                }`}>
+                  <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 ${
+                    isRejected ? "text-red-600" : isPendingApproval ? "text-orange-600" : "text-blue-600"
+                  }`}>
+                    {isRejected ? "✗ Rejected" : isPendingApproval ? "⏳ Awaiting Approval" : "✓ Approved"}
+                  </p>
+                  <div className="space-y-2.5 text-xs">
+                    <Fact label="By" value={t.approved_by} />
+                    <Fact label="Date" value={t.approved_at ? fmtDateTime(t.approved_at) : "—"} />
+                    <Fact label="Initiated By" value={t.initiated_by || t.dispatching_officer} />
+                    {t.approval_note && <Fact label="Note" value={t.approval_note} />}
+                  </div>
+                </div>
+
+                {/* Received */}
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                  <p className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider mb-3">📥 Received</p>
+                  <div className="space-y-2.5 text-xs">
+                    <Fact label="Officer" value={t.receiving_officer} />
+                    <Fact label="Plant Engineer" value={t.receiving_plant_engineer} />
+                    <Fact label="Date" value={t.receival_date ? fmtDateTime(t.receival_date) : "—"} />
+                    <Fact label="Condition" value={t.equipment_condition_receipt} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────
 // MAIN PAGE
 // ─────────────────────────────────────────────────────────────
 export default function EquipmentDetailPage() {
-  const params      = useParams();
-  const code        = params?.code as string;
-  const router      = useRouter();
-  const { profile } = useAuth();
+  const params        = useParams();
+  const code          = params?.code as string;
+  const router        = useRouter();
+  const searchParams  = useSearchParams();
+  const { profile }   = useAuth();
 
   const [equip,       setEquip]       = useState<any>(null);
   const [history,     setHistory]     = useState<any[]>([]);
   const [maintenance, setMaintenance] = useState<any[]>([]);
   const [logs,        setLogs]        = useState<any[]>([]);
+  const [transfers,   setTransfers]   = useState<any[]>([]);
   const [loading,     setLoading]     = useState(true);
-  const [activeTab,   setActiveTab]   = useState<"overview"|"history"|"maintenance"|"logs">("overview");
+  // Deep-link support — ?tab=transfers jumps straight to the Transfers
+  // tab (used by the quick history icon on the Equipment list).
+  const [activeTab,   setActiveTab]   = useState<"overview"|"history"|"transfers"|"maintenance"|"logs">(
+    () => (searchParams.get("tab") as any) || "overview"
+  );
   const [statusModal, setStatusModal] = useState(false);
 
-  // Allocation state
   const [allocModal,   setAllocModal]   = useState(false);
   const [allocName,    setAllocName]    = useState("");
   const [allocPos,     setAllocPos]     = useState("");
@@ -288,14 +412,16 @@ export default function EquipmentDetailPage() {
         .from("equipment").select("*").eq("code", fleetCode).single();
       if (!equipData) { router.push("/equipment"); return; }
       setEquip(equipData);
-      const [histRes, maintRes, logRes] = await Promise.all([
+      const [histRes, maintRes, logRes, transferRes] = await Promise.all([
         dbu.from("equipment_history").select("*").eq("equipment_id", equipData.id).order("created_at", { ascending: false }),
         dbu.from("maintenance").select("*").eq("equipment_id", equipData.id).order("created_at", { ascending: false }),
         dbu.from("daily_logs").select("*").eq("fleet_no", fleetCode).order("log_date", { ascending: false }).limit(30),
+        dbu.from("transfers").select("*").eq("equipment_id", equipData.id).order("transfer_date", { ascending: false }),
       ]);
       setHistory(histRes.data || []);
       setMaintenance(maintRes.data || []);
       setLogs(logRes.data || []);
+      setTransfers(transferRes.data || []);
       setLoading(false);
     }
     load();
@@ -406,6 +532,7 @@ export default function EquipmentDetailPage() {
   const tabs = [
     { key: "overview",    label: "Overview" },
     { key: "history",     label: "History",     count: history.length },
+    { key: "transfers",   label: "Transfers",    count: transfers.length },
     { key: "maintenance", label: "Maintenance",  count: maintenance.length },
     { key: "logs",        label: "Daily Logs",   count: logs.length },
   ] as const;
@@ -466,7 +593,6 @@ export default function EquipmentDetailPage() {
               </div>
             </div>
 
-            {/* Action buttons */}
             {canSeeStatus && (
               <div className="flex gap-2 flex-wrap">
                 <button onClick={() => setStatusModal(true)}
@@ -549,7 +675,6 @@ export default function EquipmentDetailPage() {
               )}
             </Section>
 
-            {/* Allocation Section */}
             <Section title="Equipment Allocation">
               <InfoRow label="Allocated To" value={equip.allocated_to} />
               <InfoRow label="Position"     value={equip.allocated_position} />
@@ -624,6 +749,9 @@ export default function EquipmentDetailPage() {
           )}
         </div>
       )}
+
+      {/* TRANSFERS — new comprehensive dispatched/approved/received tab */}
+      {activeTab === "transfers" && <TransfersTab transfers={transfers} />}
 
       {/* MAINTENANCE */}
       {activeTab === "maintenance" && (
@@ -700,7 +828,6 @@ export default function EquipmentDetailPage() {
                         {new Date(l.log_date).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}
                       </td>
                       <td className="px-5 py-3 text-slate-500 text-xs max-w-35 truncate">{l.site}</td>
-                      {/* S = Storage (was idle_hours in DB) */}
                       <td className="px-5 py-3 text-slate-500 font-medium text-xs">{l.idle_hours||"—"}</td>
                       <td className="px-5 py-3 text-emerald-600 font-bold text-xs">{l.working_hours||"—"}</td>
                       <td className="px-5 py-3 text-red-500 font-medium text-xs">{l.breakdown_hours||"—"}</td>
@@ -729,7 +856,6 @@ export default function EquipmentDetailPage() {
         />
       )}
 
-      {/* Allocation Modal */}
       {allocModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
