@@ -769,11 +769,14 @@ export default function CommissioningPage() {
         </div>
         <div className="overflow-auto max-h-[60vh]">
           <table className="w-full text-sm min-w-225">
-            <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
+            <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-20">
               <tr>
                 {["Fleet No.","Description","Category","Make","Model",
-                  "Site","Region","Hire Rate","Comm. Date","Condition","Status",""].map(h => (
-                  <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  "Site","Region","Hire Rate","Comm. Date","Condition","Status",""].map((h, i) => (
+                  <th key={h}
+                    className={`text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap ${
+                      i === 0 ? "sticky left-0 z-30 bg-slate-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]" : ""
+                    }`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -790,7 +793,7 @@ export default function CommissioningPage() {
                 const live = liveStatus[item.fleet_number];
                 return (
                 <tr key={item.id} className="hover:bg-amber-50/30 transition-colors group">
-                  <td className="px-5 py-4 font-bold text-amber-600 font-mono text-xs">{item.fleet_number}</td>
+                  <td className="px-5 py-4 font-bold text-amber-600 font-mono text-xs sticky left-0 z-10 bg-white group-hover:bg-amber-50/30 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]">{item.fleet_number}</td>
                   <td className="px-5 py-4 text-slate-700 max-w-50 truncate">{item.description}</td>
                   <td className="px-5 py-4 text-slate-500 text-xs">{item.category}</td>
                   <td className="px-5 py-4 text-slate-600">{item.make}</td>
