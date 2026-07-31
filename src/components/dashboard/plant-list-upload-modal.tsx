@@ -26,32 +26,42 @@ function extractRegion(location: string): string {
   return "Nigeria";
 }
 
-// Map raw condition / operational status from the plant list
-// to BuildFleet's assessment values
-function mapCondition(raw: string): string {
-  const r = (raw || "").toLowerCase().trim();
-  if (r === "working")      return "Good";
-  if (r === "idle")         return "Fair";
-  if (r === "break down")   return "Poor-Fair";
-  if (r === "scrapped")     return "Scrapped";
-  if (r === "stand by")     return "Fair-Good";
-  if (r === "under repair") return "Poor-Fair";
-  if (r === "storage")      return "Fair";
+// The master list has TWO separate columns discovered from the real file:
+//   Assessment = condition rating  (Good, Scrapped, Very Poor, Brand New...)
+//   Condition  = operational state (Working, Idle, Break Down, Disposed...)
+// Both must be read — Assessment carries the 95 Scrapped machines that a
+// Condition-only read completely misses.
+
+// Assessment column → BuildFleet assessment value
+function mapAssessment(assessRaw: string, condRaw: string): string {
+  const a = (assessRaw || "").toLowerCase().trim();
   const map: Record<string, string> = {
-    "very good": "Very Good", "good": "Good", "fair-good": "Fair-Good",
-    "fair": "Fair", "poor-fair": "Poor-Fair", "poor": "Poor", "scrapped": "Scrapped",
+    "very good": "Very Good", "good": "Good", "new": "Very Good",
+    "brand new": "Very Good", "fair-good": "Fair-Good", "fair good": "Fair-Good",
+    "fair": "Fair", "poor-fair": "Poor-Fair", "poor": "Poor",
+    "very poor": "Poor", "accident": "Poor",
+    "scrapped": "Scrapped", "deleted": "Scrapped", "cannibalized": "Scrapped",
   };
-  return map[r] || "Good";
+  if (map[a]) return map[a];
+  // No assessment given — fall back to a guess from operational state
+  const c = (condRaw || "").toLowerCase().trim();
+  if (c === "disposed") return "Scrapped";
+  if (c === "break down") return "Poor-Fair";
+  return "Good";
 }
 
-// Map raw condition to operational_status used in the equipment table
-function mapOperationalStatus(raw: string): string {
-  const r = (raw || "").toLowerCase().trim();
-  if (r === "working")      return "Working";
-  if (r === "break down")   return "Break Down";
-  if (r === "scrapped")     return "Scrapped";
-  if (r === "under repair") return "Under Repair";
-  if (r === "storage" || r === "idle" || r === "stand by") return "Storage";
+// Assessment + Condition → operational_status
+function mapOperationalStatus(assessRaw: string, condRaw: string): string {
+  const a = (assessRaw || "").toLowerCase().trim();
+  const c = (condRaw || "").toLowerCase().trim();
+  // Scrapped-class assessment or Disposed condition overrides everything —
+  // a machine assessed as scrapped is scrapped even if its last recorded
+  // operational state was "Break Down" or "Idle".
+  if (["scrapped", "deleted", "cannibalized"].includes(a) || c === "disposed") return "Scrapped";
+  if (c === "working" || c === "testing") return "Working";
+  if (c === "break down")   return "Break Down";
+  if (c === "under repair") return "Under Repair";
+  if (c === "idle" || c === "storage" || c === "stand by") return "Storage";
   return "Working";
 }
 
@@ -316,7 +326,8 @@ export function PlantListUploadModal({ open, onClose }: {
       const fn       = row["_fleet"];
       const projCode = (row["proj code"] || row["projcode"] || "").trim();
       const rawDate  = row["date comm."] || row["datecomm"] || row["date comm"] || "";
-      const rawCond  = row["condition"] || row["assessment"] || "";
+      const rawAssess = row["assessment"] || "";
+      const rawCond   = row["condition"] || "";
       const desc     = (row["type"] || row["descriptio"] || "").slice(0, 200);
 
       // Look up the new site using the old proj code
@@ -336,9 +347,9 @@ export function PlantListUploadModal({ open, onClose }: {
         equipUpdate.commission_date = commDate;
       }
 
-      if (rawCond) {
-        equipUpdate.assessment         = mapCondition(rawCond);
-        equipUpdate.operational_status = mapOperationalStatus(rawCond);
+      if (rawCond || rawAssess) {
+        equipUpdate.assessment         = mapAssessment(rawAssess, rawCond);
+        equipUpdate.operational_status = mapOperationalStatus(rawAssess, rawCond);
       }
 
       if (desc) {
@@ -364,7 +375,7 @@ export function PlantListUploadModal({ open, onClose }: {
           if (siteMatch)   commUpdate.location          = siteMatch.name;
           if (siteMatch)   commUpdate.region            = siteMatch.region;
           if (commDate)    commUpdate.date_commissioned = commDate;
-          if (rawCond)     commUpdate.equipment_condition = mapCondition(rawCond);
+          if (rawCond || rawAssess) commUpdate.equipment_condition = mapAssessment(rawAssess, rawCond);
 
           if (Object.keys(commUpdate).length > 0) {
             await dbu.from("commissioning")
@@ -389,12 +400,18 @@ export function PlantListUploadModal({ open, onClose }: {
     // Same logic as before but now we use proj code → site name mapping
     const BATCH = 50; // insert 50 at a time to avoid timeouts
     const newRecords: any[] = [];
+    // fleet_number → operational status, used when creating the equipment
+    // rows after commissioning returns (assessment alone can't carry the
+    // Working/Idle/Break Down distinction).
+    const opMap: Record<string, string> = {};
 
     for (const row of toInsert) {
       const fn       = row["_fleet"];
       const projCode = (row["proj code"] || row["projcode"] || "").trim();
       const rawDate  = row["date comm."] || row["datecomm"] || row["date comm"] || "";
-      const rawCond  = row["condition"] || row["assessment"] || "";
+      const rawAssess = row["assessment"] || "";
+      const rawCond   = row["condition"] || "";
+      opMap[fn] = mapOperationalStatus(rawAssess, rawCond);
       const desc     = (row["type"] || row["descriptio"] || fn).slice(0, 200).trim();
       const make     = (row["make"] || "Unknown").trim();
       const model    = (row["model"] || "").trim();
@@ -431,7 +448,7 @@ export function PlantListUploadModal({ open, onClose }: {
         life_expectancy:       "",
         date_received:         null,
         date_commissioned:     commDate ||  null,
-        equipment_condition:   mapCondition(rawCond),
+        equipment_condition:   mapAssessment(rawAssess, rawCond),
         depreciation:          "",
         condition_at_receipt:  "Second Hand",
         supplier:              "",
@@ -497,8 +514,8 @@ export function PlantListUploadModal({ open, onClose }: {
             meter_device:          c.meter_device || "Hours",
             site:                  c.location || "",
             region:                c.region || "",
-            operational_status:    mapOperationalStatus(c.equipment_condition || ""),
-            assessment:            mapCondition(c.equipment_condition || ""),
+            operational_status:    opMap[c.fleet_number] || "Working",
+            assessment:            c.equipment_condition || "Good",
             fleet_status:          c.fleet_status || "Addition",
             current_hour_meter:    c.opening_hour_meter || 0,
             current_kilometer:     c.opening_kilometer || 0,
