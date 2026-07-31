@@ -5,6 +5,7 @@
 import { useState, useRef } from "react";
 import { dbu } from "@/lib/db";
 import { useAuth } from "@/hooks/use-auth";
+import { fetchAllRows } from "@/lib/fetch-all";
 
 // ─────────────────────────────────────────────────────────────
 // HELPER FUNCTIONS
@@ -234,10 +235,13 @@ export function PlantListUploadModal({ open, onClose }: {
       setAllRows(deduped);
 
       // ── Check which fleet numbers already exist in the DB ──
-      // We fetch ALL fleet numbers from equipment table in one query
-      const { data: existingData } = await dbu
-        .from("equipment")
-        .select("fleet_number");
+      // ★ FIX: Supabase caps every query at 1,000 rows. The old
+      // single .select() silently returned only the first 1,000 of
+      // 1,438 fleet numbers — so 438 real equipment were misread as
+      // "new", sent down the INSERT path, and failed on duplicate
+      // keys (the "438 Failed" you saw). fetchAllRows pages through
+      // .range() windows until it has EVERY row.
+      const existingData = await fetchAllRows("equipment", "fleet_number");
 
       const existingSet = new Set(
         (existingData || []).map((e: any) => e.fleet_number)
@@ -278,11 +282,10 @@ export function PlantListUploadModal({ open, onClose }: {
     setFailed(0);
 
     // ── Fetch sites table to build proj_code → site lookup ──
-    // This is the key improvement: instead of hardcoding the mapping,
-    // we read from our own sites table where legacy_code = old Hartland proj code
-    const { data: sitesData } = await dbu
-      .from("sites")
-      .select("legacy_code, name, region, code");
+    // ★ FIX: paginated too — 243 sites today is under the cap, but
+    // the moment it grows past 1,000 this would silently truncate
+    // the mapping. Same helper, future-proof.
+    const sitesData = await fetchAllRows("sites", "legacy_code, name, region, code");
 
     // Build a map: old_proj_code → { name, region, code }
     const projToSite: Record<string, { name: string; region: string; code: string }> = {};

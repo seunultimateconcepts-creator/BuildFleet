@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { dbu } from "@/lib/db";
 import { useAuth } from "@/hooks/use-auth";
+import { fetchAllRows } from "@/lib/fetch-all";
 
 export function useEquipment() {
   const [equipment, setEquipment] = useState<any[]>([]);
@@ -21,16 +22,18 @@ export function useEquipment() {
     const isRestricted = (isClerk || isSupervisor) && !hasFullAccess;
     const assignedSites = profile?.assigned_sites || [];
 
-    let query = dbu.from("equipment").select("*").order("fleet_number", { ascending: true });
+    // ★ FIX: Supabase caps every query at 1,000 rows — with 1,438+
+    // equipment, the old single .select() silently dropped the rest.
+    // fetchAllRows pages through .range() windows until it has all.
+    const data = await fetchAllRows("equipment", "*", q => {
+      let query = q.order("fleet_number", { ascending: true });
+      if (isRestricted && assignedSites.length > 0) {
+        query = query.in("site", assignedSites);
+      }
+      return query;
+    });
 
-    // Filter by assigned sites for clerks and supervisors
-    if (isRestricted && assignedSites.length > 0) {
-      query = query.in("site", assignedSites);
-    }
-
-    const { data, error: err } = await query;
-    if (err) { setError(err.message); setLoading(false); return; }
-    setEquipment(data || []);
+    setEquipment(data);
     setLoading(false);
   }
 

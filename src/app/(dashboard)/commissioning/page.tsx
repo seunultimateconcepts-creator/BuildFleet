@@ -9,6 +9,7 @@ import { useSites } from "@/hooks/use-sites";
 import { useAuth } from "@/hooks/use-auth";
 import { PlantListUploadModal } from "@/components/dashboard/plant-list-upload-modal";
 import { dbu } from "@/lib/db";
+import { fetchAllRows } from "@/lib/fetch-all";
 
 const EQUIPMENT_CONDITIONS = [
   "Very Good","Good","Fair-Good","Fair","Poor-Fair","Poor","Scrapped",
@@ -608,7 +609,15 @@ function NewCommissionModal({ open, onClose }: { open: boolean; onClose: () => v
 // ─────────────────────────────────────────────────────────────
 export default function CommissioningPage() {
   const { commissioningRecords, loading, fetchRecords } = useCommissioning();
-  const { canCommission }                               = useAuth();
+  const { canCommission, profile }                      = useAuth();
+
+  // ── SECURITY: bulk plant list upload is the single most destructive
+  // action in BuildFleet — it can overwrite the entire equipment
+  // register in one click. Locked to super_admin ONLY (not even
+  // plant_admin/plant_manager), as a deliberate insider-threat guard:
+  // once BuildFleet is acquired, an aggrieved staff member must not be
+  // able to reset live operational data via a bulk upload.
+  const isSuperAdmin = ((profile?.roles as string[]) || []).includes("super_admin");
   const [modal,      setModal]      = useState<"new"|"upload"|null>(null);
   const [editRecord, setEditRecord] = useState<any>(null);
   const [search,     setSearch]     = useState("");
@@ -624,8 +633,9 @@ export default function CommissioningPage() {
 
   useEffect(() => {
     async function loadLiveStatus() {
-      const { data } = await dbu.from("equipment")
-        .select("fleet_number,operational_status,current_yard");
+      // ★ FIX: paginated — a single select caps at 1,000 rows, which
+      // silently dropped live status for 438 of the 1,438 equipment.
+      const data = await fetchAllRows("equipment", "fleet_number,operational_status,current_yard");
       const map: Record<string, { status: string; yard: string }> = {};
       (data || []).forEach((e: any) => {
         map[e.fleet_number] = { status: e.operational_status, yard: e.current_yard || "" };
@@ -687,10 +697,12 @@ export default function CommissioningPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3 shrink-0">
-          <button onClick={() => setModal("upload")}
-            className="border border-slate-200 bg-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50 flex items-center gap-2">
-            📊 Upload Plant List
-          </button>
+          {isSuperAdmin && (
+            <button onClick={() => setModal("upload")}
+              className="border border-slate-200 bg-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50 flex items-center gap-2">
+              📊 Upload Plant List
+            </button>
+          )}
           <button onClick={exportRegister}
             className="border border-slate-200 bg-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50 flex items-center gap-2">
             ↓ Export Register
@@ -835,7 +847,7 @@ export default function CommissioningPage() {
       </div>
 
       <NewCommissionModal   open={modal === "new"}    onClose={() => setModal(null)} />
-      <PlantListUploadModal open={modal === "upload"} onClose={() => setModal(null)} />
+      <PlantListUploadModal open={modal === "upload" && isSuperAdmin} onClose={() => setModal(null)} />
 
       {editRecord && (
         <EditDateModal
