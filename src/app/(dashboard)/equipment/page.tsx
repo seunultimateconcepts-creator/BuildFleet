@@ -760,11 +760,14 @@ export default function EquipmentPage() {
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
           <div className="overflow-auto max-h-[70vh]">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
+              <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-20">
                 <tr>
                   {["Fleet No.","Description","Category","Make / Model","Allocated To","Department",
-                    "Site","Region","Status","Yard / Location","Condition","Hr Meter / Km","Actions"].map(h => (
-                    <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                    "Site","Region","Status","Yard / Location","Condition","Hr Meter / Km","Actions"].map((h, i) => (
+                    <th key={h}
+                      className={`text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap ${
+                        i === 0 ? "sticky left-0 z-30 bg-slate-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]" : ""
+                      }`}>
                       {h}
                     </th>
                   ))}
@@ -779,7 +782,7 @@ export default function EquipmentPage() {
                   </td></tr>
                 ) : filtered.map(item => (
                   <tr key={item.id} className="hover:bg-amber-50/30 transition-colors group">
-                    <td className="px-5 py-4">
+                    <td className="px-5 py-4 sticky left-0 z-10 bg-white group-hover:bg-amber-50/30 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]">
                       <Link href={`/equipment/${item.code}`}
                         className="font-bold text-amber-600 hover:text-amber-700 font-mono text-xs hover:underline">
                         {item.fleet_number}
