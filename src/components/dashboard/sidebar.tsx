@@ -30,11 +30,11 @@ const navItems = [
   },
   { label: "Tire Management", href: "/tires",     icon: CircleDot, badge: "TMS", roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
   {
-    label: "Inventory", icon: Package, badge: "NEW",
+    label: "Store", icon: Package, badge: "NEW",
     roles: ["super_admin","store_officer","store_manager","store_supervisor","procurement_officer","procurement_manager",
             "plant_clerk","site_supervisor","plant_engineer","plant_manager","plant_admin","plant_director","executive"],
     children: [
-      { label: "Register",        href: "/store",            icon: Package },
+      { label: "Inventory",        href: "/store",            icon: Package },
       { label: "Filling Station", href: "/filling-station",   icon: Fuel },
       { label: "Movable Units",   href: "/movable-units",     icon: PackageCheck },
     ],
