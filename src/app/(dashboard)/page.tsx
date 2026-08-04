@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
@@ -21,6 +20,7 @@ type ChartRange = "7d" | "30d" | "90d";
 // hold a plant management-tier role, in which case they still get the
 // full fleet overview as their primary job.
 const STORE_ROLES = ["store_officer", "store_manager", "store_supervisor"];
+const PROCUREMENT_ROLES = ["procurement_officer", "procurement_manager"];
 const PLANT_OVERRIDE_ROLES = ["plant_admin", "plant_manager", "plant_director", "plant_engineer", "super_admin"];
 
 // ─────────────────────────────────────────────────────────────
@@ -228,6 +228,123 @@ function StoreDashboard({ profile, roles }: { profile: any; roles: string[] }) {
 // ─────────────────────────────────────────────────────────────
 // CUSTOM TOOLTIP for the wave chart
 // ─────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════
+// PROCUREMENT DASHBOARD — what a Procurement Officer/Manager sees
+// instead of the Plant fleet dashboard.
+// ═════════════════════════════════════════════════════════════
+function ProcurementDashboard({ profile }: { profile: any }) {
+  const [loading, setLoading] = useState(true);
+  const [comparisons, setComparisons] = useState<any[]>([]);
+  const [purchases, setPurchases] = useState<any[]>([]);
+
+  useEffect(() => { load(); }, []); // eslint-disable-line
+  async function load() {
+    setLoading(true);
+    const [c, p] = await Promise.all([
+      fetchAllRows("purchase_comparisons", "*", (q:any) => q.order("created_at",{ascending:false})),
+      fetchAllRows("purchases", "*", (q:any) => q.order("purchase_date",{ascending:false})),
+    ]);
+    setComparisons(c); setPurchases(p);
+    setLoading(false);
+  }
+
+  const month = new Date().toISOString().slice(0,7);
+  const monthPurchases = purchases.filter((p:any) => (p.purchase_date||"").startsWith(month));
+  const monthTotal = monthPurchases.reduce((s,p:any) => s + Number(p.amount||0), 0);
+  const pendingCheck = comparisons.filter((c:any) => c.status === "Draft").length;
+  const pendingApprove = comparisons.filter((c:any) => c.status === "Checked").length;
+
+  const bySupplier: Record<string, number> = {};
+  monthPurchases.forEach((p:any) => { bySupplier[p.supplier||"—"] = (bySupplier[p.supplier||"—"]||0) + Number(p.amount||0); });
+  const topSuppliers = Object.entries(bySupplier).sort((a,b)=>b[1]-a[1]).slice(0,6);
+
+  const recentComparisons = comparisons.slice(0, 8);
+
+  return (
+    <div className="space-y-6 pb-10">
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-1">Procurement Overview</p>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
+            {profile ? `Welcome, ${profile.full_name.split(" ")[0]}` : "Dashboard"}
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">
+            {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard title="Spend This Month" value={loading?"...":naira(monthTotal)} sub={`${monthPurchases.length} purchases`} color="dark" link="/procurement" />
+        <KpiCard title="Awaiting Check"    value={loading?"...":pendingCheck}     sub="Draft comparisons"    color="amber" link="/procurement" />
+        <KpiCard title="Awaiting Approval" value={loading?"...":pendingApprove}   sub="Checked, need sign-off" color="blue" link="/procurement" />
+        <KpiCard title="Total Comparisons" value={loading?"...":comparisons.length} sub="All time"           color="white" link="/procurement" />
+      </div>
+
+      {!loading && (pendingCheck > 0 || pendingApprove > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {pendingCheck > 0 && (
+            <Link href="/procurement" className="bg-amber-50 border border-amber-200 rounded-2xl p-4 hover:bg-amber-100 transition-colors">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📋</span>
+                <div>
+                  <p className="font-bold text-amber-800 text-sm">{pendingCheck} comparison{pendingCheck>1?"s":""} awaiting check</p>
+                  <p className="text-amber-600 text-xs mt-0.5">Click to review supplier quotes</p>
+                </div>
+              </div>
+            </Link>
+          )}
+          {pendingApprove > 0 && (
+            <Link href="/procurement" className="bg-blue-50 border border-blue-200 rounded-2xl p-4 hover:bg-blue-100 transition-colors">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">✅</span>
+                <div>
+                  <p className="font-bold text-blue-800 text-sm">{pendingApprove} comparison{pendingApprove>1?"s":""} awaiting approval</p>
+                  <p className="text-blue-600 text-xs mt-0.5">Click to sign off</p>
+                </div>
+              </div>
+            </Link>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] overflow-hidden">
+          <div className="px-6 py-5 border-b border-slate-100 dark:border-[#1E2235]">
+            <h2 className="font-bold text-slate-800 dark:text-white">Recent Purchase Comparisons</h2>
+          </div>
+          <div className="px-6 py-2">
+            {loading ? <p className="text-slate-400 text-sm py-8 text-center">Loading...</p>
+            : recentComparisons.length === 0 ? <p className="text-slate-400 text-sm py-8 text-center">No comparisons yet.</p>
+            : recentComparisons.map((c:any) => (
+              <ActivityItem key={c.id} icon="📋"
+                title={`${c.sro_number||"—"} — ${c.selected_supplier||"No supplier selected"}`}
+                sub={`${c.status} · ${naira(c.total_amount)}`}
+                time={timeAgo(c.created_at)} />
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 dark:border-[#1E2235]">
+            <h3 className="font-bold text-slate-800 dark:text-white text-sm">Top Suppliers — {month}</h3>
+          </div>
+          <div className="p-5 space-y-3">
+            {loading ? <p className="text-slate-400 text-xs text-center py-4">Loading...</p>
+            : topSuppliers.length === 0 ? <p className="text-slate-400 text-xs text-center py-4">No spend this month yet.</p>
+            : topSuppliers.map(([s,amt]) => (
+              <div key={s} className="flex items-center justify-between text-xs">
+                <span className="text-slate-600 dark:text-slate-300 truncate max-w-32">{s}</span>
+                <span className="font-bold text-slate-800 dark:text-white">{naira(amt)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
@@ -487,9 +604,10 @@ export default function DashboardPage() {
   }, []);
 
   const isStoreUser = roles.some(r => STORE_ROLES.includes(r)) && !roles.some(r => PLANT_OVERRIDE_ROLES.includes(r));
+  const isProcurementUser = !isStoreUser && roles.some(r => PROCUREMENT_ROLES.includes(r)) && !roles.some(r => PLANT_OVERRIDE_ROLES.includes(r));
 
   useEffect(() => {
-    if (!profileLoaded || isStoreUser) { setLoading(false); return; }
+    if (!profileLoaded || isStoreUser || isProcurementUser) { setLoading(false); return; }
 
     async function load() {
       setLoading(true);
@@ -551,11 +669,14 @@ export default function DashboardPage() {
       }
     }
     load();
-  }, [profileLoaded, isStoreUser]); // eslint-disable-line
+  }, [profileLoaded, isStoreUser, isProcurementUser]); // eslint-disable-line
 
   // ── Route to the Store dashboard, entirely separate content ──
   if (profileLoaded && isStoreUser) {
     return <StoreDashboard profile={profile} roles={roles} />;
+  }
+  if (profileLoaded && isProcurementUser) {
+    return <ProcurementDashboard profile={profile} />;
   }
 
   // ── Everything below is the ORIGINAL Plant dashboard, unchanged ──

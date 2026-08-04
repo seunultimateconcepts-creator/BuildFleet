@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable react-hooks/exhaustive-deps */
-/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -420,7 +417,7 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
         if (mine) setActingStore(mine);
       }
     });
-  }, []); 
+  }, []); // eslint-disable-line
 
   useEffect(() => {
     if (!actingStore) { setStoreBalances([]); return; }
@@ -487,8 +484,41 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
       status: available > 0 ? "Pending Store Manager" : "To Procurement",
       availability_checked_by: profile?.full_name,
     }).eq("id", item.id);
-    await logHistory(available > 0 ? "Availability Confirmed" : "Routed to Procurement",
-      `${available} of ${item.qty_requested} available at ${actingStore}${shortfall > 0 ? `, ${shortfall} short` : ""}`, item.id);
+
+    // ★ CLOSES THE LOOP: a shortfall used to just tell someone to go
+    // manually create a comparison on the Procurement page. Now it's
+    // auto-created as a Draft, pre-filled with the item, quantity, and
+    // SRO number — Procurement opens it and just fills in the quotes.
+    if (shortfall > 0) {
+      const { data: comp } = await dbu.from("purchase_comparisons").insert([{
+        sro_number: sro.sro_number,
+        site: sro.site,
+        fleet_number: sro.fleet_number,
+        line_items: [{
+          part_no: item.part_number || "",
+          description: item.item_description,
+          qty: shortfall,
+          fleet_number: sro.fleet_number || "",
+          site: sro.site || "",
+          avg_price: "", last_purchase_price: "",
+          quotes: [
+            { supplier:"", brand:"", country:"", offered_price:"", negotiated_price:"" },
+            { supplier:"", brand:"", country:"", offered_price:"", negotiated_price:"" },
+            { supplier:"", brand:"", country:"", offered_price:"", negotiated_price:"" },
+          ],
+          selected_supplier: "",
+        }],
+        status: "Draft",
+        prepared_by: profile?.full_name || "",
+        remarks: `Auto-created from ${sro.sro_number} shortfall — ${item.item_description} (${shortfall} short at ${actingStore})`,
+      }]).select().single();
+      if (comp) {
+        await logHistory("Routed to Procurement", `${shortfall} short — draft comparison auto-created for Procurement to review`, item.id);
+      }
+    }
+    if (available > 0) {
+      await logHistory("Availability Confirmed", `${available} of ${item.qty_requested} available at ${actingStore}`, item.id);
+    }
     setSaving(false); load();
   }
 
@@ -526,7 +556,7 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
     if (!loading && items.length > 0 && items.every(i => ["Issued","Rejected"].includes(i.status))) {
       dbu.from("sro").update({ status: "Completed" }).eq("id", sro.id).then(() => {});
     }
-  }, [items]); 
+  }, [items]); // eslint-disable-line
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start justify-center z-50 p-4 overflow-y-auto">
@@ -585,7 +615,7 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
                     </div>
                   ) : (
                     <select className={iCls} value={actingStore} onChange={e=>setActingStore(e.target.value)}>
-                      <option value="">Select the store you&apos;re checking from...</option>
+                      <option value="">Select the store you're checking from...</option>
                       {stores.map(s => <option key={s}>{s}</option>)}
                     </select>
                   )}
@@ -605,7 +635,7 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
                     {sro.status === "At Store" && item.status === "Pending" && canCheckAvail && (
                       <div className="bg-blue-50 rounded-lg p-3 space-y-2">
                         {!actingStore ? (
-                          <p className="text-xs text-blue-700">Select which store you&apos;re checking from, above, before confirming any lines.</p>
+                          <p className="text-xs text-blue-700">Select which store you're checking from, above, before confirming any lines.</p>
                         ) : (
                           <div className="grid grid-cols-3 gap-2">
                             <select className={iCls} value={linkMap[item.id] || ""} onChange={e=>setLinkMap(p=>({...p,[item.id]:e.target.value}))}>
@@ -635,7 +665,7 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
                     )}
                     {item.status === "To Procurement" && (
                       <p className="text-xs text-purple-700">
-                        Not available — routed to Procurement. Create a Purchase Comparison referencing SRO {sro.sro_number} on the Procurement page.
+                        ✓ Not available at {actingStore || "the store"} — a draft Purchase Comparison for {sro.sro_number} was created automatically. Procurement just needs to fill in supplier quotes.
                       </p>
                     )}
                   </div>

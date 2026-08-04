@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable react-hooks/exhaustive-deps */
-/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -279,7 +276,7 @@ function CreateMUModal({ open, onClose, onSaved, profile }: { open: boolean; onC
           <div className="space-y-3">
             <F label="Add Items">
               {!fromLocation ? (
-                <p className="text-sm text-slate-400 italic">Choose a From Location first — items are searched from that store&apos;s real stock.</p>
+                <p className="text-sm text-slate-400 italic">Choose a From Location first — items are searched from that store's real stock.</p>
               ) : (
                 <>
                   <input className={iCls} placeholder="Search item name..." value={itemQuery} onChange={e=>setItemQuery(e.target.value)} />
@@ -319,6 +316,117 @@ function CreateMUModal({ open, onClose, onSaved, profile }: { open: boolean; onC
           <button onClick={handleSubmit} disabled={saving}
             className="px-6 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 disabled:opacity-50">
             {saving ? "Creating..." : "Create MU →"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// PRINT MANIFEST — the multi-MU dispatch document, matching the
+// real photo: header block (Vendor/DA/Phone/Plate/Date + tally),
+// then every selected MU grouped by its own destination. Header
+// fields are captured at print time rather than requiring a full
+// dispatch_runs record first — pragmatic scope for now; a persisted
+// version can follow once this proves useful in practice.
+// ─────────────────────────────────────────────────────────────
+function printManifest(mus: any[], itemCounts: Record<string, number>, header: { vendor: string; da: string; phone: string; plate: string; date: string }) {
+  const byDestination: Record<string, any[]> = {};
+  mus.forEach(m => { (byDestination[m.to_location] = byDestination[m.to_location] || []).push(m); });
+
+  const sections = Object.entries(byDestination).map(([dest, list]) => `
+    <div class="dest-block">
+      <p class="dest-name">${esc(dest)}</p>
+      <table>
+        <thead><tr><th>MU Number</th><th>Items</th><th>Status</th></tr></thead>
+        <tbody>
+          ${list.map(m => `<tr><td style="text-align:left">${esc(m.mu_number)}</td><td>${itemCounts[m.id]||0} package(s)</td><td>${esc(m.status)}</td></tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`).join("");
+
+  const html = `<!DOCTYPE html><html><head><title>Dispatch Manifest</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: Arial, sans-serif; font-size: 11px; padding: 16px; }
+    .header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #080D1A; padding-bottom:10px; margin-bottom:14px; }
+    .logo { font-weight:bold; font-size:16px; }
+    .logo span { color:#F5A623; }
+    h1 { font-size:16px; letter-spacing:1px; text-align:right; }
+    .meta { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px; font-size:11px; background:#F8FAFC; border-radius:8px; padding:12px; }
+    .meta .label { font-size:9px; color:#64748B; font-weight:bold; text-transform:uppercase; }
+    .meta .val { font-weight:600; }
+    .dest-block { margin-bottom:18px; }
+    .dest-name { font-weight:bold; font-size:12px; background:#080D1A; color:#fff; padding:6px 10px; border-radius:6px 6px 0 0; }
+    table { width:100%; border-collapse:collapse; font-size:10px; }
+    th { background:#F1F5F9; border:1px solid #CBD5E1; padding:6px; font-size:9px; text-transform:uppercase; }
+    td { border:1px solid #E2E8F0; padding:6px; text-align:center; }
+    .sig { display:grid; grid-template-columns:1fr 1fr; gap:40px; margin-top:30px; font-size:10px; }
+    .sig-box { border-top:1px solid #000; padding-top:6px; margin-top:36px; }
+    .print-bar { background:#F5A623; padding:10px 20px; display:flex; justify-content:space-between; align-items:center; margin:-16px -16px 16px; }
+    .print-btn { background:#080D1A; color:#fff; border:none; padding:8px 20px; border-radius:6px; font-weight:700; cursor:pointer; }
+    @media print { .print-bar { display:none; } @page { size: A4 portrait; margin: 10mm; } }
+  </style></head><body>
+  <div class="print-bar"><span style="color:#fff;font-weight:700">Dispatch Manifest — ${mus.length} MU(s)</span>
+    <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button></div>
+  <div class="header">
+    <div class="logo">Build<span>Fleet</span><div style="font-size:9px;font-weight:normal;color:#64748B">A product of Ultimate Tech Lab</div></div>
+    <h1>DISPATCH MANIFEST</h1>
+  </div>
+  <div class="meta">
+    <div><span class="label">Vendor</span><div class="val">${esc(header.vendor)||"—"}</div></div>
+    <div><span class="label">DA (Driver)</span><div class="val">${esc(header.da)||"—"}</div></div>
+    <div><span class="label">Phone No.</span><div class="val">${esc(header.phone)||"—"}</div></div>
+    <div><span class="label">Plate No.</span><div class="val">${esc(header.plate)||"—"}</div></div>
+    <div><span class="label">Date</span><div class="val">${esc(header.date)}</div></div>
+    <div><span class="label">Total MUs</span><div class="val">${mus.length}</div></div>
+  </div>
+  ${sections}
+  <div class="sig">
+    <div><span>Driver Signature</span><div class="sig-box">Name &amp; Date</div></div>
+    <div><span>Receiving Station Signature</span><div class="sig-box">Name &amp; Date</div></div>
+  </div>
+  </body></html>`;
+
+  const w = window.open("", "_blank", "width=900,height=800");
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
+// ─────────────────────────────────────────────────────────────
+// MANIFEST HEADER MODAL — captures Vendor/DA/Phone/Plate/Date
+// ─────────────────────────────────────────────────────────────
+function ManifestHeaderModal({ open, onClose, onGenerate, selectedCount }: {
+  open: boolean; onClose: () => void; onGenerate: (h: any) => void; selectedCount: number;
+}) {
+  const [vendor, setVendor] = useState("");
+  const [da, setDa] = useState("");
+  const [phone, setPhone] = useState("");
+  const [plate, setPlate] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().slice(0,10));
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+        <div className="px-6 py-5 bg-slate-900">
+          <h2 className="text-lg font-bold text-white">Manifest Details</h2>
+          <p className="text-slate-400 text-xs mt-0.5">{selectedCount} MU(s) selected</p>
+        </div>
+        <div className="p-6 space-y-3">
+          <F label="Vendor"><input className={iCls} value={vendor} onChange={e=>setVendor(e.target.value)} /></F>
+          <F label="DA (Driver)"><input className={iCls} value={da} onChange={e=>setDa(e.target.value)} /></F>
+          <div className="grid grid-cols-2 gap-3">
+            <F label="Phone No."><input className={iCls} value={phone} onChange={e=>setPhone(e.target.value)} /></F>
+            <F label="Plate No."><input className={iCls} value={plate} onChange={e=>setPlate(e.target.value)} /></F>
+          </div>
+          <F label="Date"><input type="date" className={iCls} value={date} onChange={e=>setDate(e.target.value)} /></F>
+        </div>
+        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+          <button onClick={onClose} className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-500">Cancel</button>
+          <button onClick={()=>onGenerate({vendor,da,phone,plate,date:new Date(date).toLocaleDateString("en-GB")})}
+            className="px-6 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600">
+            🖨 Generate Manifest
           </button>
         </div>
       </div>
@@ -562,7 +670,7 @@ function MUDetailModal({ mu: initialMu, onClose, onSaved, profile, roles }: {
 
               <label className="flex items-center gap-2 pt-2 border-t border-emerald-100">
                 <input type="checkbox" checked={showDeficit} onChange={e=>setShowDeficit(e.target.checked)} className="accent-red-500" />
-                <span className="text-xs text-slate-600">There&apos;s a shortage / deficit</span>
+                <span className="text-xs text-slate-600">There's a shortage / deficit</span>
               </label>
               {showDeficit && (
                 <textarea className={iCls + " h-16 resize-none"} placeholder="Describe the deficit..." value={deficitNote} onChange={e=>setDeficitNote(e.target.value)} />
@@ -637,6 +745,8 @@ export default function MovableUnitsPage() {
   const [createModal, setCreateModal] = useState(false);
   const [selected, setSelected] = useState<any>(null);
   const [filterStatus, setFilterStatus] = useState("");
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [manifestModal, setManifestModal] = useState(false);
 
   useEffect(() => { load(); }, []);
   async function load() {
@@ -644,6 +754,21 @@ export default function MovableUnitsPage() {
     const data = await fetchAllRows("movable_units", "*", q => q.order("created_at", { ascending: false }));
     setMus(data);
     setLoading(false);
+  }
+
+  function toggleCheck(id: string) {
+    setChecked(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  }
+
+  async function generateManifest(header: any) {
+    const selectedMUs = mus.filter((m:any) => checked.has(m.id));
+    const counts: Record<string, number> = {};
+    for (const m of selectedMUs) {
+      const { count } = await dbu.from("movable_unit_items").select("*", { count: "exact", head: true }).eq("mu_id", m.id);
+      counts[m.id] = count || 0;
+    }
+    printManifest(selectedMUs, counts, header);
+    setManifestModal(false);
   }
 
   const filtered = mus.filter((m:any) => !filterStatus || m.status === filterStatus);
@@ -664,9 +789,16 @@ export default function MovableUnitsPage() {
             Seal, verify, approve once, dispatch, receive — bulk store movement, one sealed unit at a time.
           </p>
         </div>
-        <button onClick={()=>setCreateModal(true)} className="bg-amber-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-600 shadow-sm shrink-0">
-          + Create MU
-        </button>
+        <div className="flex gap-3 shrink-0">
+          {checked.size > 0 && (
+            <button onClick={()=>setManifestModal(true)} className="border border-amber-300 bg-amber-50 text-amber-700 px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-100">
+              🖨 Print Manifest ({checked.size})
+            </button>
+          )}
+          <button onClick={()=>setCreateModal(true)} className="bg-amber-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-600 shadow-sm">
+            + Create MU
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -687,14 +819,15 @@ export default function MovableUnitsPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-100">
-              <tr>{["MU No.","From","To","Created","Status",""].map(h=>(
+              <tr>{["","MU No.","From","To","Created","Status",""].map(h=>(
                 <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">{h}</th>))}</tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {loading ? <tr><td colSpan={6} className="px-5 py-12 text-center text-slate-400">Loading...</td></tr>
-              : filtered.length === 0 ? <tr><td colSpan={6} className="px-5 py-12 text-center text-slate-400">No Movable Units yet.</td></tr>
+              {loading ? <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-400">Loading...</td></tr>
+              : filtered.length === 0 ? <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-400">No Movable Units yet.</td></tr>
               : filtered.map((m:any) => (
                 <tr key={m.id} className="hover:bg-amber-50/20">
+                  <td className="px-4 py-3"><input type="checkbox" checked={checked.has(m.id)} onChange={()=>toggleCheck(m.id)} className="accent-amber-500 w-4 h-4" /></td>
                   <td className="px-4 py-3 font-mono text-xs font-bold text-amber-600">{m.mu_number}</td>
                   <td className="px-4 py-3 text-slate-600 text-xs max-w-32 truncate">{m.from_location}</td>
                   <td className="px-4 py-3 text-slate-600 text-xs max-w-32 truncate">{m.to_location}</td>
@@ -710,6 +843,7 @@ export default function MovableUnitsPage() {
 
       <CreateMUModal open={createModal} onClose={()=>setCreateModal(false)} onSaved={load} profile={profile} />
       {selected && <MUDetailModal mu={selected} onClose={()=>{setSelected(null); load();}} onSaved={load} profile={profile} roles={roles} />}
+      <ManifestHeaderModal open={manifestModal} onClose={()=>setManifestModal(false)} onGenerate={generateManifest} selectedCount={checked.size} />
     </div>
   );
 }
