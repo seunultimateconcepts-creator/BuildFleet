@@ -16,7 +16,7 @@ import {
 // Repair) instead of a single flat link — Jumia-style expandable nav.
 // ─────────────────────────────────────────────────────────────
 const navItems = [
-  { label: "Dashboard",     href: "/",            icon: LayoutDashboard, roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
+  { label: "Dashboard",     href: "/",            icon: LayoutDashboard, roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk","store_officer","store_manager","store_supervisor","procurement_officer","procurement_manager","finance_viewer","finance_manager","executive","driver"] },
   { label: "Equipment",     href: "/equipment",   icon: Truck,           roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk","store_manager","store_supervisor"] },
   { label: "Sites",         href: "/sites",       icon: MapPin,          roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","store_manager","store_supervisor"] },
   { label: "Transfer",      href: "/transfer",    icon: ArrowLeftRight,  roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
