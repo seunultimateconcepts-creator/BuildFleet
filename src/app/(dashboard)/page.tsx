@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
@@ -5,6 +6,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { dbu } from "@/lib/db";
+import { fetchAllRows } from "@/lib/fetch-all";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
@@ -15,18 +17,25 @@ import {
 // ─────────────────────────────────────────────────────────────
 type ChartRange = "7d" | "30d" | "90d";
 
+// Store staff see a genuinely different dashboard — unless they ALSO
+// hold a plant management-tier role, in which case they still get the
+// full fleet overview as their primary job.
+const STORE_ROLES = ["store_officer", "store_manager", "store_supervisor"];
+const PLANT_OVERRIDE_ROLES = ["plant_admin", "plant_manager", "plant_director", "plant_engineer", "super_admin"];
+
 // ─────────────────────────────────────────────────────────────
-// KPI CARD
+// SHARED — KPI CARD, ACTIVITY ITEM (used by both dashboards)
 // ─────────────────────────────────────────────────────────────
 function KpiCard({ title, value, sub, color = "white", link }: {
   title: string; value: number | string; sub: string;
-  color?: "dark" | "amber" | "green" | "blue" | "white"; link?: string;
+  color?: "dark" | "amber" | "green" | "blue" | "red" | "white"; link?: string;
 }) {
   const colors = {
     dark:  "bg-slate-900 text-white",
     amber: "bg-amber-500 text-white",
     green: "bg-emerald-500 text-white",
     blue:  "bg-blue-500 text-white",
+    red:   "bg-red-600 text-white",
     white: "bg-white dark:bg-[#1A1D2E] border border-slate-200 dark:border-[#2A2D3E] text-slate-800 dark:text-white",
   };
   const card = (
@@ -39,9 +48,6 @@ function KpiCard({ title, value, sub, color = "white", link }: {
   return link ? <Link href={link}>{card}</Link> : card;
 }
 
-// ─────────────────────────────────────────────────────────────
-// ACTIVITY ITEM
-// ─────────────────────────────────────────────────────────────
 function ActivityItem({ icon, title, sub, time }: {
   icon: string; title: string; sub: string; time: string;
 }) {
@@ -66,6 +72,159 @@ function timeAgo(dateStr: string) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+const naira = (n: number) => `₦${Number(n || 0).toLocaleString()}`;
+
+// ═════════════════════════════════════════════════════════════
+// STORE DASHBOARD — what a Store Officer/Manager/Supervisor sees
+// instead of the Plant fleet dashboard. A scoped Data Analyst
+// (store_officer only) sees just their own store's numbers; Store
+// Manager/Supervisor/super_admin see the picture across every store.
+// ═════════════════════════════════════════════════════════════
+function StoreDashboard({ profile, roles }: { profile: any; roles: string[] }) {
+  const isScopedOfficer = roles.includes("store_officer") && !roles.some(r => ["store_manager","store_supervisor","super_admin"].includes(r));
+
+  const [loading, setLoading] = useState(true);
+  const [balances, setBalances] = useState<any[]>([]);
+  const [pendingSROs, setPendingSROs] = useState<any[]>([]);
+  const [recentTxns, setRecentTxns] = useState<any[]>([]);
+  const [activeMUs, setActiveMUs] = useState<any[]>([]);
+  const [myStore, setMyStore] = useState("");
+
+  useEffect(() => { load(); }, []); // eslint-disable-line
+  async function load() {
+    setLoading(true);
+    let storeFilter = "";
+    if (isScopedOfficer) {
+      const sites = await fetchAllRows("sites", "name");
+      const storeNames = sites.filter((s:any) => /store/i.test(s.name)).map((s:any) => s.name);
+      storeFilter = (profile?.assigned_sites || []).find((s:string) => storeNames.includes(s)) || "";
+      setMyStore(storeFilter);
+    }
+
+    const [bal, items, sros, txns, mus] = await Promise.all([
+      storeFilter
+        ? fetchAllRows("store_stock_balances", "*", (q:any) => q.eq("store_location", storeFilter))
+        : fetchAllRows("store_stock_balances", "*"),
+      fetchAllRows("stock_items", "id,name,unit_cost"),
+      fetchAllRows("sro", "*", (q:any) => q.in("status", ["At Store","In Progress"]).order("created_at", { ascending: false })),
+      fetchAllRows("store_transactions", "*", (q:any) => q.order("created_at", { ascending: false })),
+      fetchAllRows("movable_units", "*", (q:any) => q.in("status", ["In Transit","Approved"])),
+    ]);
+
+    const enriched = (bal as any[]).map(b => {
+      const item = (items as any[]).find(i => i.id === b.stock_item_id);
+      return { ...b, name: item?.name, unit_cost: item?.unit_cost || 0 };
+    });
+    setBalances(enriched);
+    setPendingSROs(sros as any[]);
+    setRecentTxns((txns as any[]).slice(0, 8));
+    setActiveMUs(mus as any[]);
+    setLoading(false);
+  }
+
+  const totalItems = balances.length;
+  const stockValue = balances.reduce((s, b) => s + Number(b.balance||0) * Number(b.unit_cost||0), 0);
+  const lowStock = balances.filter(b => Number(b.balance) <= Number(b.reorder_level || 10));
+  const totalReceived = balances.reduce((s,b) => s + Number(b.qty_received||0), 0);
+  const totalIssued = balances.reduce((s,b) => s + Number(b.qty_issued||0), 0);
+
+  const txnIcon: Record<string,string> = { GRN: "📥", SIV: "📤", ADJUSTMENT: "⚠️", RETURN: "↩️" };
+
+  return (
+    <div className="space-y-6 pb-10">
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-1">Store Overview</p>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
+            {profile ? `Welcome, ${profile.full_name.split(" ")[0]}` : "Dashboard"}
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">
+            {isScopedOfficer && myStore ? `${myStore} — ` : "All stores — "}
+            {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+          </p>
+        </div>
+        <div className={`rounded-2xl px-5 py-3 text-center border ${lowStock.length > 0 ? "bg-red-50 border-red-200" : "bg-emerald-50 border-emerald-200"}`}>
+          <p className={`text-3xl font-bold ${lowStock.length > 0 ? "text-red-600" : "text-emerald-600"}`}>{loading ? "..." : lowStock.length}</p>
+          <p className={`text-xs font-semibold mt-0.5 ${lowStock.length > 0 ? "text-red-700" : "text-emerald-700"}`}>Low / Out of Stock</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard title="Total Items"  value={loading ? "..." : totalItems}       sub={isScopedOfficer ? "At your store" : "Across all stores"} color="dark"  link="/store" />
+        <KpiCard title="Stock Value"  value={loading ? "..." : naira(stockValue)} sub="Current inventory"  color="amber" link="/store" />
+        <KpiCard title="Received"     value={loading ? "..." : totalReceived}     sub="Total received"     color="green" link="/store" />
+        <KpiCard title="Issued"       value={loading ? "..." : totalIssued}       sub="Total issued"       color="blue"  link="/store" />
+      </div>
+
+      {!loading && (pendingSROs.length > 0 || activeMUs.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {pendingSROs.length > 0 && (
+            <Link href="/sro" className="bg-orange-50 border border-orange-200 rounded-2xl p-4 hover:bg-orange-100 transition-colors">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📋</span>
+                <div>
+                  <p className="font-bold text-orange-800 text-sm">{pendingSROs.length} SRO{pendingSROs.length>1?"s":""} awaiting store action</p>
+                  <p className="text-orange-600 text-xs mt-0.5">Click to check availability &amp; issue</p>
+                </div>
+              </div>
+            </Link>
+          )}
+          {activeMUs.length > 0 && (
+            <Link href="/movable-units" className="bg-blue-50 border border-blue-200 rounded-2xl p-4 hover:bg-blue-100 transition-colors">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🚚</span>
+                <div>
+                  <p className="font-bold text-blue-800 text-sm">{activeMUs.length} Movable Unit{activeMUs.length>1?"s":""} in progress</p>
+                  <p className="text-blue-600 text-xs mt-0.5">Click to seal, approve, or receive</p>
+                </div>
+              </div>
+            </Link>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] overflow-hidden">
+          <div className="px-6 py-5 border-b border-slate-100 dark:border-[#1E2235]">
+            <h2 className="font-bold text-slate-800 dark:text-white">Recent Store Activity</h2>
+            <p className="text-slate-400 text-xs mt-0.5">Latest GRN, SIV and adjustments</p>
+          </div>
+          <div className="px-6 py-2">
+            {loading ? (
+              <p className="text-slate-400 text-sm py-8 text-center">Loading...</p>
+            ) : recentTxns.length === 0 ? (
+              <p className="text-slate-400 text-sm py-8 text-center">No store activity yet.</p>
+            ) : recentTxns.map((t:any) => (
+              <ActivityItem key={t.id} icon={txnIcon[t.txn_type] || "📦"}
+                title={`${t.txn_type} — ${t.item_name || "Item"}`}
+                sub={`${t.quantity ? Number(t.quantity).toLocaleString() + " units" : ""} ${t.store_location ? "at " + t.store_location : ""}`.trim()}
+                time={timeAgo(t.created_at)} />
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 dark:border-[#1E2235]">
+            <h3 className="font-bold text-slate-800 dark:text-white text-sm">Low Stock Alerts</h3>
+          </div>
+          <div className="p-5 space-y-3 max-h-96 overflow-y-auto">
+            {loading ? (
+              <p className="text-slate-400 text-xs text-center py-4">Loading...</p>
+            ) : lowStock.length === 0 ? (
+              <p className="text-slate-400 text-xs text-center py-4">✅ Nothing low right now.</p>
+            ) : lowStock.slice(0, 10).map((b:any) => (
+              <div key={b.id} className="flex items-center justify-between text-xs">
+                <span className="text-slate-600 dark:text-slate-300 truncate max-w-32">{b.name}</span>
+                <span className="font-bold text-red-600">{b.balance} left</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────
 // CUSTOM TOOLTIP for the wave chart
 // ─────────────────────────────────────────────────────────────
@@ -88,7 +247,7 @@ function ChartTooltip({ active, payload, label }: any) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// UTILIZATION WAVE CHART
+// UTILIZATION WAVE CHART (unchanged)
 // ─────────────────────────────────────────────────────────────
 function UtilizationChart({ range, onRangeChange }: {
   range: ChartRange;
@@ -101,13 +260,11 @@ function UtilizationChart({ range, onRangeChange }: {
     async function loadChartData() {
       setLoadingChart(true);
 
-      // Calculate date range
       const days = range === "7d" ? 7 : range === "30d" ? 30 : 90;
       const from = new Date();
       from.setDate(from.getDate() - days);
       const fromStr = from.toISOString().split("T")[0];
 
-      // Fetch daily_logs grouped by date
       const { data, error } = await dbu
         .from("daily_logs")
         .select("log_date, working_hours, idle_hours, breakdown_hours, availability_status")
@@ -116,7 +273,6 @@ function UtilizationChart({ range, onRangeChange }: {
 
       if (error || !data) { setLoadingChart(false); return; }
 
-      // Group by date and calculate utilization + operating hours
       const byDate: Record<string, { working: number; idle: number; breakdown: number; total: number }> = {};
 
       data.forEach((row: any) => {
@@ -128,7 +284,6 @@ function UtilizationChart({ range, onRangeChange }: {
         byDate[d].total     += 1;
       });
 
-      // Build chart points — one per day in range
       const points: any[] = [];
       for (let i = days - 1; i >= 0; i--) {
         const d = new Date();
@@ -150,7 +305,6 @@ function UtilizationChart({ range, onRangeChange }: {
             operatingHours: Math.round(day.working),
           });
         } else {
-          // No logs for this day — keep continuity with null (chart skips gracefully)
           points.push({
             date:          label,
             utilization:   null,
@@ -159,7 +313,6 @@ function UtilizationChart({ range, onRangeChange }: {
         }
       }
 
-      // Remove leading/trailing nulls for cleaner wave
       const trimmed = points.filter((_p, i) => {
         const hasData = points.some(p => p.utilization !== null);
         return hasData;
@@ -180,7 +333,6 @@ function UtilizationChart({ range, onRangeChange }: {
 
   return (
     <div className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] overflow-hidden">
-      {/* Chart header */}
       <div className="px-6 py-5 border-b border-slate-100 dark:border-[#1E2235] flex items-center justify-between">
         <div>
           <h2 className="font-bold text-slate-800 dark:text-white">Plant Utilization Overview</h2>
@@ -188,7 +340,6 @@ function UtilizationChart({ range, onRangeChange }: {
             Working hours vs total logged hours across all sites
           </p>
         </div>
-        {/* Range selector */}
         <div className="flex gap-1 bg-slate-100 dark:bg-[#1A1D2E] rounded-xl p-1">
           {RANGES.map(r => (
             <button
@@ -206,7 +357,6 @@ function UtilizationChart({ range, onRangeChange }: {
         </div>
       </div>
 
-      {/* Chart body */}
       <div className="px-2 pt-4 pb-2">
         {loadingChart ? (
           <div className="h-56 flex items-center justify-center text-slate-400 text-sm">
@@ -222,12 +372,10 @@ function UtilizationChart({ range, onRangeChange }: {
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
               <defs>
-                {/* Utilization gradient — blue */}
                 <linearGradient id="gradUtil" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%"  stopColor="#3B82F6" stopOpacity={0.25} />
                   <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.02} />
                 </linearGradient>
-                {/* Operating hours gradient — green */}
                 <linearGradient id="gradHours" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%"  stopColor="#10B981" stopOpacity={0.2} />
                   <stop offset="95%" stopColor="#10B981" stopOpacity={0.02} />
@@ -244,7 +392,6 @@ function UtilizationChart({ range, onRangeChange }: {
                 interval={range === "7d" ? 0 : range === "30d" ? 4 : 13}
               />
 
-              {/* Left Y axis — utilization % */}
               <YAxis
                 yAxisId="left"
                 domain={[0, 100]}
@@ -255,7 +402,6 @@ function UtilizationChart({ range, onRangeChange }: {
                 width={38}
               />
 
-              {/* Right Y axis — operating hours */}
               <YAxis
                 yAxisId="right"
                 orientation="right"
@@ -277,7 +423,6 @@ function UtilizationChart({ range, onRangeChange }: {
                 )}
               />
 
-              {/* Utilization % — smooth wave */}
               <Area
                 yAxisId="left"
                 type="monotone"
@@ -291,7 +436,6 @@ function UtilizationChart({ range, onRangeChange }: {
                 connectNulls
               />
 
-              {/* Operating hours — smooth wave */}
               <Area
                 yAxisId="right"
                 type="monotone"
@@ -312,39 +456,49 @@ function UtilizationChart({ range, onRangeChange }: {
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// MAIN PAGE
-// ─────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════
+// MAIN PAGE — routes to StoreDashboard or the existing Plant
+// dashboard based on role. Plant dashboard logic below is UNCHANGED.
+// ═════════════════════════════════════════════════════════════
 export default function DashboardPage() {
   const [profile,     setProfile]     = useState<any>(null);
+  const [roles,        setRoles]      = useState<string[]>([]);
   const [equipment,   setEquipment]   = useState<any[]>([]);
   const [transfers,   setTransfers]   = useState<any[]>([]);
   const [maintenance, setMaintenance] = useState<any[]>([]);
   const [siteCount,   setSiteCount]   = useState(0);
   const [loading,     setLoading]     = useState(true);
   const [chartRange,  setChartRange]  = useState<ChartRange>("30d");
+  const [profileLoaded, setProfileLoaded] = useState(false);
+
+  // Load profile first, alone, so we know which dashboard to render
+  // before firing off the (unnecessary, for Store users) plant queries.
+  useEffect(() => {
+    async function loadProfile() {
+      const { data: { user } } = await dbu.auth.getUser();
+      if (user) {
+        const { data } = await dbu.from("profiles").select("*").eq("id", user.id).single();
+        setProfile(data);
+        setRoles(data?.roles || []);
+      }
+      setProfileLoaded(true);
+    }
+    loadProfile();
+  }, []);
+
+  const isStoreUser = roles.some(r => STORE_ROLES.includes(r)) && !roles.some(r => PLANT_OVERRIDE_ROLES.includes(r));
 
   useEffect(() => {
+    if (!profileLoaded || isStoreUser) { setLoading(false); return; }
+
     async function load() {
       setLoading(true);
 
       try {
-        // Load profile first to get role and assigned sites
-        const { data: { user } } = await dbu.auth.getUser();
-        let prof: any = null;
-        if (user) {
-          const { data } = await dbu.from("profiles").select("*").eq("id", user.id).single();
-          prof = data;
-          setProfile(prof);
-        }
-
-        // Determine if user is restricted
-        const roles: string[] = prof?.roles || [];
-        const assignedSites: string[] = prof?.assigned_sites || [];
+        const assignedSites: string[] = profile?.assigned_sites || [];
         const isRestricted = (roles.includes("plant_clerk") || roles.includes("site_supervisor")) &&
           !roles.some((r: string) => ["plant_admin","plant_manager","plant_engineer","plant_director","super_admin"].includes(r));
 
-        // Build equipment queries with site filter if restricted
         let equipQ1 = dbu.from("equipment")
           .select("id,fleet_number,operational_status,category,region,site")
           .range(0, 999);
@@ -357,7 +511,6 @@ export default function DashboardPage() {
           equipQ2 = equipQ2.in("site", assignedSites);
         }
 
-        // Build transfer query
         let transQ = dbu.from("transfers")
           .select("*").order("created_at", { ascending: false }).limit(10);
         if (isRestricted && assignedSites.length > 0) {
@@ -366,21 +519,18 @@ export default function DashboardPage() {
           );
         }
 
-        // Build maintenance query
         let maintQ = dbu.from("maintenance")
           .select("*").order("created_at", { ascending: false }).limit(10);
         if (isRestricted && assignedSites.length > 0) {
           maintQ = maintQ.in("site", assignedSites);
         }
 
-        // Build site count query
         let siteQ = dbu.from("sites")
           .select("*", { count: "exact", head: true }).eq("is_active", true);
         if (isRestricted && assignedSites.length > 0) {
           siteQ = siteQ.in("name", assignedSites);
         }
 
-        // Fire all in parallel
         const [equipResult, transResult, maintResult, siteResult] = await Promise.all([
           Promise.all([equipQ1, equipQ2]),
           transQ,
@@ -401,8 +551,14 @@ export default function DashboardPage() {
       }
     }
     load();
-  }, []);
+  }, [profileLoaded, isStoreUser]); // eslint-disable-line
 
+  // ── Route to the Store dashboard, entirely separate content ──
+  if (profileLoaded && isStoreUser) {
+    return <StoreDashboard profile={profile} roles={roles} />;
+  }
+
+  // ── Everything below is the ORIGINAL Plant dashboard, unchanged ──
   const total    = equipment.length;
   const working  = equipment.filter(e => e.operational_status === "Working").length;
   const repair   = equipment.filter(e => ["Under Repair","Break Down"].includes(e.operational_status)).length;

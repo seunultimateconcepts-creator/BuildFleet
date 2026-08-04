@@ -111,7 +111,13 @@ function CreateMUModal({ open, onClose, onSaved, profile }: { open: boolean; onC
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetchAllRows("sites", "name,code,site_type").then(setSites);
+    // ★ FIX: MU is specifically for store-to-store dispatch — From/To
+    // must only ever list real store locations, never every site type
+    // (Repair Yards, Storage Yards, Projects, etc.). Same filter
+    // already used on the Store page's own selector.
+    fetchAllRows("sites", "name,code,site_type").then((all:any) => {
+      setSites(all.filter((s:any) => /store/i.test(s.name)));
+    });
     fetchAllRows("equipment", "id,fleet_number,name,allocated_to").then(setEquipment);
   }, []);
 
