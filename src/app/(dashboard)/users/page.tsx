@@ -4,15 +4,45 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import { dbu } from "@/lib/db";
 
+// ─────────────────────────────────────────────────────────────
+// ROLES — grouped for a long list. "group" is purely a UI section
+// header; permission logic everywhere else in BuildFleet only ever
+// reads the plain role string, so this stays cosmetic and safe.
+// ─────────────────────────────────────────────────────────────
 const ROLES = [
-  { value: "plant_director",  label: "Plant Director",  color: "bg-indigo-100 text-indigo-700", desc: "Highest level — oversight, view only" },
-  { value: "plant_manager",   label: "Plant Manager",   color: "bg-purple-100 text-purple-700", desc: "Approves transfers & maintenance completion" },
-  { value: "plant_engineer",  label: "Plant Engineer",  color: "bg-blue-100 text-blue-700",     desc: "Technical approvals, completes maintenance jobs, approves workshop transfers" },
-  { value: "plant_admin",     label: "Plant Admin",     color: "bg-amber-100 text-amber-700",   desc: "Full access — users, reports, rental list, everything" },
-  { value: "plant_officer",   label: "Plant Officer",   color: "bg-cyan-100 text-cyan-700",     desc: "Senior clerk — monitors all transfers, job orders, tires, commissioning across all sites" },
-  { value: "site_supervisor", label: "Site Supervisor", color: "bg-teal-100 text-teal-700",     desc: "View site equipment, daily logs, initiate & confirm transfers, approves site transfers" },
-  { value: "plant_clerk",     label: "Plant Clerk",     color: "bg-slate-100 text-slate-600",   desc: "Daily logs, initiate transfers, confirm incoming transfers" },
+  // Plant
+  { value: "plant_director",  label: "Plant Director",  color: "bg-indigo-100 text-indigo-700", desc: "Highest level — oversight, view only", group: "Plant" },
+  { value: "plant_manager",   label: "Plant Manager",   color: "bg-purple-100 text-purple-700", desc: "Approves transfers & maintenance completion", group: "Plant" },
+  { value: "plant_engineer",  label: "Plant Engineer",  color: "bg-blue-100 text-blue-700",     desc: "Technical approvals, completes maintenance jobs, approves workshop transfers", group: "Plant" },
+  { value: "plant_admin",     label: "Plant Admin",     color: "bg-amber-100 text-amber-700",   desc: "Full access — users, reports, rental list, everything", group: "Plant" },
+  { value: "plant_officer",   label: "Plant Officer",   color: "bg-cyan-100 text-cyan-700",     desc: "Senior clerk — monitors all transfers, job orders, tires, commissioning across all sites", group: "Plant" },
+  { value: "site_supervisor", label: "Site Supervisor", color: "bg-teal-100 text-teal-700",     desc: "View site equipment, daily logs, initiate & confirm transfers, approves site transfers", group: "Plant" },
+  { value: "plant_clerk",     label: "Plant Clerk",     color: "bg-slate-100 text-slate-600",   desc: "Daily logs, initiate transfers, confirm incoming transfers", group: "Plant" },
+
+  // Store & Procurement
+  { value: "store_officer",       label: "Data Analyst",        color: "bg-emerald-100 text-emerald-700", desc: "In charge of Inventory, Filling Station & SRO — sees incoming requests and acts on them. Scoped to their own assigned store; cannot adjust or approve issues.", group: "Store & Procurement" },
+  { value: "store_supervisor",    label: "Store Supervisor",    color: "bg-teal-100 text-teal-700",       desc: "Views ALL stores' inventory for oversight and reconciliation — read access across every location", group: "Store & Procurement" },
+  { value: "store_manager",       label: "Store Manager",       color: "bg-green-100 text-green-700",     desc: "Full store control — stock adjustments, issue approval, receives Movable Units", group: "Store & Procurement" },
+  { value: "procurement_officer", label: "Procurement Officer", color: "bg-orange-100 text-orange-700",   desc: "Prepares purchase comparisons — cannot approve", group: "Store & Procurement" },
+  { value: "procurement_manager", label: "Procurement Manager", color: "bg-rose-100 text-rose-700",       desc: "Approves purchase comparisons & bills, views monthly spend", group: "Store & Procurement" },
+  { value: "driver",              label: "Driver",              color: "bg-lime-100 text-lime-700",       desc: "Confirms Movable Unit handover during dispatch verification", group: "Store & Procurement" },
+
+  // Finance & Executive
+  { value: "finance_viewer",  label: "Finance Viewer",   color: "bg-sky-100 text-sky-700",       desc: "Views cost & budget dashboards — read only", group: "Finance & Executive" },
+  { value: "finance_manager", label: "Finance Manager",  color: "bg-fuchsia-100 text-fuchsia-700",desc: "Sets budgets, full Finance access", group: "Finance & Executive" },
+  { value: "executive",       label: "Executive (GM/MD)",color: "bg-yellow-100 text-yellow-700",  desc: "Views everything across every department — read only, no edit rights anywhere", group: "Finance & Executive" },
 ];
+
+const GROUPS = ["Plant","Store & Procurement","Finance & Executive"];
+// Only these two roles are ever site-restricted anywhere in BuildFleet
+// (see useEquipment/useTransfers "isRestricted" checks) — every other
+// role, old or new, has unrestricted visibility, so the site picker
+// should only appear for these.
+// Roles whose visibility is limited to their assigned_sites. Plant
+// roles are restricted by equipment.site; store_officer is now
+// restricted by store_stock_balances.store_location — same field,
+// same mechanism, different domain.
+const SITE_RESTRICTED_ROLES = ["plant_clerk", "site_supervisor", "store_officer"];
 
 const iCls = "w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 
@@ -24,7 +54,10 @@ function getRoleLabel(role: string) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// ADD USER MODAL
+// ADD USER MODAL — single primary role, sent through /api/invite
+// exactly as before. Not touching that route's contract since I
+// haven't seen its source — safer to extend it later once reviewed
+// than to guess at changing what it expects.
 // ─────────────────────────────────────────────────────────────
 function AddUserModal({ sites, onClose, onSave }: {
   sites: any[]; onClose: () => void; onSave: () => void;
@@ -49,7 +82,7 @@ function AddUserModal({ sites, onClose, onSave }: {
     }));
   }
 
-  const isAdmin = ["plant_director","plant_manager","plant_engineer","plant_admin"].includes(form.role);
+  const needsSites = SITE_RESTRICTED_ROLES.includes(form.role);
 
   const filteredSites = sites.filter((s: any) =>
     !siteSearch ||
@@ -64,7 +97,6 @@ function AddUserModal({ sites, onClose, onSave }: {
     setSaving(true); setError("");
 
     try {
-      // Call server-side API route — uses service role key safely
       const res = await fetch("/api/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -74,7 +106,7 @@ function AddUserModal({ sites, onClose, onSave }: {
           staff_no:       form.staff_no,
           phone:          form.phone,
           role:           form.role,
-          assigned_sites: isAdmin ? [] : form.assigned_sites,
+          assigned_sites: needsSites ? form.assigned_sites : [],
         }),
       });
 
@@ -104,6 +136,9 @@ function AddUserModal({ sites, onClose, onSave }: {
           <h3 className="text-lg font-bold text-slate-800">Invite Sent!</h3>
           <p className="text-slate-500 text-sm mt-2">
             An email has been sent to <strong>{form.email}</strong> with a link to set their password and access BuildFleet.
+          </p>
+          <p className="text-slate-400 text-xs mt-3">
+            Need a second role for this person too? Edit them after they accept.
           </p>
         </div>
       </div>
@@ -153,26 +188,34 @@ function AddUserModal({ sites, onClose, onSave }: {
 
           <div>
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">
-              Role <span className="text-red-400">*</span>
+              Primary Role <span className="text-red-400">*</span>
             </label>
-            <div className="space-y-2">
-              {ROLES.map(r => (
-                <label key={r.value}
-                  className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                    form.role === r.value ? "border-amber-400 bg-amber-50" : "border-slate-200 hover:bg-slate-50"
-                  }`}>
-                  <input type="radio" name="role" value={r.value}
-                    checked={form.role === r.value}
-                    onChange={() => set("role", r.value)}
-                    className="accent-amber-500"/>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold shrink-0 ${r.color}`}>{r.label}</span>
-                  <span className="text-xs text-slate-500">{r.desc}</span>
-                </label>
-              ))}
-            </div>
+            <p className="text-xs text-slate-400 mb-3">
+              This is their main job. A second role can be added later via Edit if they wear more than one hat.
+            </p>
+            {GROUPS.map(group => (
+              <div key={group} className="mb-4 last:mb-0">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">{group}</p>
+                <div className="space-y-2">
+                  {ROLES.filter(r => r.group === group).map(r => (
+                    <label key={r.value}
+                      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                        form.role === r.value ? "border-amber-400 bg-amber-50" : "border-slate-200 hover:bg-slate-50"
+                      }`}>
+                      <input type="radio" name="role" value={r.value}
+                        checked={form.role === r.value}
+                        onChange={() => set("role", r.value)}
+                        className="accent-amber-500"/>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold shrink-0 ${r.color}`}>{r.label}</span>
+                      <span className="text-xs text-slate-500">{r.desc}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
 
-          {!isAdmin && (
+          {needsSites && (
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">
                 Assigned Site(s) <span className="text-slate-400 font-normal ml-2 normal-case">— clerk/supervisor only</span>
@@ -204,9 +247,9 @@ function AddUserModal({ sites, onClose, onSave }: {
             </div>
           )}
 
-          {isAdmin && (
+          {!needsSites && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-700">
-              ℹ️ This role has access to <strong>all sites</strong> — no site assignment needed.
+              ℹ️ This role has unrestricted access — no site assignment needed.
             </div>
           )}
 
@@ -231,7 +274,11 @@ function AddUserModal({ sites, onClose, onSave }: {
 }
 
 // ─────────────────────────────────────────────────────────────
-// EDIT USER MODAL (unchanged)
+// EDIT USER MODAL — multi-role checkboxes. Writes directly to
+// Supabase (no API route involved), so this is the safe place to
+// support someone holding more than one role — e.g. a test account
+// that's both Store Manager and Procurement Manager to walk the
+// whole SRO chain without needing five separate logins.
 // ─────────────────────────────────────────────────────────────
 function EditUserModal({ user, sites, onClose, onSave }: {
   user: any; sites: any[]; onClose: () => void; onSave: () => void;
@@ -240,12 +287,19 @@ function EditUserModal({ user, sites, onClose, onSave }: {
     full_name:      user.full_name || "",
     phone:          user.phone || "",
     staff_no:       user.staff_no || "",
-    role:           (user.roles||[])[0] || "plant_clerk",
+    roles:          ((user.roles||[]) as string[]).filter(r => r !== "super_admin"),
     assigned_sites: user.assigned_sites || [],
   });
   const [saving,     setSaving]     = useState(false);
+  const [error,      setError]      = useState("");
   const [siteSearch, setSiteSearch] = useState("");
 
+  function toggleRole(role: string) {
+    setForm(p => ({
+      ...p,
+      roles: p.roles.includes(role) ? p.roles.filter(r => r !== role) : [...p.roles, role],
+    }));
+  }
   function toggleSite(siteName: string) {
     setForm(p => ({
       ...p,
@@ -255,7 +309,7 @@ function EditUserModal({ user, sites, onClose, onSave }: {
     }));
   }
 
-  const isAdmin = ["plant_director","plant_manager","plant_engineer","plant_admin"].includes(form.role);
+  const needsSites = form.roles.some(r => SITE_RESTRICTED_ROLES.includes(r));
   const filteredSites = sites.filter((s: any) =>
     !siteSearch ||
     s.name.toLowerCase().includes(siteSearch.toLowerCase()) ||
@@ -263,15 +317,21 @@ function EditUserModal({ user, sites, onClose, onSave }: {
   );
 
   async function handleSave() {
-    setSaving(true);
-    await dbu.from("profiles").update({
+    if (form.roles.length === 0) { setError("Select at least one role."); return; }
+    setSaving(true); setError("");
+    // Preserve super_admin if this user already had it — this modal
+    // never grants or revokes that one, same as the original page.
+    const finalRoles = (user.roles||[]).includes("super_admin")
+      ? ["super_admin", ...form.roles] : form.roles;
+    const { error: err } = await dbu.from("profiles").update({
       full_name:      form.full_name,
       phone:          form.phone,
       staff_no:       form.staff_no,
-      roles:          [form.role],
-      assigned_sites: isAdmin ? [] : form.assigned_sites,
+      roles:          finalRoles,
+      assigned_sites: needsSites ? form.assigned_sites : [],
     }).eq("id", user.id);
     setSaving(false);
+    if (err) { setError(err.message); return; }
     onSave(); onClose();
   }
 
@@ -309,25 +369,34 @@ function EditUserModal({ user, sites, onClose, onSave }: {
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Role</label>
-            <div className="space-y-2">
-              {ROLES.map(r => (
-                <label key={r.value}
-                  className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                    form.role === r.value ? "border-amber-400 bg-amber-50" : "border-slate-200 hover:bg-slate-50"
-                  }`}>
-                  <input type="radio" name="edit_role" value={r.value}
-                    checked={form.role === r.value}
-                    onChange={() => setForm(p => ({...p, role: r.value}))}
-                    className="accent-amber-500"/>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold shrink-0 ${r.color}`}>{r.label}</span>
-                  <span className="text-xs text-slate-500">{r.desc}</span>
-                </label>
-              ))}
-            </div>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+              Roles <span className="text-red-400">*</span>
+            </label>
+            <p className="text-xs text-slate-400 mb-3">
+              Select one or more — this person can hold multiple roles at once (e.g. Store Manager + Procurement Manager).
+            </p>
+            {GROUPS.map(group => (
+              <div key={group} className="mb-4 last:mb-0">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">{group}</p>
+                <div className="space-y-2">
+                  {ROLES.filter(r => r.group === group).map(r => (
+                    <label key={r.value}
+                      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                        form.roles.includes(r.value) ? "border-amber-400 bg-amber-50" : "border-slate-200 hover:bg-slate-50"
+                      }`}>
+                      <input type="checkbox" checked={form.roles.includes(r.value)}
+                        onChange={() => toggleRole(r.value)}
+                        className="accent-amber-500"/>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold shrink-0 ${r.color}`}>{r.label}</span>
+                      <span className="text-xs text-slate-500">{r.desc}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
 
-          {!isAdmin ? (
+          {needsSites ? (
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Assigned Sites</label>
               <input placeholder="Search sites..." value={siteSearch}
@@ -357,8 +426,12 @@ function EditUserModal({ user, sites, onClose, onSave }: {
             </div>
           ) : (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-700">
-              ℹ️ This role has access to all sites automatically.
+              ℹ️ None of the selected roles are site-restricted — this user has unrestricted access.
             </div>
+          )}
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">⚠️ {error}</div>
           )}
         </div>
 
@@ -412,7 +485,6 @@ export default function UsersPage() {
     if (!confirm(`Delete ${user.full_name || user.email}? This cannot be undone.`)) return;
 
     try {
-      // Delete via API route (needs service role key)
       const res = await fetch("/api/delete-user", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -423,7 +495,6 @@ export default function UsersPage() {
         alert(result.error || "Failed to delete user.");
         return;
       }
-      // Remove from local state immediately
       setUsers(prev => prev.filter(u => u.id !== user.id));
     } catch (e: any) {
       alert(e.message || "Failed to delete user.");
@@ -447,10 +518,10 @@ export default function UsersPage() {
 
   const stats = {
     total:       users.length,
-    admins:      users.filter(u => (u.roles||[]).some((r:string) => ["plant_admin","plant_manager","plant_director"].includes(r))).length,
-    engineers:   users.filter(u => (u.roles||[]).includes("plant_engineer")).length,
-    supervisors: users.filter(u => (u.roles||[]).includes("site_supervisor")).length,
-    clerks:      users.filter(u => (u.roles||[]).includes("plant_clerk")).length,
+    plant:       users.filter(u => (u.roles||[]).some((r:string) => ["plant_admin","plant_manager","plant_director","plant_engineer","plant_officer"].includes(r))).length,
+    fieldStaff:  users.filter(u => (u.roles||[]).some((r:string) => ["site_supervisor","plant_clerk"].includes(r))).length,
+    store:       users.filter(u => (u.roles||[]).some((r:string) => ["store_officer","store_manager","store_supervisor"].includes(r))).length,
+    procurement: users.filter(u => (u.roles||[]).some((r:string) => ["procurement_officer","procurement_manager"].includes(r))).length,
   };
 
   return (
@@ -470,11 +541,11 @@ export default function UsersPage() {
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
-          { label:"Total Users",        value:stats.total,       bg:"bg-slate-900 text-white" },
-          { label:"Admin / Management", value:stats.admins,      bg:"bg-amber-100 text-amber-700" },
-          { label:"Engineers",          value:stats.engineers,   bg:"bg-blue-100 text-blue-700" },
-          { label:"Supervisors",        value:stats.supervisors, bg:"bg-teal-100 text-teal-700" },
-          { label:"Clerks",             value:stats.clerks,      bg:"bg-slate-100 text-slate-700" },
+          { label:"Total Users",         value:stats.total,       bg:"bg-slate-900 text-white" },
+          { label:"Plant (mgmt/tech)",   value:stats.plant,       bg:"bg-amber-100 text-amber-700" },
+          { label:"Field Staff",         value:stats.fieldStaff,  bg:"bg-teal-100 text-teal-700" },
+          { label:"Store",               value:stats.store,       bg:"bg-emerald-100 text-emerald-700" },
+          { label:"Procurement",         value:stats.procurement, bg:"bg-orange-100 text-orange-700" },
         ].map(k => (
           <div key={k.label} className={`${k.bg} rounded-2xl p-5`}>
             <p className="text-3xl font-bold">{loading ? "..." : k.value}</p>
@@ -490,7 +561,11 @@ export default function UsersPage() {
             className={iCls + " lg:col-span-2"}/>
           <select className={iCls} value={filterRole} onChange={e => setFilterRole(e.target.value)}>
             <option value="">All Roles</option>
-            {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            {GROUPS.map(group => (
+              <optgroup key={group} label={group}>
+                {ROLES.filter(r => r.group === group).map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </optgroup>
+            ))}
           </select>
         </div>
       </div>
@@ -504,7 +579,7 @@ export default function UsersPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
               <tr>
-                {["Name","Email","Staff No.","Phone","Role","Assigned Sites","Actions"].map(h => (
+                {["Name","Email","Staff No.","Phone","Roles","Assigned Sites","Actions"].map(h => (
                   <th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -528,7 +603,7 @@ export default function UsersPage() {
                   <td className="px-5 py-4 text-slate-500 text-xs font-mono">{u.staff_no||"—"}</td>
                   <td className="px-5 py-4 text-slate-500 text-xs">{u.phone||"—"}</td>
                   <td className="px-5 py-4">
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap gap-1 max-w-56">
                       {(u.roles||[]).filter((r:string)=>r!=="super_admin").map((r: string) => (
                         <span key={r} className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getRoleStyle(r)}`}>
                           {getRoleLabel(r)}
@@ -550,9 +625,8 @@ export default function UsersPage() {
                       </div>
                     ) : (
                       <span className="text-xs text-slate-400">
-                        {(u.roles||[]).some((r:string) =>
-                          ["plant_director","plant_manager","plant_engineer","plant_admin"].includes(r))
-                          ? "All sites" : "None assigned"}
+                        {(u.roles||[]).some((r:string) => SITE_RESTRICTED_ROLES.includes(r))
+                          ? "None assigned" : "Unrestricted"}
                       </span>
                     )}
                   </td>
@@ -563,7 +637,6 @@ export default function UsersPage() {
                           className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-medium hover:bg-slate-200 whitespace-nowrap">
                           Edit
                         </button>
-                        {/* Don't allow deleting yourself or super_admin */}
                         {!(u.roles||[]).includes("super_admin") && (
                           <button onClick={() => handleDelete(u)}
                             className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 whitespace-nowrap">
@@ -582,14 +655,19 @@ export default function UsersPage() {
 
       <div className="bg-white rounded-2xl border border-slate-200 p-5">
         <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Role Access Levels</p>
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-          {ROLES.map(({ value, label, color, desc }) => (
-            <div key={value} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl">
-              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold shrink-0 ${color}`}>{label}</span>
-              <p className="text-xs text-slate-500 leading-relaxed">{desc}</p>
+        {GROUPS.map(group => (
+          <div key={group} className="mb-5 last:mb-0">
+            <p className="text-[11px] font-bold text-amber-500 uppercase tracking-wider mb-2">{group}</p>
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+              {ROLES.filter(r => r.group === group).map(({ value, label, color, desc }) => (
+                <div key={value} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl">
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold shrink-0 ${color}`}>{label}</span>
+                  <p className="text-xs text-slate-500 leading-relaxed">{desc}</p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
 
       {addModal && <AddUserModal sites={sites} onClose={() => setAddModal(false)} onSave={loadAll}/>}

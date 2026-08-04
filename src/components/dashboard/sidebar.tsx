@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   LayoutDashboard, Truck, MapPin, ArrowLeftRight, Wrench,
   ClipboardList, BookOpen, BarChart3, Users, Settings,
-  ChevronDown, CircleDot, ImageIcon, AlertTriangle,
+  ChevronDown, CircleDot, ImageIcon, AlertTriangle, Package, Fuel, PackageCheck,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────
@@ -29,7 +29,27 @@ const navItems = [
     ],
   },
   { label: "Tire Management", href: "/tires",     icon: CircleDot, badge: "TMS", roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
+  {
+    label: "Inventory", icon: Package, badge: "NEW",
+    roles: ["super_admin","store_officer","store_manager","store_supervisor","procurement_officer","procurement_manager",
+            "plant_clerk","site_supervisor","plant_engineer","plant_manager","plant_admin","plant_director","executive"],
+    children: [
+      { label: "Register",        href: "/store",            icon: Package },
+      { label: "Filling Station", href: "/filling-station",   icon: Fuel },
+      { label: "Movable Units",   href: "/movable-units",     icon: PackageCheck },
+    ],
+  },
+  { label: "SRO", href: "/sro", icon: ClipboardList, badge: "NEW",
+    roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor",
+            "plant_clerk","store_officer","store_manager","procurement_officer","procurement_manager",
+            "plant_director","executive"] },
   { label: "Commissioning", href: "/commissioning", icon: ClipboardList, roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer"] },
+  { label: "Procurement", href: "/procurement", icon: ClipboardList,
+    roles: ["super_admin","procurement_officer","procurement_manager","store_manager",
+            "plant_engineer","plant_manager","plant_admin","executive"] },
+  { label: "Finance", href: "/finance", icon: BarChart3,
+    roles: ["super_admin","finance_viewer","finance_manager","procurement_manager","store_manager",
+            "plant_engineer","plant_manager","plant_admin","executive"] },
   { label: "Daily Logs",    href: "/daily-logs",  icon: BookOpen,        roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
   { label: "Plant Gallery", href: "/gallery",     icon: ImageIcon,       roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
   { label: "Reports",       href: "/reports",     icon: BarChart3,       roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer"] },
