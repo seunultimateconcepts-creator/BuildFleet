@@ -17,8 +17,8 @@ import {
 // ─────────────────────────────────────────────────────────────
 const navItems = [
   { label: "Dashboard",     href: "/",            icon: LayoutDashboard, roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
-  { label: "Equipment",     href: "/equipment",   icon: Truck,           roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
-  { label: "Sites",         href: "/sites",       icon: MapPin,          roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor"] },
+  { label: "Equipment",     href: "/equipment",   icon: Truck,           roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk","store_manager","store_supervisor"] },
+  { label: "Sites",         href: "/sites",       icon: MapPin,          roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","store_manager","store_supervisor"] },
   { label: "Transfer",      href: "/transfer",    icon: ArrowLeftRight,  roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
   {
     label: "Maintenance", icon: Wrench,
@@ -37,6 +37,7 @@ const navItems = [
       { label: "Inventory",        href: "/store",            icon: Package },
       { label: "Filling Station", href: "/filling-station",   icon: Fuel },
       { label: "Movable Units",   href: "/movable-units",     icon: PackageCheck },
+      { label: "Reports",         href: "/store-reports",     icon: BarChart3 },
     ],
   },
   { label: "SRO", href: "/sro", icon: ClipboardList, badge: "NEW",

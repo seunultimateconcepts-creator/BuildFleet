@@ -416,7 +416,7 @@ export default function StorePage() {
     setLoading(false);
   }
 
-  useEffect(() => { if (selectedStore || selectedStore === "__all__") loadBalances(); }, [selectedStore]); 
+  useEffect(() => { if (selectedStore || selectedStore === "__all__") loadBalances(); }, [selectedStore]);
   async function loadBalances() {
     setLoading(true);
     const data = selectedStore === "__all__"
@@ -447,6 +447,27 @@ export default function StorePage() {
   const grnDefaultStore = selectedStore === "__all__" ? (availableStores[0] || "") : selectedStore;
   const lockStoreForOfficer = isStoreOfficer && myStores.length <= 1;
 
+  // Exports exactly what's currently on screen — respects the active
+  // store selection, search, and category filter, so what management
+  // downloads matches what's visible, not a silent full dump.
+  function exportCSV() {
+    const headers = ["Name","Part No.", ...(selectedStore === "__all__" ? ["Store"] : []),
+      "Category","Unit","Received","Issued","Balance","Unit Cost (₦)","Value (₦)"];
+    const rows = filtered.map((b: any) => [
+      b.name, b.part_number || "",
+      ...(selectedStore === "__all__" ? [b.store_location] : []),
+      b.category || "", b.unit || "",
+      b.qty_received, b.qty_issued, b.balance,
+      b.unit_cost || 0, (Number(b.balance||0) * Number(b.unit_cost||0)).toFixed(2),
+    ]);
+    const csv = [headers, ...rows].map(r => r.map((v:any) => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    a.download = `BuildFleet_Inventory_${selectedStore === "__all__" ? "AllStores" : selectedStore.replace(/[^a-z0-9]/gi,"_")}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   return (
     <div className="space-y-6 pb-10">
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
@@ -458,6 +479,10 @@ export default function StorePage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3 shrink-0">
+          <button onClick={exportCSV}
+            className="border border-slate-200 bg-white text-slate-600 px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50">
+            ↓ Export CSV
+          </button>
           {canAdjust && (
             <button onClick={() => setAdjustModal(true)}
               className="border border-red-200 bg-white text-red-600 px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-red-50">
