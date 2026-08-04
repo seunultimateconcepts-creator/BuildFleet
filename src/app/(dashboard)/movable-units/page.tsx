@@ -1,6 +1,6 @@
-/* eslint-disable react-hooks/set-state-in-effect */
-/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -13,6 +13,74 @@ import { fetchAllRows } from "@/lib/fetch-all";
 
 const iCls = "w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 const fmtDT = (d: string) => d ? new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
+const esc = (v: any) => String(v ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+// ─────────────────────────────────────────────────────────────
+// PRINT — the MU slip: number, route, driver, full contents, and
+// signature blocks. Answers "no details of the MU number and items
+// to print" directly — this is the paper twin of the digital record.
+// ─────────────────────────────────────────────────────────────
+function printMU(mu: any, items: any[]) {
+  const dateStr = new Date().toLocaleDateString("en-GB", { day:"2-digit", month:"long", year:"numeric" });
+  const rows = items.map((it, i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td style="text-align:left">${esc(it.item_name)}</td>
+      <td>${it.qty_expected}</td>
+      <td>${it.status}</td>
+    </tr>`).join("");
+
+  const html = `<!DOCTYPE html><html><head><title>${esc(mu.mu_number)}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: Arial, sans-serif; font-size: 11px; padding: 16px; }
+    .header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #080D1A; padding-bottom:10px; margin-bottom:14px; }
+    .logo { font-weight:bold; font-size:16px; }
+    .logo span { color:#F5A623; }
+    h1 { font-size:16px; letter-spacing:1px; text-align:right; }
+    .meta { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px; font-size:11px; background:#F8FAFC; border-radius:8px; padding:12px; }
+    .meta .label { font-size:9px; color:#64748B; font-weight:bold; text-transform:uppercase; }
+    .meta .val { font-weight:600; }
+    table { width:100%; border-collapse:collapse; font-size:10px; margin-bottom:20px; }
+    th { background:#F1F5F9; border:1px solid #CBD5E1; padding:6px; font-size:9px; text-transform:uppercase; }
+    td { border:1px solid #E2E8F0; padding:6px; text-align:center; }
+    .sig { display:grid; grid-template-columns:1fr 1fr; gap:40px; margin-top:30px; font-size:10px; }
+    .sig-box { border-top:1px solid #000; padding-top:6px; margin-top:36px; }
+    .print-bar { background:#F5A623; padding:10px 20px; display:flex; justify-content:space-between; align-items:center; margin:-16px -16px 16px; }
+    .print-btn { background:#080D1A; color:#fff; border:none; padding:8px 20px; border-radius:6px; font-weight:700; cursor:pointer; }
+    @media print { .print-bar { display:none; } @page { size: A4 portrait; margin: 10mm; } }
+  </style></head><body>
+  <div class="print-bar"><span style="color:#fff;font-weight:700">${esc(mu.mu_number)}</span>
+    <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button></div>
+  <div class="header">
+    <div class="logo">Build<span>Fleet</span><div style="font-size:9px;font-weight:normal;color:#64748B">A product of Ultimate Tech Lab</div></div>
+    <h1>MOVABLE UNIT SLIP</h1>
+  </div>
+  <div class="meta">
+    <div><span class="label">MU Number</span><div class="val">${esc(mu.mu_number)}</div></div>
+    <div><span class="label">Status</span><div class="val">${esc(mu.status)}</div></div>
+    <div><span class="label">From</span><div class="val">${esc(mu.from_location)}</div></div>
+    <div><span class="label">To</span><div class="val">${esc(mu.to_location)}</div></div>
+    <div><span class="label">Vehicle</span><div class="val">${esc(mu.transport_fleet_number) || "—"}</div></div>
+    <div><span class="label">Driver</span><div class="val">${esc(mu.driver_name) || "—"}</div></div>
+    <div><span class="label">Sealed By</span><div class="val">${esc(mu.sealed_by) || "—"} ${mu.sealed_at ? "· " + fmtDT(mu.sealed_at) : ""}</div></div>
+    <div><span class="label">Approved By</span><div class="val">${esc(mu.approved_by) || "—"} ${mu.approved_at ? "· " + fmtDT(mu.approved_at) : ""}</div></div>
+    <div><span class="label">Date Printed</span><div class="val">${dateStr}</div></div>
+    <div><span class="label">Total Items</span><div class="val">${items.length}</div></div>
+  </div>
+  <table>
+    <thead><tr><th>S/N</th><th>Item</th><th>Qty</th><th>Status</th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="4">No items recorded.</td></tr>`}</tbody>
+  </table>
+  <div class="sig">
+    <div><span>Driver Signature</span><div class="sig-box">Name &amp; Date</div></div>
+    <div><span>Receiver Signature</span><div class="sig-box">Name &amp; Date</div></div>
+  </div>
+  </body></html>`;
+
+  const w = window.open("", "_blank", "width=900,height=800");
+  if (w) { w.document.write(html); w.document.close(); }
+}
 
 const MU_STATUS_STYLE: Record<string, string> = {
   "Draft":              "bg-slate-100 text-slate-600",
@@ -429,6 +497,10 @@ function MUDetailModal({ mu: initialMu, onClose, onSaved, profile, roles }: {
           </div>
           <div className="flex items-center gap-3">
             <span className={`px-3 py-1 rounded-full text-xs font-bold ${MU_STATUS_STYLE[mu.status]}`}>{mu.status}</span>
+            <button onClick={()=>printMU(mu, items)} title="Print MU slip"
+              className="text-xs px-3 py-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 font-medium">
+              🖨 Print
+            </button>
             <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl">×</button>
           </div>
         </div>
@@ -512,23 +584,35 @@ function MUDetailModal({ mu: initialMu, onClose, onSaved, profile, roles }: {
             <p className="text-xs font-bold text-slate-500 uppercase mb-2">Contents ({items.length})</p>
             <div className="border border-slate-200 rounded-xl divide-y divide-slate-50 max-h-64 overflow-y-auto">
               {loading ? <p className="p-4 text-xs text-slate-400">Loading...</p>
-              : items.map(item => (
+              : items.map(item => {
+                // "Confirmed" in the database means two very different
+                // real-world things depending on when it happened: the
+                // driver verifying handover (still in transit, not yet
+                // arrived) vs the receiver confirming actual arrival.
+                // Showing the same word for both made an MU still
+                // awaiting approval look like it had already been
+                // delivered — this picks the honest label for the stage.
+                const hasArrived = ["Received","Partially Received"].includes(mu.status);
+                const label = item.status !== "Confirmed" ? item.status
+                  : hasArrived ? "Received" : "Handed to Driver";
+                const badgeColor = item.status === "Missing" ? "bg-red-100 text-red-600"
+                  : item.status !== "Confirmed" ? "bg-slate-100 text-slate-500"
+                  : hasArrived ? "bg-emerald-100 text-emerald-700" : "bg-indigo-100 text-indigo-700";
+                return (
                 <div key={item.id} className="px-4 py-2.5 flex items-center justify-between text-sm">
                   <div>
                     <span className="text-slate-700">{item.item_name}</span>
                     {item.qty_expected > 1 && <span className="text-slate-400 text-xs ml-2">×{item.qty_expected}</span>}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                      item.status === "Confirmed" ? "bg-emerald-100 text-emerald-700" :
-                      item.status === "Missing" ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-500"
-                    }`}>{item.status}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${badgeColor}`}>{label}</span>
                     {mu.status === "Sealed" && canDriver && item.status !== "Confirmed" && (
                       <button onClick={()=>confirmDriverItem(item)} className="text-xs px-2 py-1 bg-indigo-100 text-indigo-700 rounded-lg font-medium">Confirm</button>
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
