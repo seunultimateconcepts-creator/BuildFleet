@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/immutability */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -11,290 +10,800 @@ import { fetchAllRows, invalidateCache } from "@/lib/fetch-all";
 
 const iCls = "w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 
-const STATUS_STYLE: Record<string, string> = {
-  "Draft":     "bg-slate-100 text-slate-600",
-  "Checked":   "bg-blue-100 text-blue-700",
-  "Approved":  "bg-emerald-100 text-emerald-700",
-  "Purchased": "bg-amber-100 text-amber-700",
-  "Closed":    "bg-slate-200 text-slate-500",
-  "Rejected":  "bg-red-100 text-red-600",
+const SRO_STATUS_STYLE: Record<string, string> = {
+  "Pending Plant Manager Approval": "bg-orange-100 text-orange-700",
+  "At Store":                       "bg-blue-100 text-blue-700",
+  "In Progress":                    "bg-amber-100 text-amber-700",
+  "Completed":                      "bg-emerald-100 text-emerald-700",
+  "Rejected":                       "bg-red-100 text-red-600",
+  "Cancelled":                      "bg-slate-100 text-slate-500",
+  "Pending Procurement Approval":   "bg-purple-100 text-purple-700",
+  "Approved":                       "bg-blue-100 text-blue-700",
+  "Paid":                           "bg-emerald-100 text-emerald-700",
 };
 
-const naira = (n: number, cur = "NGN") =>
-  `${cur === "USD" ? "$" : "₦"}${Number(n || 0).toLocaleString()}`;
+const ITEM_STATUS_STYLE: Record<string, string> = {
+  "Pending":                 "bg-slate-100 text-slate-600",
+  "Available":               "bg-blue-100 text-blue-700",
+  "Pending Store Manager":   "bg-amber-100 text-amber-700",
+  "Issued":                  "bg-emerald-100 text-emerald-700",
+  "To Procurement":          "bg-purple-100 text-purple-700",
+  "Bill Submitted":          "bg-purple-100 text-purple-700",
+  "Received":                "bg-blue-100 text-blue-700",
+  "Completed":               "bg-emerald-100 text-emerald-700",
+  "Rejected":                "bg-red-100 text-red-600",
+};
 
-function blankQuote() { return { supplier: "", brand: "", country: "", offered_price: "", negotiated_price: "" }; }
-function blankLine() {
-  return {
-    part_no: "", description: "", qty: 1, fleet_number: "", site: "",
-    avg_price: "", last_purchase_price: "",
-    quotes: [blankQuote(), blankQuote(), blankQuote()],
-    selected_supplier: "",
-  };
+const DEPARTMENTS = ["Plant","Admin","Store","Procurement","Finance","Bluegate","Construction","Logistics","Other"];
+const UNITS = ["pcs","unit","set","litre","kg","bag","roll","box","carton","pack","drum",
+  "meter","gallon","ton","sheet","coil","pair","bundle","Other"];
+const fmtDT = (d: string) => d ? new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
+const esc = (v: any) => String(v ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+// ─────────────────────────────────────────────────────────────
+// PRINT SIV RECEIPT — the physical proof-of-collection handed to
+// whoever picks up the parts. Same branded pattern as every other
+// print in BuildFleet (Job Order, Transfer, Tyre Pass).
+// ─────────────────────────────────────────────────────────────
+function printSIVReceipt(sro: any, item: any) {
+  const dateStr = new Date().toLocaleDateString("en-GB", { day:"2-digit", month:"long", year:"numeric" });
+  const html = `<!DOCTYPE html><html><head><title>${esc(item.siv_number)}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: Arial, sans-serif; font-size: 12px; padding: 20px; }
+    .header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #080D1A; padding-bottom:12px; margin-bottom:16px; }
+    .logo { font-weight:bold; font-size:18px; }
+    .logo span { color:#F5A623; }
+    h1 { font-size:18px; letter-spacing:1px; text-align:right; }
+    .meta { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:20px; font-size:12px; background:#F8FAFC; border-radius:8px; padding:14px; }
+    .meta .label { font-size:9px; color:#64748B; font-weight:bold; text-transform:uppercase; }
+    .meta .val { font-weight:600; }
+    table { width:100%; border-collapse:collapse; font-size:11px; margin-bottom:24px; }
+    th { background:#F1F5F9; border:1px solid #CBD5E1; padding:8px; font-size:9px; text-transform:uppercase; }
+    td { border:1px solid #E2E8F0; padding:8px; text-align:center; }
+    .sig { display:grid; grid-template-columns:1fr 1fr; gap:50px; margin-top:36px; font-size:11px; }
+    .sig-box { border-top:1px solid #000; padding-top:6px; margin-top:40px; }
+    .print-bar { background:#F5A623; padding:12px 24px; display:flex; justify-content:space-between; align-items:center; margin:-20px -20px 20px; }
+    .print-btn { background:#080D1A; color:#fff; border:none; padding:8px 20px; border-radius:6px; font-weight:700; cursor:pointer; }
+    @media print { .print-bar { display:none; } @page { size: A5 portrait; margin: 10mm; } }
+  </style></head><body>
+  <div class="print-bar"><span style="color:#fff;font-weight:700">${esc(item.siv_number)}</span>
+    <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button></div>
+  <div class="header">
+    <div class="logo">Build<span>Fleet</span><div style="font-size:9px;font-weight:normal;color:#64748B">A product of Ultimate Tech Lab</div></div>
+    <h1>STORE ISSUE VOUCHER</h1>
+  </div>
+  <div class="meta">
+    <div><span class="label">SIV Number</span><div class="val">${esc(item.siv_number)}</div></div>
+    <div><span class="label">SRO Number</span><div class="val">${esc(sro.sro_number)}</div></div>
+    <div><span class="label">Issued From</span><div class="val">${esc(item.store_location)}</div></div>
+    <div><span class="label">Issued Date</span><div class="val">${dateStr}</div></div>
+    <div><span class="label">Requested By</span><div class="val">${esc(sro.raised_by)}</div></div>
+    <div><span class="label">Department</span><div class="val">${esc(sro.department)}${sro.site ? " — " + esc(sro.site) : ""}</div></div>
+    <div><span class="label">Fleet No.</span><div class="val">${esc(sro.fleet_number) || "—"}</div></div>
+    <div><span class="label">Issued By</span><div class="val">${esc(item.issued_by)}</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Description</th><th>Requested</th><th>Approved / Issued</th></tr></thead>
+    <tbody><tr>
+      <td style="text-align:left">${esc(item.item_description)}${item.part_number ? ` <span style="color:#64748B">(${esc(item.part_number)})</span>` : ""}</td>
+      <td>${item.qty_requested} ${esc(item.unit||"")}</td>
+      <td style="font-weight:700">${item.qty_approved} ${esc(item.unit||"")}</td>
+    </tr></tbody>
+  </table>
+  <div class="sig">
+    <div><span>Issued By (Store)</span><div class="sig-box">Name &amp; Signature</div></div>
+    <div><span>Received By</span><div class="sig-box">Name &amp; Signature</div></div>
+  </div>
+  </body></html>`;
+
+  const w = window.open("", "_blank", "width=700,height=800");
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
+function blankLine() { return { item_description: "", part_number: "", unit: "pcs", qty_requested: 1, remarks: "", stock_item_id: null as string | null, live_balance: 0 }; }
+
+// ─────────────────────────────────────────────────────────────
+// FLEET PICKER — searchable, scoped by the selected site.
+// Central Workshop (or no site chosen yet) sees every equipment;
+// a site-based store only sees equipment actually at that site —
+// this is what keeps fleet_number trustworthy as real history
+// instead of a free-text field someone could mistype.
+// ─────────────────────────────────────────────────────────────
+function FleetPicker({ equipment, site, sites, value, onChange }: {
+  equipment: any[]; site: string; sites: any[]; value: string; onChange: (fleetNo: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const siteRecord = sites.find(s => s.name === site);
+  const isCentral = !site || siteRecord?.site_type === "Central Workshop";
+  const scoped = isCentral ? equipment : equipment.filter(e => e.site === site);
+
+  const filtered = scoped.filter(e => {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    return e.fleet_number.toLowerCase().includes(q) || (e.name||"").toLowerCase().includes(q);
+  }).slice(0, 15);
+
+  const selected = equipment.find(e => e.fleet_number === value);
+
+  return (
+    <div className="relative">
+      {selected ? (
+        <div className="border border-amber-300 bg-amber-50 rounded-xl px-3 py-2 flex items-center justify-between">
+          <span className="text-sm"><span className="font-bold text-amber-700 font-mono">{selected.fleet_number}</span> — {selected.name}</span>
+          <button onClick={() => onChange("")} className="text-slate-400 hover:text-red-500 text-lg leading-none">×</button>
+        </div>
+      ) : (
+        <>
+          <input className={iCls} placeholder={isCentral ? "Search any equipment..." : `Search equipment at ${site}...`}
+            value={query} onChange={e => { setQuery(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} />
+          {open && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-56 overflow-y-auto">
+              {filtered.length === 0 ? (
+                <div className="px-4 py-6 text-center text-slate-400 text-xs">
+                  {scoped.length === 0 ? `No equipment found at ${site}.` : "No match — keep typing."}
+                </div>
+              ) : filtered.map(e => (
+                <button key={e.id} onClick={() => { onChange(e.fleet_number); setOpen(false); setQuery(""); }}
+                  className="w-full text-left px-4 py-2.5 hover:bg-amber-50 border-b border-slate-50 last:border-0">
+                  <span className="font-bold text-amber-600 font-mono text-xs">{e.fleet_number}</span>
+                  <span className="text-slate-600 text-sm ml-2">{e.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      {!isCentral && site && (
+        <p className="text-[11px] text-slate-400 mt-1">Scoped to equipment at {site}. Central Workshop requests can pick from any site.</p>
+      )}
+    </div>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────
-// COMPARISON FORM MODAL — the digital Purchase Comparison & Analysis Form
+// ITEM PICKER — search real stock, get live availability as you
+// pick. This IS the "request comes in, store verifies immediately"
+// requirement: the requester sees stock balance right here, before
+// the formal store confirmation step even happens. If nothing
+// matches, free-text entry still works — that's simply an item not
+// yet in the catalog, which the formal availability check (and
+// possibly procurement) will handle downstream, same as before.
 // ─────────────────────────────────────────────────────────────
-function ComparisonModal({ record, onClose, onSaved, profile, canEdit, canCheck, canApprove }: {
-  record: any | null; onClose: () => void; onSaved: () => void;
-  profile: any; canEdit: boolean; canCheck: boolean; canApprove: boolean;
+function ItemPicker({ stockItems, line, onSelect, onFreeText }: {
+  stockItems: any[]; line: any;
+  onSelect: (item: any) => void; onFreeText: (text: string) => void;
 }) {
-  const isNew = !record;
-  const [form, setForm] = useState<any>(record ? {
-    ...record,
-    line_items: record.line_items?.length ? record.line_items : [blankLine()],
-  } : {
-    sro_number: "", currency: "NGN", payment_method: "CASH",
-    site: "", fleet_number: "", cost_code: "",
-    line_items: [blankLine()], status: "Draft", remarks: "",
-  });
+  const [query, setQuery] = useState(line.item_description || "");
+  const [open, setOpen] = useState(false);
+
+  const filtered = stockItems.filter(s => {
+    if (!query) return false;
+    const q = query.toLowerCase();
+    return (s.name||"").toLowerCase().includes(q) || (s.part_number||"").toLowerCase().includes(q) || (s.legacy_item_code||"").toLowerCase().includes(q);
+  }).slice(0, 10);
+
+  return (
+    <div className="relative">
+      <input className={iCls} placeholder="Search item name or part no., or type a new item..."
+        value={query}
+        onChange={e => { setQuery(e.target.value); onFreeText(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)} />
+      {line.stock_item_id && (
+        <div className="mt-1 flex items-center gap-2">
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            line.live_balance > 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"
+          }`}>
+            {line.live_balance > 0 ? `✓ In system: ${line.live_balance} total across all stores` : "⚠ Not currently in any store"}
+          </span>
+          {line.part_number && <span className="text-[10px] text-slate-400 font-mono">Part No. {line.part_number}</span>}
+        </div>
+      )}
+      {!line.stock_item_id && query && (
+        <p className="mt-1 text-[10px] text-slate-400">Not in the store catalog yet — will be flagged for the store to review.</p>
+      )}
+      {open && filtered.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-56 overflow-y-auto">
+          {filtered.map(s => (
+            <button key={s.id} type="button"
+              onMouseDown={() => { onSelect(s); setQuery(s.name); setOpen(false); }}
+              className="w-full text-left px-4 py-2.5 hover:bg-amber-50 border-b border-slate-50 last:border-0">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-700 text-sm">{s.name}</span>
+                <span className={`text-[10px] font-bold ${s.balance > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                  {s.balance > 0 ? `${s.balance} in stock` : "Out of stock"}
+                </span>
+              </div>
+              <p className="text-slate-400 text-[10px] font-mono">{s.part_number || s.legacy_item_code || "no part no."}</p>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// RAISE SRO MODAL
+// ─────────────────────────────────────────────────────────────
+function RaiseSROModal({ onClose, onSaved, profile }: { onClose: () => void; onSaved: () => void; profile: any }) {
+  const [sroType, setSroType] = useState<"Standard"|"Retroactive">("Standard");
+  const [department, setDepartment] = useState("Plant");
+  const [sectionCode, setSectionCode] = useState("");
+  const [requestedBy, setRequestedBy] = useState(profile?.full_name || "");
+  const [dateRaised, setDateRaised] = useState(new Date().toISOString().slice(0,10));
+  const [site, setSite] = useState("");
+  const [sites, setSites] = useState<any[]>([]);
+  const [equipment, setEquipment] = useState<any[]>([]);
+  const [stockItems, setStockItems] = useState<any[]>([]);
+  const [fleetNumber, setFleetNumber] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [lines, setLines] = useState<any[]>([blankLine()]);
+  // Retroactive-only fields
+  const [amountPaid, setAmountPaid] = useState("");
+  const [vendor, setVendor] = useState("");
+  const [receiptRef, setReceiptRef] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error,  setError]  = useState("");
+  const [error, setError] = useState("");
 
-  const readOnly = !canEdit || ["Approved","Purchased","Closed"].includes(form.status);
-
-  function set(k: string, v: any) { setForm((p: any) => ({ ...p, [k]: v })); }
-  function setLine(i: number, k: string, v: any) {
-    setForm((p: any) => ({ ...p,
-      line_items: p.line_items.map((l: any, idx: number) => idx === i ? { ...l, [k]: v } : l) }));
-  }
-  function setQuote(i: number, qi: number, k: string, v: any) {
-    setForm((p: any) => ({ ...p,
-      line_items: p.line_items.map((l: any, idx: number) => idx === i
-        ? { ...l, quotes: l.quotes.map((q: any, qidx: number) => qidx === qi ? { ...q, [k]: v } : q) }
-        : l) }));
-  }
-
-  // Auto-fill Last Purchase Price from purchase history for a description
-  async function autoFillHistory(i: number) {
-    const desc = form.line_items[i]?.description?.trim();
-    if (!desc) return;
-    const { data } = await dbu.from("purchases")
-      .select("amount,purchase_date")
-      .ilike("description", `%${desc}%`)
-      .order("purchase_date", { ascending: false })
-      .limit(5);
-    if (data && data.length) {
-      const last = data[0].amount;
-      const avg = data.reduce((s: number, p: any) => s + Number(p.amount || 0), 0) / data.length;
-      setLine(i, "last_purchase_price", String(last));
-      setLine(i, "avg_price", Math.round(avg).toString());
-    }
-  }
-
-  // Totals per supplier column (across all lines)
-  const supplierTotals: Record<number, number> = {};
-  for (const l of form.line_items) {
-    (l.quotes || []).forEach((q: any, qi: number) => {
-      const price = Number(q.negotiated_price || q.offered_price || 0);
-      if (price > 0) supplierTotals[qi] = (supplierTotals[qi] || 0) + price * (Number(l.qty) || 1);
+  useEffect(() => {
+    // Site dropdown is scoped to Project and Workshop types ONLY —
+    // that's where actual work (and therefore material consumption)
+    // happens. Repair Yards and Storage Yards just hold idle/waiting
+    // equipment; nothing is being built or fixed there, so an SRO
+    // from one wouldn't make operational sense.
+    fetchAllRows("sites", "name,code,site_type").then(all =>
+      setSites(all.filter((s:any) => s.site_type === "Project" || ["Central Workshop","Regional Workshop","Field Workshop"].includes(s.site_type)))
+    );
+    fetchAllRows("equipment", "id,fleet_number,name,site").then(setEquipment);
+    // ★ MULTI-STORE FIX: stock_items.balance is now a frozen legacy
+    // snapshot — live balances live in store_stock_balances, per
+    // store. At raise time we don't yet know WHICH store will
+    // fulfill this request, so this shows a SUM across every store —
+    // "does this exist anywhere in our system" — not a promise of
+    // availability. The real, store-specific check happens later
+    // when a Data Analyst confirms it (see SRODetailModal below).
+    Promise.all([
+      fetchAllRows("stock_items", "id,name,part_number,legacy_item_code,unit,category", undefined, { cacheKey: "all-stock-items" }),
+      fetchAllRows("store_stock_balances", "stock_item_id,balance", undefined, { cacheKey: "all-store-balances" }),
+    ]).then(([items, allBalances]) => {
+      const totals = new Map<string, number>();
+      (allBalances as any[]).forEach(b => totals.set(b.stock_item_id, (totals.get(b.stock_item_id)||0) + Number(b.balance||0)));
+      setStockItems((items as any[]).map(i => ({ ...i, balance: totals.get(i.id) || 0 })));
     });
+  }, []);
+
+  function setLine(i: number, k: string, v: any) {
+    setLines(prev => prev.map((l, idx) => idx === i ? { ...l, [k]: v } : l));
   }
 
-  async function save(nextStatus?: string, historyAction?: string) {
-    setSaving(true); setError("");
-    const suppliers = [0,1,2].map(qi =>
-      form.line_items.map((l:any) => l.quotes?.[qi]?.supplier).find(Boolean) || "");
-    // Winning total = lowest non-zero supplier total, or selected supplier's total
-    const totals = Object.entries(supplierTotals).map(([qi, t]) => ({ qi: Number(qi), t }));
-    const best = totals.sort((a,b) => a.t - b.t)[0];
-    const payload: any = {
-      sro_number: form.sro_number, currency: form.currency,
-      payment_method: form.payment_method, site: form.site,
-      fleet_number: form.fleet_number, cost_code: form.cost_code,
-      line_items: form.line_items, suppliers,
-      selected_supplier: form.selected_supplier || (best ? suppliers[best.qi] : ""),
-      total_amount: best ? best.t : 0,
-      remarks: form.remarks,
-    };
-    if (nextStatus) payload.status = nextStatus;
-    if (nextStatus === "Checked")  { payload.checked_by = profile?.full_name || ""; payload.checked_at = new Date().toISOString(); }
-    if (nextStatus === "Approved") { payload.approved_by = profile?.full_name || ""; payload.approved_at = new Date().toISOString(); }
-    if (isNew) payload.prepared_by = profile?.full_name || "";
-
-    let compId = record?.id;
-    if (isNew) {
-      const { data, error: err } = await dbu.from("purchase_comparisons").insert([payload]).select().single();
-      if (err) { setError(err.message); setSaving(false); return; }
-      compId = data.id;
-    } else {
-      const { error: err } = await dbu.from("purchase_comparisons").update(payload).eq("id", record.id);
-      if (err) { setError(err.message); setSaving(false); return; }
+  async function handleSubmit() {
+    if (!purpose.trim()) { setError("Purpose is required."); return; }
+    if (!requestedBy.trim()) { setError("Requested By is required."); return; }
+    if (sroType === "Standard" && lines.every(l => !l.item_description.trim())) {
+      setError("Add at least one item."); return;
     }
-    await dbu.from("procurement_history").insert([{
-      comparison_id: compId,
-      action: historyAction || (isNew ? "Prepared" : "Updated"),
-      performed_by: profile?.full_name || "",
-    }]);
-    setSaving(false); onSaved(); onClose();
-  }
+    if (sroType === "Retroactive" && (!amountPaid || !vendor.trim())) {
+      setError("Amount paid and vendor are required for a retroactive SRO."); return;
+    }
+    setSaving(true); setError("");
 
-  // Approved → record the actual purchase
-  async function markPurchased() {
-    setSaving(true);
-    const { data: pData, error: err } = await dbu.from("purchases").insert([{
-      comparison_id: record.id,
-      sro_number: form.sro_number,
-      supplier: form.selected_supplier,
-      description: form.line_items.map((l:any)=>l.description).filter(Boolean).join("; ").slice(0,300),
-      payment_method: form.payment_method,
-      currency: form.currency,
-      amount: form.total_amount || record.total_amount || 0,
-      cost_code: form.cost_code, site: form.site, fleet_number: form.fleet_number,
-      performed_by: profile?.full_name || "",
+    const { data: sro, error: err } = await dbu.from("sro").insert([{
+      sro_type: sroType,
+      raised_by: requestedBy,
+      raised_by_id: profile?.id || null,
+      department, site: site || null, fleet_number: fleetNumber || null,
+      section_code: sectionCode || null,
+      date_raised: dateRaised,
+      purpose,
+      status: sroType === "Standard" ? "Pending Plant Manager Approval" : "Pending Procurement Approval",
+      amount_paid: sroType === "Retroactive" ? Number(amountPaid) : null,
+      vendor: sroType === "Retroactive" ? vendor : null,
+      receipt_ref: sroType === "Retroactive" ? receiptRef : null,
     }]).select().single();
+
     if (err) { setError(err.message); setSaving(false); return; }
-    await dbu.from("purchase_comparisons").update({ status: "Purchased" }).eq("id", record.id);
-    await dbu.from("procurement_history").insert([{
-      comparison_id: record.id, purchase_id: pData.id,
-      action: "Purchased", performed_by: profile?.full_name || "",
+
+    if (sroType === "Standard") {
+      const validLines = lines.filter(l => l.item_description.trim());
+      await dbu.from("sro_items").insert(validLines.map(l => ({
+        sro_id: sro.id,
+        item_description: l.item_description,
+        part_number: l.part_number || null,
+        stock_item_id: l.stock_item_id || null,
+        unit: l.unit,
+        qty_requested: Number(l.qty_requested) || 1,
+        remarks: l.remarks || null,
+      })));
+    }
+
+    await dbu.from("sro_history").insert([{
+      sro_id: sro.id, action: "Raised", performed_by: profile?.full_name || "", role: "Requester",
+      note: requestedBy !== profile?.full_name ? `Raised on behalf of ${requestedBy}` : undefined,
     }]);
+
     setSaving(false); onSaved(); onClose();
   }
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl my-6 overflow-hidden">
+      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl my-6 overflow-hidden">
         <div className="px-7 py-5 bg-slate-900 flex items-center justify-between">
           <div>
-            <p className="text-amber-400 text-[11px] font-bold uppercase tracking-widest">Purchase Comparison &amp; Analysis</p>
-            <h2 className="text-lg font-bold text-white">{isNew ? "New Comparison" : `SRO ${form.sro_number || "—"}`}</h2>
+            <p className="text-amber-400 text-xs font-bold uppercase tracking-widest">Store Requisition Order</p>
+            <h2 className="text-lg font-bold text-white">Raise New SRO</h2>
           </div>
-          <div className="flex items-center gap-3">
-            {!isNew && <span className={`px-3 py-1 rounded-full text-xs font-bold ${STATUS_STYLE[form.status]}`}>{form.status}</span>}
-            <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl">×</button>
-          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl">×</button>
         </div>
 
         <div className="p-7 space-y-5">
-          {/* Header fields */}
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-            <div><label className="text-[10px] font-bold text-slate-500 uppercase">SRO No.</label>
-              <input className={iCls} value={form.sro_number} disabled={readOnly}
-                onChange={e=>set("sro_number",e.target.value)} placeholder="e.g. 43510"/></div>
-            <div><label className="text-[10px] font-bold text-slate-500 uppercase">Currency</label>
-              <select className={iCls} value={form.currency} disabled={readOnly} onChange={e=>set("currency",e.target.value)}>
-                <option value="NGN">₦ Naira</option><option value="USD">$ USD</option></select></div>
-            <div><label className="text-[10px] font-bold text-slate-500 uppercase">Payment</label>
-              <select className={iCls} value={form.payment_method} disabled={readOnly} onChange={e=>set("payment_method",e.target.value)}>
-                <option>CASH</option><option>LPO</option></select></div>
-            <div><label className="text-[10px] font-bold text-slate-500 uppercase">Site</label>
-              <input className={iCls} value={form.site} disabled={readOnly} onChange={e=>set("site",e.target.value)}/></div>
-            <div><label className="text-[10px] font-bold text-slate-500 uppercase">Fleet No.</label>
-              <input className={iCls} value={form.fleet_number} disabled={readOnly} onChange={e=>set("fleet_number",e.target.value)}/></div>
-            <div><label className="text-[10px] font-bold text-slate-500 uppercase">Cost Code</label>
-              <input className={iCls} value={form.cost_code} disabled={readOnly} onChange={e=>set("cost_code",e.target.value)}/></div>
-          </div>
-
-          {/* Line items */}
-          {form.line_items.map((l: any, i: number) => (
-            <div key={i} className="border border-slate-200 rounded-xl p-4 space-y-4">
-              <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-                <div className="lg:col-span-2"><label className="text-[10px] font-bold text-slate-500 uppercase">Description</label>
-                  <input className={iCls} value={l.description} disabled={readOnly}
-                    onChange={e=>setLine(i,"description",e.target.value)}
-                    onBlur={()=>!readOnly && autoFillHistory(i)}
-                    placeholder="e.g. CAT Battery Switch Main Relay 24V"/></div>
-                <div><label className="text-[10px] font-bold text-slate-500 uppercase">Part #</label>
-                  <input className={iCls} value={l.part_no} disabled={readOnly} onChange={e=>setLine(i,"part_no",e.target.value)}/></div>
-                <div><label className="text-[10px] font-bold text-slate-500 uppercase">Qty</label>
-                  <input type="number" className={iCls} value={l.qty} disabled={readOnly} onChange={e=>setLine(i,"qty",e.target.value)}/></div>
-                <div><label className="text-[10px] font-bold text-slate-500 uppercase">Avg Price (hist.)</label>
-                  <input className={iCls + " bg-slate-50"} value={l.avg_price} disabled
-                    placeholder="auto"/></div>
-                <div><label className="text-[10px] font-bold text-slate-500 uppercase">Last Purchase</label>
-                  <input className={iCls + " bg-slate-50"} value={l.last_purchase_price} disabled
-                    placeholder="auto"/></div>
-              </div>
-
-              {/* 3 supplier quotes */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                {(l.quotes || []).map((q: any, qi: number) => {
-                  const line = (Number(q.negotiated_price || q.offered_price || 0)) * (Number(l.qty)||1);
-                  const isSelected = l.selected_supplier && l.selected_supplier === q.supplier && q.supplier;
-                  return (
-                    <div key={qi} className={`rounded-xl border p-3 space-y-2 ${isSelected ? "border-emerald-400 bg-emerald-50" : "border-slate-200"}`}>
-                      <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase">Supplier {qi+1}</p>
-                        {!readOnly && q.supplier && (
-                          <button onClick={()=>setLine(i,"selected_supplier",q.supplier)}
-                            className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${isSelected ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-emerald-100"}`}>
-                            {isSelected ? "✓ Selected" : "Select"}
-                          </button>
-                        )}
-                      </div>
-                      <input className={iCls} value={q.supplier} disabled={readOnly} placeholder="Supplier name"
-                        onChange={e=>setQuote(i,qi,"supplier",e.target.value)}/>
-                      <div className="grid grid-cols-2 gap-2">
-                        <input className={iCls} value={q.brand} disabled={readOnly} placeholder="Brand"
-                          onChange={e=>setQuote(i,qi,"brand",e.target.value)}/>
-                        <input className={iCls} value={q.country} disabled={readOnly} placeholder="Country"
-                          onChange={e=>setQuote(i,qi,"country",e.target.value)}/>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <input type="number" className={iCls} value={q.offered_price} disabled={readOnly} placeholder="Offered ₦"
-                          onChange={e=>setQuote(i,qi,"offered_price",e.target.value)}/>
-                        <input type="number" className={iCls} value={q.negotiated_price} disabled={readOnly} placeholder="Negotiated ₦"
-                          onChange={e=>setQuote(i,qi,"negotiated_price",e.target.value)}/>
-                      </div>
-                      <p className="text-right text-xs font-bold text-slate-700">Line: {naira(line, form.currency)}</p>
-                    </div>
-                  );
-                })}
-              </div>
-              {!readOnly && form.line_items.length > 1 && (
-                <button onClick={()=>set("line_items", form.line_items.filter((_:any,idx:number)=>idx!==i))}
-                  className="text-xs text-red-500 hover:text-red-700">Remove item</button>
-              )}
-            </div>
-          ))}
-
-          {!readOnly && (
-            <button onClick={()=>set("line_items",[...form.line_items, blankLine()])}
-              className="text-sm text-amber-600 font-semibold hover:text-amber-700">+ Add item</button>
-          )}
-
-          {/* Supplier totals */}
-          <div className="bg-slate-50 rounded-xl p-4 grid grid-cols-3 gap-3">
-            {[0,1,2].map(qi => (
-              <div key={qi} className="text-center">
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Supplier {qi+1} Total</p>
-                <p className="font-bold text-slate-800">{supplierTotals[qi] ? naira(supplierTotals[qi], form.currency) : "—"}</p>
-              </div>
+          <div className="flex gap-2">
+            {(["Standard","Retroactive"] as const).map(t => (
+              <button key={t} onClick={() => setSroType(t)}
+                className={`flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-all ${
+                  sroType === t ? "border-amber-400 bg-amber-50 text-amber-700" : "border-slate-200 text-slate-500"
+                }`}>
+                {t === "Standard" ? "📋 Standard — request items" : "🧾 Retroactive — already bought"}
+              </button>
             ))}
           </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">Requested By *</label>
+              <input className={iCls} value={requestedBy} onChange={e=>setRequestedBy(e.target.value)}
+                placeholder="Name of the person requesting" />
+              <p className="text-[11px] text-slate-400 mt-1">Pre-filled with your name — edit if raising on someone else&apos;s behalf.</p></div>
+            <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">Date Raised</label>
+              <input type="date" className={iCls} value={dateRaised} onChange={e=>setDateRaised(e.target.value)} /></div>
+            <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">Department</label>
+              <select className={iCls} value={department} onChange={e=>setDepartment(e.target.value)}>
+                {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+              </select></div>
+            <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">Unit / Section</label>
+              <input className={iCls} value={sectionCode} onChange={e=>setSectionCode(e.target.value)}
+                placeholder="e.g. Plant Admin Office, Workshop" /></div>
+            <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">Site (Projects &amp; Workshops only)</label>
+              <select className={iCls} value={site} onChange={e=>{ setSite(e.target.value); setFleetNumber(""); }}>
+                <option value="">Select site...</option>
+                {sites.map(s => <option key={s.code || s.name} value={s.name}>{s.code ? `${s.code} — ` : ""}{s.name}</option>)}
+              </select></div>
+            <div className="col-span-2"><label className="text-xs font-bold text-slate-500 uppercase block mb-1">Fleet No. (optional — for a specific machine)</label>
+              <FleetPicker equipment={equipment} site={site} sites={sites} value={fleetNumber} onChange={setFleetNumber} /></div>
+            <div className="col-span-2"><label className="text-xs font-bold text-slate-500 uppercase block mb-1">Purpose *</label>
+              <input className={iCls} value={purpose} onChange={e=>setPurpose(e.target.value)} /></div>
+          </div>
+
+          {sroType === "Standard" ? (
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-slate-500 uppercase block">Items Requested</label>
+              {lines.map((l, i) => (
+                <div key={i} className="border border-slate-200 rounded-xl p-3 space-y-2">
+                  <ItemPicker
+                    stockItems={stockItems}
+                    line={l}
+                    onSelect={(item) => setLines(prev => prev.map((ln, idx) => idx === i ? {
+                      ...ln, item_description: item.name, part_number: item.part_number || "",
+                      unit: item.unit || "pcs", stock_item_id: item.id, live_balance: item.balance,
+                    } : ln))}
+                    onFreeText={(text) => setLines(prev => prev.map((ln, idx) => idx === i ? {
+                      ...ln, item_description: text, stock_item_id: null, live_balance: 0,
+                    } : ln))}
+                  />
+                  <div className="grid grid-cols-12 gap-2">
+                    <input type="number" className={iCls + " col-span-3"} placeholder="Qty" value={l.qty_requested}
+                      onChange={e=>setLine(i,"qty_requested",e.target.value)} />
+                    <select className={iCls + " col-span-3"}
+                      value={UNITS.includes(l.unit) ? l.unit : "Other"}
+                      onChange={e=>setLine(i,"unit", e.target.value === "Other" ? "" : e.target.value)}>
+                      {UNITS.map(u => <option key={u} value={u}>{u === "Other" ? "Other..." : u}</option>)}
+                    </select>
+                    <input className={iCls + " col-span-4"} placeholder="Remarks (optional)" value={l.remarks}
+                      onChange={e=>setLine(i,"remarks",e.target.value)} />
+                    <button onClick={()=>setLines(prev => prev.filter((_,idx)=>idx!==i))}
+                      className="col-span-2 text-xs text-red-500 hover:text-red-700">Remove</button>
+                  </div>
+                  {!UNITS.includes(l.unit) && (
+                    <input className={iCls} placeholder="Type the unit (e.g. sachet, coil, tin)" value={l.unit}
+                      onChange={e=>setLine(i,"unit",e.target.value)} />
+                  )}
+                </div>
+              ))}
+              <button onClick={()=>setLines([...lines, blankLine()])}
+                className="text-sm text-amber-600 font-semibold hover:text-amber-700">+ Add item</button>
+            </div>
+          ) : (
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-3">
+              <p className="text-xs font-bold text-purple-600 uppercase">Already purchased — for approval &amp; account payment</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-xs text-purple-500 block mb-1">Vendor *</label>
+                  <input className={iCls} value={vendor} onChange={e=>setVendor(e.target.value)} /></div>
+                <div><label className="text-xs text-purple-500 block mb-1">Amount Paid (₦) *</label>
+                  <input type="number" className={iCls} value={amountPaid} onChange={e=>setAmountPaid(e.target.value)} /></div>
+                <div className="col-span-2"><label className="text-xs text-purple-500 block mb-1">Receipt Reference</label>
+                  <input className={iCls} value={receiptRef} onChange={e=>setReceiptRef(e.target.value)} /></div>
+              </div>
+            </div>
+          )}
 
           {error && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">⚠️ {error}</div>}
         </div>
 
-        {/* Action bar — workflow-aware */}
-        <div className="px-7 py-4 border-t border-slate-100 bg-slate-50 flex flex-wrap justify-end gap-3">
+        <div className="px-7 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+          <button onClick={onClose} className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-500">Cancel</button>
+          <button onClick={handleSubmit} disabled={saving}
+            className="px-6 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 disabled:opacity-50">
+            {saving ? "Submitting..." : "Submit SRO →"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+// ─────────────────────────────────────────────────────────────
+// SRO DETAIL / WORKFLOW MODAL — the whole state machine lives here
+// ─────────────────────────────────────────────────────────────
+function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
+  sro: any; onClose: () => void; onSaved: () => void; profile: any; roles: string[];
+}) {
+  const [items, setItems] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
+  const [stores, setStores] = useState<string[]>([]);
+  const [actingStore, setActingStore] = useState("");
+  const [storeBalances, setStoreBalances] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [linkMap, setLinkMap] = useState<Record<string, string>>({}); // sro_item_id -> stock_item_id chosen
+  const [availQty, setAvailQty] = useState<Record<string, string>>({}); // sro_item_id -> qty to issue now
+
+  const canApprovePlant = roles.some(r => ["plant_manager","plant_engineer","super_admin"].includes(r));
+  const canCheckAvail    = roles.some(r => ["store_officer","store_manager","store_supervisor","super_admin"].includes(r));
+  const canApproveIssue  = roles.some(r => ["store_manager","super_admin"].includes(r));
+  const canApproveProc   = roles.some(r => ["procurement_manager","super_admin"].includes(r));
+
+  // A Data Analyst (store_officer, no cross-store role) is already
+  // scoped to exactly one store — no need to ask which one they're
+  // checking from, the system already knows. Store Manager/Supervisor/
+  // super_admin see every store, so they must declare which one
+  // they're acting from before they can confirm anything.
+  const isScopedOfficer = roles.includes("store_officer") && !roles.some(r => ["store_manager","store_supervisor","super_admin"].includes(r));
+
+  useEffect(() => {
+    fetchAllRows("sites", "name,code").then((all:any) => {
+      const storeNames = all.filter((s:any) => /store/i.test(s.name)).map((s:any) => s.name).sort();
+      setStores(storeNames);
+      if (isScopedOfficer) {
+        const mine = (profile?.assigned_sites || []).find((s:string) => storeNames.includes(s));
+        if (mine) setActingStore(mine);
+      }
+    });
+  }, []); // eslint-disable-line
+
+  // Best-effort name match: exact match first, then a loose "one
+  // contains the other" match as a fallback. This pre-fills the link
+  // so the common case needs zero manual searching — the Data Analyst
+  // can still change the selection if the guess is wrong, since this
+  // only sets an initial value, it never locks anything in.
+  function findBestMatch(description: string, balances: any[]): string {
+    const desc = (description || "").toLowerCase().trim();
+    if (!desc) return "";
+    const exact = balances.find(b => (b.name || "").toLowerCase().trim() === desc);
+    if (exact) return exact.stock_item_id;
+    const loose = balances.find(b => {
+      const n = (b.name || "").toLowerCase().trim();
+      return n && (n.includes(desc) || desc.includes(n));
+    });
+    return loose ? loose.stock_item_id : "";
+  }
+
+  useEffect(() => {
+    if (!actingStore) { setStoreBalances([]); return; }
+    // ★ PERFORMANCE FIX: same bug as Store had — separate fetch +
+    // client-side .find() to match items to balances. One embedded
+    // join does this instantly in the database instead. Reuses the
+    // exact same cache key namespace as the Store page's Register,
+    // so checking availability here and viewing Inventory both draw
+    // from one shared, already-warm cache instead of two cold ones.
+    fetchAllRows("store_stock_balances", "*, stock_items(name,part_number)",
+      (q:any) => q.eq("store_location", actingStore),
+      { cacheKey: `store-balances-${actingStore}` }
+    ).then((balances:any) => {
+      const enriched = (balances as any[]).map(b => ({ ...b, name: b.stock_items?.name, part_number: b.stock_items?.part_number }));
+      setStoreBalances(enriched);
+
+      // Auto-match every still-unlinked pending line against this
+      // store's real items — this is the "link is supposed to be
+      // automatic" fix.
+      setLinkMap(prev => {
+        const next = { ...prev };
+        items.filter(it => it.status === "Pending" && !next[it.id]).forEach(it => {
+          const match = findBestMatch(it.item_description, enriched);
+          if (match) next[it.id] = match;
+        });
+        return next;
+      });
+    });
+  }, [actingStore, items]); // eslint-disable-line
+
+  useEffect(() => { load(); }, []);
+  async function load() {
+    setLoading(true);
+    const [it, hi] = await Promise.all([
+      dbu.from("sro_items").select("*").eq("sro_id", sro.id).order("created_at"),
+      dbu.from("sro_history").select("*").eq("sro_id", sro.id).order("created_at", { ascending: false }),
+    ]);
+    setItems(it.data || []);
+    setHistory(hi.data || []);
+    setLoading(false);
+  }
+
+  async function logHistory(action: string, note?: string, itemId?: string) {
+    await dbu.from("sro_history").insert([{
+      sro_id: sro.id, sro_item_id: itemId || null, action,
+      performed_by: profile?.full_name || "", note: note || null,
+    }]);
+  }
+
+  // Plant Manager approves the whole SRO → moves to store
+  async function approvePlant() {
+    setSaving(true);
+    await dbu.from("sro").update({ status: "At Store", approved_by: profile?.full_name, approved_at: new Date().toISOString() }).eq("id", sro.id);
+    await logHistory("Plant Manager Approved");
+    setSaving(false); onSaved();
+  }
+  async function rejectPlant() {
+    const reason = prompt("Reason for rejection:");
+    if (!reason) return;
+    setSaving(true);
+    await dbu.from("sro").update({ status: "Rejected", rejection_reason: reason }).eq("id", sro.id);
+    await logHistory("Rejected", reason);
+    setSaving(false); onSaved();
+  }
+
+  // Store confirms availability per line — this IS the "issue what you
+  // have, route the rest" mechanic. Now checks the REAL balance at the
+  // acting store, and remembers that store on the line so issue-time
+  // can never drift onto a different one.
+  async function confirmAvailability(item: any) {
+    if (!actingStore) { alert("Select which store you're checking from first."); return; }
+    const stockId = linkMap[item.id];
+    const qty = Number(availQty[item.id] ?? item.qty_requested);
+    if (!stockId) { alert("Link this line to a stock item first."); return; }
+    const stock = storeBalances.find(s => s.stock_item_id === stockId);
+    const available = Math.min(qty, stock?.balance ?? 0);
+    const shortfall = Number(item.qty_requested) - available;
+
+    setSaving(true);
+    await dbu.from("sro_items").update({
+      stock_item_id: stockId,
+      store_location: actingStore,
+      qty_approved: available,
+      qty_to_procure: shortfall > 0 ? shortfall : 0,
+      status: available > 0 ? "Pending Store Manager" : "To Procurement",
+      availability_checked_by: profile?.full_name,
+    }).eq("id", item.id);
+
+    // ★ CLOSES THE LOOP: a shortfall used to just tell someone to go
+    // manually create a comparison on the Procurement page. Now it's
+    // auto-created as a Draft, pre-filled with the item, quantity, and
+    // SRO number — Procurement opens it and just fills in the quotes.
+    if (shortfall > 0) {
+      const { data: comp } = await dbu.from("purchase_comparisons").insert([{
+        sro_number: sro.sro_number,
+        site: sro.site,
+        fleet_number: sro.fleet_number,
+        line_items: [{
+          part_no: item.part_number || "",
+          description: item.item_description,
+          qty: shortfall,
+          fleet_number: sro.fleet_number || "",
+          site: sro.site || "",
+          avg_price: "", last_purchase_price: "",
+          quotes: [
+            { supplier:"", brand:"", country:"", offered_price:"", negotiated_price:"" },
+            { supplier:"", brand:"", country:"", offered_price:"", negotiated_price:"" },
+            { supplier:"", brand:"", country:"", offered_price:"", negotiated_price:"" },
+          ],
+          selected_supplier: "",
+        }],
+        status: "Draft",
+        prepared_by: profile?.full_name || "",
+        remarks: `Auto-created from ${sro.sro_number} shortfall — ${item.item_description} (${shortfall} short at ${actingStore})`,
+      }]).select().single();
+      if (comp) {
+        invalidateCache("purchase-comparisons");
+        await logHistory("Routed to Procurement", `${shortfall} short — draft comparison auto-created for Procurement to review`, item.id);
+      }
+    }
+    if (available > 0) {
+      await logHistory("Availability Confirmed", `${available} of ${item.qty_requested} available at ${actingStore}`, item.id);
+    }
+    setSaving(false); load();
+  }
+
+  // Store Manager approves the issue → generates the SIV, decrements
+  // stock AT THE RIGHT STORE (the same one that confirmed availability —
+  // never re-derived, never left blank).
+  async function approveIssue(item: any) {
+    if (!item.store_location) { alert("This line has no store recorded from the availability check — re-confirm it first."); return; }
+    setSaving(true);
+    const siv = `SIV-${sro.sro_number}-${item.id.slice(0,4)}`;
+    const { error: err } = await dbu.from("store_transactions").insert([{
+      txn_type: "SIV",
+      stock_item_id: item.stock_item_id,
+      item_name: item.item_description,
+      store_location: item.store_location,
+      quantity: item.qty_approved,
+      sro_id: sro.id, sro_item_id: item.id,
+      siv_number: siv,
+      job_order_no: sro.job_order_no,
+      fleet_number: sro.fleet_number,
+      issued_by: profile?.full_name,
+      issued_to: sro.raised_by,
+      performed_by: profile?.full_name,
+    }]);
+    if (err) { alert(err.message); setSaving(false); return; }
+    // Real stock just moved — the cached balance for this store (and
+    // the cross-store total used on Raise SRO) is now stale. Clear
+    // both so the next view anywhere shows the true number.
+    invalidateCache(`store-balances-${item.store_location}`);
+    invalidateCache("all-store-balances");
+    await dbu.from("sro_items").update({
+      status: "Issued", issued_by: profile?.full_name, issued_at: new Date().toISOString(), siv_number: siv,
+    }).eq("id", item.id);
+    await logHistory("Issued", `SIV ${siv} from ${item.store_location}`, item.id);
+    setSaving(false); load();
+  }
+
+  const allTerminal = items.length > 0 && items.every(i => ["Issued","Rejected","Completed"].includes(i.status) || i.status === "To Procurement");
+  useEffect(() => {
+    if (!loading && items.length > 0 && items.every(i => ["Issued","Rejected"].includes(i.status))) {
+      dbu.from("sro").update({ status: "Completed" }).eq("id", sro.id).then(() => {});
+    }
+  }, [items]); // eslint-disable-line
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl my-6 overflow-hidden">
+        <div className="px-7 py-5 bg-slate-900 flex items-center justify-between">
+          <div>
+            <p className="text-amber-400 text-xs font-bold uppercase tracking-widest">{sro.sro_type} SRO</p>
+            <h2 className="text-lg font-bold text-white">{sro.sro_number}</h2>
+            <p className="text-slate-400 text-xs mt-0.5">{sro.purpose}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className={`px-3 py-1 rounded-full text-xs font-bold ${SRO_STATUS_STYLE[sro.status]}`}>{sro.status}</span>
+            <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl">×</button>
+          </div>
+        </div>
+
+        <div className="p-7 space-y-5 max-h-[70vh] overflow-y-auto">
+          <div className="grid grid-cols-4 gap-3 text-xs bg-slate-50 rounded-xl p-4">
+            <div><p className="text-slate-400">Raised By</p><p className="font-semibold text-slate-800">{sro.raised_by}</p></div>
+            <div><p className="text-slate-400">Department</p><p className="font-semibold text-slate-800">{sro.department}</p></div>
+            <div><p className="text-slate-400">Site</p><p className="font-semibold text-slate-800">{sro.site || "—"}</p></div>
+            <div><p className="text-slate-400">Fleet No.</p><p className="font-semibold text-slate-800">{sro.fleet_number || "—"}</p></div>
+          </div>
+
+          {sro.sro_type === "Retroactive" ? (
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-3">
+              <div className="grid grid-cols-3 gap-3 text-xs">
+                <div><p className="text-purple-500">Vendor</p><p className="font-semibold">{sro.vendor}</p></div>
+                <div><p className="text-purple-500">Amount</p><p className="font-semibold">₦{Number(sro.amount_paid).toLocaleString()}</p></div>
+                <div><p className="text-purple-500">Receipt</p><p className="font-semibold">{sro.receipt_ref || "—"}</p></div>
+              </div>
+              {canApproveProc && sro.status === "Pending Procurement Approval" && (
+                <div className="flex gap-2">
+                  <button onClick={async()=>{await dbu.from("sro").update({status:"Approved",approved_by:profile?.full_name,approved_at:new Date().toISOString()}).eq("id",sro.id); await logHistory("Approved"); onSaved();}}
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold">✓ Approve for Payment</button>
+                  <button onClick={rejectPlant} className="px-4 py-2 bg-red-100 text-red-700 rounded-xl text-xs font-bold">✗ Reject</button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {sro.status === "Pending Plant Manager Approval" && canApprovePlant && (
+                <div className="flex gap-2">
+                  <button onClick={approvePlant} disabled={saving}
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold">✓ Approve — Send to Store</button>
+                  <button onClick={rejectPlant} className="px-4 py-2 bg-red-100 text-red-700 rounded-xl text-xs font-bold">✗ Reject</button>
+                </div>
+              )}
+
+              {sro.status === "At Store" && canCheckAvail && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Checking From — Store</label>
+                  {isScopedOfficer ? (
+                    <div className="border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm text-slate-600">
+                      {actingStore || "No store assigned to you yet — ask an admin to assign one."}
+                    </div>
+                  ) : (
+                    <select className={iCls} value={actingStore} onChange={e=>setActingStore(e.target.value)}>
+                      <option value="">Select the store you're checking from...</option>
+                      {stores.map(s => <option key={s}>{s}</option>)}
+                    </select>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {items.map(item => (
+                  <div key={item.id} className="border border-slate-200 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="font-semibold text-slate-800 text-sm">{item.item_description}</p>
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${ITEM_STATUS_STYLE[item.status]}`}>{item.status}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mb-3">Requested: {item.qty_requested} {item.unit}{item.qty_approved != null && ` · Approved: ${item.qty_approved}`}{item.qty_to_procure > 0 && ` · Shortfall to procure: ${item.qty_to_procure}`}</p>
+
+                    {/* Store availability check */}
+                    {sro.status === "At Store" && item.status === "Pending" && canCheckAvail && (
+                      <div className="bg-blue-50 rounded-lg p-3 space-y-2">
+                        {!actingStore ? (
+                          <p className="text-xs text-blue-700">Select which store you're checking from, above, before confirming any lines.</p>
+                        ) : (
+                          <div className="grid grid-cols-3 gap-2">
+                            <select className={iCls} value={linkMap[item.id] || ""} onChange={e=>setLinkMap(p=>({...p,[item.id]:e.target.value}))}>
+                              <option value="">Link to stock item at {actingStore}...</option>
+                              {storeBalances.map(s => <option key={s.stock_item_id} value={s.stock_item_id}>{s.name} (bal: {s.balance})</option>)}
+                            </select>
+                            <input type="number" className={iCls} placeholder="Qty available"
+                              value={availQty[item.id] ?? item.qty_requested}
+                              onChange={e=>setAvailQty(p=>({...p,[item.id]:e.target.value}))} />
+                            <button onClick={()=>confirmAvailability(item)} disabled={saving}
+                              className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold">Confirm</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Store Manager issue approval */}
+                    {item.status === "Pending Store Manager" && canApproveIssue && (
+                      <button onClick={()=>approveIssue(item)} disabled={saving}
+                        className="px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold">
+                        ✓ Approve Issue — Generate SIV
+                      </button>
+                    )}
+
+                    {item.status === "Issued" && (
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-emerald-700 font-semibold">✓ Issued · SIV {item.siv_number} · by {item.issued_by}</p>
+                        <button onClick={()=>printSIVReceipt(sro, item)}
+                          className="text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700">
+                          🖨 Print Receipt
+                        </button>
+                      </div>
+                    )}
+                    {item.status === "To Procurement" && (
+                      <p className="text-xs text-purple-700">
+                        ✓ Not available at {actingStore || "the store"} — a draft Purchase Comparison for {sro.sro_number} was created automatically. Procurement just needs to fill in supplier quotes.
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* History */}
+          <div>
+            <p className="text-xs font-bold text-slate-500 uppercase mb-2">History</p>
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {loading ? <p className="text-xs text-slate-400">Loading...</p>
+              : history.length === 0 ? <p className="text-xs text-slate-400">No history yet.</p>
+              : history.map((h:any) => (
+                <div key={h.id} className="text-xs flex justify-between border-b border-slate-50 pb-1.5">
+                  <span><strong>{h.action}</strong> by {h.performed_by} {h.note && `— ${h.note}`}</span>
+                  <span className="text-slate-400 whitespace-nowrap ml-2">{fmtDT(h.created_at)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="px-7 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
           <button onClick={onClose} className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-500">Close</button>
-          {canEdit && !readOnly && (
-            <button onClick={()=>save()} disabled={saving}
-              className="px-5 py-2.5 rounded-xl bg-slate-800 text-white text-sm font-bold hover:bg-slate-900 disabled:opacity-50">
-              {saving ? "Saving..." : "💾 Save Draft"}
-            </button>
-          )}
-          {canCheck && form.status === "Draft" && !isNew && (
-            <button onClick={()=>save("Checked","Checked")} disabled={saving}
-              className="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 disabled:opacity-50">
-              ✓ Check (Procurement)
-            </button>
-          )}
-          {canApprove && form.status === "Checked" && (
-            <button onClick={()=>save("Approved","Approved")} disabled={saving}
-              className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-50">
-              ✓ Approve (Plant Eng/Mgr)
-            </button>
-          )}
-          {canEdit && form.status === "Approved" && !isNew && (
-            <button onClick={markPurchased} disabled={saving}
-              className="px-5 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 disabled:opacity-50">
-              🛒 Mark Purchased
-            </button>
-          )}
         </div>
       </div>
     </div>
@@ -304,224 +813,124 @@ function ComparisonModal({ record, onClose, onSaved, profile, canEdit, canCheck,
 // ─────────────────────────────────────────────────────────────
 // MAIN PAGE
 // ─────────────────────────────────────────────────────────────
-export default function ProcurementPage() {
+export default function SROPage() {
   const { profile } = useAuth();
   const roles: string[] = (profile?.roles as string[]) || [];
 
-  // Access matrix (agreed): procurement roles edit; store manager,
-  // plant eng/manager, executives view-only; approvals per chain.
-  const canEdit    = roles.some(r => ["procurement_officer","procurement_manager","super_admin"].includes(r));
-  const canCheck   = roles.some(r => ["procurement_manager","super_admin"].includes(r));
-  const canApprove = roles.some(r => ["plant_engineer","plant_manager","super_admin"].includes(r));
-  const canView    = canEdit || canApprove || roles.some(r =>
-    ["store_manager","plant_admin","executive","finance_viewer"].includes(r));
-
-  const [tab, setTab] = useState<"dashboard"|"comparisons"|"purchases"|"history">("dashboard");
-  const [comparisons, setComparisons] = useState<any[]>([]);
-  const [purchases,   setPurchases]   = useState<any[]>([]);
-  const [history,     setHistory]     = useState<any[]>([]);
-  const [loading,     setLoading]     = useState(true);
-  const [modal,       setModal]       = useState<any|"new"|null>(null);
-  const [month,       setMonth]       = useState(() => new Date().toISOString().slice(0,7));
+  const [sros, setSros] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"dashboard"|"all">("dashboard");
+  const [raiseModal, setRaiseModal] = useState(false);
+  const [selected, setSelected] = useState<any>(null);
+  const [search, setSearch] = useState("");
 
   useEffect(() => { load(); }, []);
-
   async function load() {
     setLoading(true);
-    const [c, p, h] = await Promise.all([
-      fetchAllRows("purchase_comparisons", "*", q => q.order("created_at", { ascending: false }), { cacheKey: "purchase-comparisons", cacheTTL: 20000 }),
-      fetchAllRows("purchases", "*", q => q.order("purchase_date", { ascending: false }), { cacheKey: "purchases", cacheTTL: 20000 }),
-      dbu.from("procurement_history").select("*").order("created_at", { ascending: false }).limit(100)
-        .then(({ data }: any) => data || []),
-    ]);
-    setComparisons(c); setPurchases(p); setHistory(h);
+    const data = await fetchAllRows("sro", "*", q => q.order("created_at", { ascending: false }), { cacheKey: "sro-list", cacheTTL: 20000 });
+    setSros(data);
     setLoading(false);
   }
+
+  // Any write inside either modal (raise, approve, confirm, issue,
+  // reject) must invalidate the list cache first — otherwise the
+  // status you just changed could still show the old value for up
+  // to 20s, since load() would happily serve the cached copy.
   function reloadFresh() {
-    invalidateCache("purchase-comparisons");
-    invalidateCache("purchases");
+    invalidateCache("sro-list");
     load();
   }
 
-  if (!canView) {
-    return <div className="py-24 text-center text-slate-400">You don&apos;t have access to Procurement.</div>;
-  }
+  const filtered = sros.filter((s:any) => {
+    const q = search.toLowerCase();
+    return !q || (s.sro_number||"").toLowerCase().includes(q) || (s.purpose||"").toLowerCase().includes(q) || (s.raised_by||"").toLowerCase().includes(q);
+  });
 
-  // Monthly spend (requirement #3: "how much has been spent in a month")
-  const monthPurchases = purchases.filter(p => (p.purchase_date || "").startsWith(month));
-  const monthTotal = monthPurchases.reduce((s, p) => s + Number(p.amount || 0), 0);
-  const months = [...new Set(purchases.map(p => (p.purchase_date || "").slice(0,7)))].filter(Boolean).sort().reverse();
-  const bySupplier: Record<string, number> = {};
-  monthPurchases.forEach(p => { bySupplier[p.supplier || "—"] = (bySupplier[p.supplier || "—"] || 0) + Number(p.amount || 0); });
+  const myApprovals = sros.filter((s:any) => {
+    if (s.status === "Pending Plant Manager Approval" && roles.some(r=>["plant_manager","plant_engineer","super_admin"].includes(r))) return true;
+    if (s.status === "Pending Procurement Approval" && roles.some(r=>["procurement_manager","super_admin"].includes(r))) return true;
+    return false;
+  });
 
-  const pendingCheck   = comparisons.filter(c => c.status === "Draft").length;
-  const pendingApprove = comparisons.filter(c => c.status === "Checked").length;
+  const counts = {
+    total: sros.length,
+    pendingPlant: sros.filter((s:any)=>s.status==="Pending Plant Manager Approval").length,
+    atStore: sros.filter((s:any)=>s.status==="At Store"||s.status==="In Progress").length,
+    completed: sros.filter((s:any)=>s.status==="Completed").length,
+  };
 
   return (
     <div className="space-y-6 pb-10">
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div>
-          <p className="text-[11px] font-bold text-amber-500 uppercase tracking-widest mb-1">Procurement</p>
-          <h1 className="text-3xl font-bold text-slate-900">Purchasing</h1>
+          <p className="text-[11px] font-bold text-amber-500 uppercase tracking-widest mb-1">Store Requisition</p>
+          <h1 className="text-3xl font-bold text-slate-900">SRO</h1>
           <p className="text-slate-500 mt-1 text-sm max-w-lg">
-            Purchase comparison &amp; analysis, approvals, and spend records.
-            {!canEdit && " (View-only access)"}
+            Raise a requisition — plant approves, store checks availability and issues, shortfalls route to procurement automatically.
           </p>
         </div>
-        {canEdit && (
-          <button onClick={() => setModal("new")}
-            className="bg-amber-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-600 shadow-sm shrink-0">
-            + New Comparison
-          </button>
-        )}
+        <button onClick={() => setRaiseModal(true)}
+          className="bg-amber-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-600 shadow-sm shrink-0">
+          + Raise SRO
+        </button>
       </div>
 
-      <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit flex-wrap">
-        {([["dashboard","📊 Dashboard"],["comparisons",`📋 Comparisons (${comparisons.length})`],
-           ["purchases",`🛒 Purchases (${purchases.length})`],["history","🕒 History"]] as const).map(([k,l]) => (
-          <button key={k} onClick={()=>setTab(k)}
-            className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${tab===k?"bg-white text-slate-800 shadow-sm":"text-slate-500 hover:text-slate-700"}`}>
-            {l}
-          </button>
-        ))}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-slate-900 text-white rounded-2xl p-5"><p className="text-2xl font-bold">{loading?"...":counts.total}</p><p className="text-sm opacity-70 mt-1">Total SROs</p></div>
+        <div className="bg-orange-500 text-white rounded-2xl p-5"><p className="text-2xl font-bold">{loading?"...":counts.pendingPlant}</p><p className="text-sm opacity-70 mt-1">Pending Plant Approval</p></div>
+        <div className="bg-blue-600 text-white rounded-2xl p-5"><p className="text-2xl font-bold">{loading?"...":counts.atStore}</p><p className="text-sm opacity-70 mt-1">At Store / In Progress</p></div>
+        <div className="bg-emerald-600 text-white rounded-2xl p-5"><p className="text-2xl font-bold">{loading?"...":counts.completed}</p><p className="text-sm opacity-70 mt-1">Completed</p></div>
       </div>
 
-      {tab === "dashboard" && (
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-slate-900 text-white rounded-2xl p-5">
-              <p className="text-2xl font-bold">{naira(monthTotal)}</p>
-              <p className="text-sm opacity-70 mt-1">Spend — {month}</p>
-            </div>
-            <div className="bg-amber-500 text-white rounded-2xl p-5">
-              <p className="text-3xl font-bold">{monthPurchases.length}</p>
-              <p className="text-sm opacity-70 mt-1">Purchases this month</p>
-            </div>
-            <div className="bg-blue-600 text-white rounded-2xl p-5">
-              <p className="text-3xl font-bold">{pendingCheck}</p>
-              <p className="text-sm opacity-70 mt-1">Awaiting Check</p>
-            </div>
-            <div className="bg-emerald-600 text-white rounded-2xl p-5">
-              <p className="text-3xl font-bold">{pendingApprove}</p>
-              <p className="text-sm opacity-70 mt-1">Awaiting Approval</p>
-            </div>
+      {myApprovals.length > 0 && (
+        <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4">
+          <p className="font-bold text-orange-800 text-sm mb-2">🔔 {myApprovals.length} awaiting your approval</p>
+          <div className="flex flex-wrap gap-2">
+            {myApprovals.map((s:any) => (
+              <button key={s.id} onClick={()=>setSelected(s)}
+                className="px-3 py-1.5 bg-white border border-orange-200 rounded-lg text-xs font-semibold text-orange-700 hover:bg-orange-100">
+                {s.sro_number} — {s.purpose?.slice(0,30)}
+              </button>
+            ))}
           </div>
+        </div>
+      )}
 
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 flex flex-wrap items-center gap-4">
-            <label className="text-xs font-bold text-slate-500 uppercase">Month</label>
-            <select className={iCls + " w-44"} value={month} onChange={e=>setMonth(e.target.value)}>
-              {(months.length ? months : [month]).map(m => <option key={m}>{m}</option>)}
-            </select>
-            <p className="text-sm text-slate-500">{monthPurchases.length} purchase{monthPurchases.length===1?"":"s"} · {naira(monthTotal)}</p>
-          </div>
+      <div className="bg-white rounded-2xl border border-slate-200 p-5">
+        <input placeholder="Search SRO number, purpose, requester..." value={search} onChange={e=>setSearch(e.target.value)} className={iCls} />
+      </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100"><h3 className="font-bold text-slate-800">Spend by Supplier — {month}</h3></div>
-            <div className="divide-y divide-slate-50">
-              {Object.entries(bySupplier).sort((a,b)=>b[1]-a[1]).map(([s, amt]) => (
-                <div key={s} className="px-6 py-3 flex items-center justify-between text-sm">
-                  <span className="text-slate-700 font-medium">{s}</span>
-                  <span className="font-bold text-slate-800">{naira(amt)}</span>
-                </div>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-100">
+              <tr>{["SRO No.","Type","Raised By","Department","Purpose","Date","Status",""].map(h=>(
+                <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">{h}</th>))}</tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {loading ? <tr><td colSpan={8} className="px-5 py-12 text-center text-slate-400">Loading...</td></tr>
+              : filtered.length === 0 ? <tr><td colSpan={8} className="px-5 py-12 text-center text-slate-400">No SROs yet.</td></tr>
+              : filtered.map((s:any) => (
+                <tr key={s.id} className="hover:bg-amber-50/20">
+                  <td className="px-4 py-3 font-mono text-xs font-bold text-amber-600">{s.sro_number}</td>
+                  <td className="px-4 py-3 text-xs text-slate-500">{s.sro_type}</td>
+                  <td className="px-4 py-3 text-slate-700 text-xs">{s.raised_by}</td>
+                  <td className="px-4 py-3 text-slate-500 text-xs">{s.department}</td>
+                  <td className="px-4 py-3 text-slate-600 text-xs max-w-56 truncate">{s.purpose}</td>
+                  <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">{fmtDT(s.created_at)}</td>
+                  <td className="px-4 py-3"><span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${SRO_STATUS_STYLE[s.status]}`}>{s.status}</span></td>
+                  <td className="px-4 py-3">
+                    <button onClick={()=>setSelected(s)} className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium">Open</button>
+                  </td>
+                </tr>
               ))}
-              {monthPurchases.length === 0 && (
-                <div className="px-6 py-10 text-center text-slate-400 text-sm">No purchases recorded for {month} yet.</div>
-              )}
-            </div>
-          </div>
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
 
-      {tab === "comparisons" && (
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-100">
-                <tr>{["SRO No.","Date","Items","Suppliers","Selected","Total","Status",""].map(h=>(
-                  <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">{h}</th>))}</tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {loading ? <tr><td colSpan={8} className="px-5 py-12 text-center text-slate-400">Loading...</td></tr>
-                : comparisons.length === 0 ? <tr><td colSpan={8} className="px-5 py-12 text-center text-slate-400">No comparisons yet.</td></tr>
-                : comparisons.map((c:any) => (
-                  <tr key={c.id} className="hover:bg-amber-50/20">
-                    <td className="px-4 py-3 font-mono text-xs font-bold text-amber-600">{c.sro_number || "—"}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
-                      {c.comparison_date ? new Date(c.comparison_date).toLocaleDateString("en-GB") : "—"}</td>
-                    <td className="px-4 py-3 text-slate-600 text-xs max-w-48 truncate">
-                      {(c.line_items||[]).map((l:any)=>l.description).filter(Boolean).join("; ") || "—"}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{(c.suppliers||[]).filter(Boolean).length}</td>
-                    <td className="px-4 py-3 text-slate-700 text-xs font-medium">{c.selected_supplier || "—"}</td>
-                    <td className="px-4 py-3 text-xs font-bold text-slate-800">{naira(c.total_amount, c.currency)}</td>
-                    <td className="px-4 py-3"><span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_STYLE[c.status]}`}>{c.status}</span></td>
-                    <td className="px-4 py-3">
-                      <button onClick={()=>setModal(c)}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium">Open</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {tab === "purchases" && (
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-100">
-                <tr>{["Date","SRO","Supplier","Description","Payment","Cost Code","Amount","By"].map(h=>(
-                  <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">{h}</th>))}</tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {purchases.length === 0 ? <tr><td colSpan={8} className="px-5 py-12 text-center text-slate-400">No purchases recorded yet.</td></tr>
-                : purchases.map((p:any) => (
-                  <tr key={p.id} className="hover:bg-amber-50/20">
-                    <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
-                      {p.purchase_date ? new Date(p.purchase_date).toLocaleDateString("en-GB") : "—"}</td>
-                    <td className="px-4 py-3 font-mono text-xs font-bold text-amber-600">{p.sro_number || "—"}</td>
-                    <td className="px-4 py-3 text-slate-700 text-xs font-medium">{p.supplier || "—"}</td>
-                    <td className="px-4 py-3 text-slate-600 text-xs max-w-56 truncate">{p.description || "—"}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{p.payment_method}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{p.cost_code || "—"}</td>
-                    <td className="px-4 py-3 text-xs font-bold text-slate-800">{naira(p.amount, p.currency)}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{p.performed_by || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {tab === "history" && (
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-50">
-          {history.length === 0 ? <div className="px-6 py-12 text-center text-slate-400 text-sm">No history yet.</div>
-          : history.map((h:any) => (
-            <div key={h.id} className="px-6 py-3 flex items-center justify-between text-sm">
-              <div>
-                <span className="font-semibold text-slate-700">{h.action}</span>
-                <span className="text-slate-400 text-xs ml-2">by {h.performed_by}</span>
-                {h.note && <span className="text-slate-400 text-xs ml-2 italic">— {h.note}</span>}
-              </div>
-              <span className="text-xs text-slate-400 whitespace-nowrap">
-                {new Date(h.created_at).toLocaleDateString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {modal && (
-        <ComparisonModal
-          record={modal === "new" ? null : modal}
-          onClose={() => setModal(null)}
-          onSaved={reloadFresh}
-          profile={profile}
-          canEdit={canEdit} canCheck={canCheck} canApprove={canApprove}
-        />
-      )}
+      {raiseModal && <RaiseSROModal onClose={()=>setRaiseModal(false)} onSaved={reloadFresh} profile={profile} />}
+      {selected && <SRODetailModal sro={selected} onClose={()=>setSelected(null)} onSaved={()=>{reloadFresh(); setSelected(null);}} profile={profile} roles={roles} />}
     </div>
   );
 }
