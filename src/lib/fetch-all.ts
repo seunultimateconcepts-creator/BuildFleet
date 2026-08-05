@@ -27,11 +27,38 @@ import { dbu } from "@/lib/db";
 
 const PAGE = 1000;
 
+// ─────────────────────────────────────────────────────────────
+// Lightweight in-memory cache — lives for the browser tab's session,
+// cleared on a real page reload. This is what fixes "navigating back
+// to a page reloads everything again": if the same cacheKey was
+// fetched within the last cacheTTL, serve it instantly instead of
+// hitting the database again. Purely opt-in — any call without a
+// cacheKey behaves exactly as before, so nothing existing breaks.
+// ─────────────────────────────────────────────────────────────
+const _cache = new Map<string, { data: any[]; ts: number }>();
+
+// Call after any write (GRN, SIV, Adjustment, etc.) so the next load
+// shows the real, current data instead of serving a stale cached
+// copy for up to cacheTTL. Pass a prefix to clear a family of keys
+// (e.g. "store-balances-") or nothing to clear everything.
+export function invalidateCache(prefix?: string) {
+  if (!prefix) { _cache.clear(); return; }
+  for (const k of _cache.keys()) if (k.startsWith(prefix)) _cache.delete(k);
+}
+
+
 export async function fetchAllRows(
   table: string,
   select: string = "*",
   modify?: (q: any) => any,
+  options?: { cacheKey?: string; cacheTTL?: number }, // cacheTTL in ms, default 60s
 ): Promise<any[]> {
+  const { cacheKey, cacheTTL = 60000 } = options || {};
+  if (cacheKey) {
+    const cached = _cache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < cacheTTL) return cached.data;
+  }
+
   const all: any[] = [];
   const seen = new Set<string>(); // belt-and-braces: drop any row whose id we've already collected
   for (let from = 0; ; from += PAGE) {
@@ -52,5 +79,6 @@ export async function fetchAllRows(
     }
     if (!data || data.length < PAGE) break; // short page = last page
   }
+  if (cacheKey) _cache.set(cacheKey, { data: all, ts: Date.now() });
   return all;
 }

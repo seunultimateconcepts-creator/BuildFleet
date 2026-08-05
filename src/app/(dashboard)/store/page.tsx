@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import { dbu } from "@/lib/db";
 import { useAuth } from "@/hooks/use-auth";
-import { fetchAllRows } from "@/lib/fetch-all";
+import { fetchAllRows, invalidateCache } from "@/lib/fetch-all";
 import { StoreLedgerImportModal } from "@/components/dashboard/store-ledger-import-modal";
 
 const iCls = "w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
@@ -416,20 +416,42 @@ export default function StorePage() {
     setLoading(false);
   }
 
-  useEffect(() => { if (selectedStore || selectedStore === "__all__") loadBalances(); }, [selectedStore]);
+  useEffect(() => { if (selectedStore || selectedStore === "__all__") loadBalances(); }, [selectedStore]); 
   async function loadBalances() {
     setLoading(true);
-    const data = selectedStore === "__all__"
-      ? await fetchAllRows("store_stock_balances", "*")
-      : await fetchAllRows("store_stock_balances", "*", q => q.eq("store_location", selectedStore));
-    // Enrich with item master fields for display/search.
-    const enriched = data.map((b: any) => {
-      const master = itemsMaster.find((m: any) => m.id === b.stock_item_id);
-      return { ...b, name: master?.name, part_number: master?.part_number, category: master?.category,
-        unit: master?.unit, unit_cost: master?.unit_cost, sourcing: master?.sourcing };
-    });
+    // ★ PERFORMANCE FIX: this used to be two separate full-table
+    // fetches (balances + items) followed by a manual .find() match
+    // in the browser — an O(n×m) loop across thousands of rows on
+    // every load. Supabase can embed the related stock_items row
+    // directly in the same query (it already knows the foreign key),
+    // so the database does the matching in one pass instead of the
+    // browser doing it the slow way. Also cached for 60s so clicking
+    // back into this page doesn't force a full reload every time.
+    const select = "*, stock_items(name,part_number,category,unit,unit_cost,sourcing)";
+    const cacheKey = `store-balances-${selectedStore}`;
+    const raw = selectedStore === "__all__"
+      ? await fetchAllRows("store_stock_balances", select, undefined, { cacheKey })
+      : await fetchAllRows("store_stock_balances", select, (q:any) => q.eq("store_location", selectedStore), { cacheKey });
+
+    const enriched = (raw as any[]).map(b => ({
+      ...b,
+      name: b.stock_items?.name,
+      part_number: b.stock_items?.part_number,
+      category: b.stock_items?.category,
+      unit: b.stock_items?.unit,
+      unit_cost: b.stock_items?.unit_cost,
+      sourcing: b.stock_items?.sourcing,
+    }));
     setBalances(enriched);
     setLoading(false);
+  }
+
+  // Any write (GRN, Adjustment, Import) must invalidate the cache
+  // first — otherwise the change wouldn't show up for up to 60s,
+  // since loadBalances would happily serve the now-stale cached copy.
+  function reloadFresh() {
+    invalidateCache("store-balances-");
+    loadBalances();
   }
 
   const categories = [...new Set(balances.map((b: any) => b.category))].filter(Boolean).sort();
@@ -611,11 +633,11 @@ export default function StorePage() {
         </div>
       </div>
 
-      <StoreLedgerImportModal open={importModal} onClose={() => { setImportModal(false); loadBalances(); }} />
-      <ReceiveStockModal open={grnModal} onClose={() => setGrnModal(false)} onSaved={loadBalances}
+      <StoreLedgerImportModal open={importModal} onClose={() => { setImportModal(false); reloadFresh(); }} />
+      <ReceiveStockModal open={grnModal} onClose={() => setGrnModal(false)} onSaved={reloadFresh}
         itemsMaster={itemsMaster} stores={availableStores} defaultStore={grnDefaultStore}
         lockStore={lockStoreForOfficer} profile={profile} />
-      <StockAdjustmentModal open={adjustModal} onClose={() => setAdjustModal(false)} onSaved={loadBalances}
+      <StockAdjustmentModal open={adjustModal} onClose={() => setAdjustModal(false)} onSaved={reloadFresh}
         storeBalances={balances} stores={availableStores} defaultStore={grnDefaultStore}
         lockStore={lockStoreForOfficer} profile={profile} />
     </div>
