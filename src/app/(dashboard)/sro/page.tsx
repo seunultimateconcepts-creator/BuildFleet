@@ -1,6 +1,6 @@
-/* eslint-disable react-hooks/set-state-in-effect */
-/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -422,13 +422,43 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
     });
   }, []); 
 
+  // Best-effort name match: exact match first, then a loose "one
+  // contains the other" match as a fallback. This pre-fills the link
+  // so the common case needs zero manual searching — the Data Analyst
+  // can still change the selection if the guess is wrong, since this
+  // only sets an initial value, it never locks anything in.
+  function findBestMatch(description: string, balances: any[]): string {
+    const desc = (description || "").toLowerCase().trim();
+    if (!desc) return "";
+    const exact = balances.find(b => (b.name || "").toLowerCase().trim() === desc);
+    if (exact) return exact.stock_item_id;
+    const loose = balances.find(b => {
+      const n = (b.name || "").toLowerCase().trim();
+      return n && (n.includes(desc) || desc.includes(n));
+    });
+    return loose ? loose.stock_item_id : "";
+  }
+
   useEffect(() => {
     if (!actingStore) { setStoreBalances([]); return; }
     fetchAllRows("store_stock_balances", "*", (q:any) => q.eq("store_location", actingStore)).then(async (balances:any) => {
-      const items = await fetchAllRows("stock_items", "id,name");
-      setStoreBalances(balances.map((b:any) => ({ ...b, name: (items as any[]).find(i=>i.id===b.stock_item_id)?.name })));
+      const stockItems = await fetchAllRows("stock_items", "id,name");
+      const enriched = balances.map((b:any) => ({ ...b, name: (stockItems as any[]).find(i=>i.id===b.stock_item_id)?.name }));
+      setStoreBalances(enriched);
+
+      // Auto-match every still-unlinked pending line against this
+      // store's real items — this is the "link is supposed to be
+      // automatic" fix.
+      setLinkMap(prev => {
+        const next = { ...prev };
+        items.filter(it => it.status === "Pending" && !next[it.id]).forEach(it => {
+          const match = findBestMatch(it.item_description, enriched);
+          if (match) next[it.id] = match;
+        });
+        return next;
+      });
     });
-  }, [actingStore]);
+  }, [actingStore, items]); 
 
   useEffect(() => { load(); }, []);
   async function load() {
