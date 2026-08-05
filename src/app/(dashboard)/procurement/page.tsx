@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/immutability */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -6,7 +7,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import { dbu } from "@/lib/db";
 import { useAuth } from "@/hooks/use-auth";
-import { fetchAllRows } from "@/lib/fetch-all";
+import { fetchAllRows, invalidateCache } from "@/lib/fetch-all";
 
 const iCls = "w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 
@@ -328,13 +329,18 @@ export default function ProcurementPage() {
   async function load() {
     setLoading(true);
     const [c, p, h] = await Promise.all([
-      fetchAllRows("purchase_comparisons", "*", q => q.order("created_at", { ascending: false })),
-      fetchAllRows("purchases", "*", q => q.order("purchase_date", { ascending: false })),
+      fetchAllRows("purchase_comparisons", "*", q => q.order("created_at", { ascending: false }), { cacheKey: "purchase-comparisons", cacheTTL: 20000 }),
+      fetchAllRows("purchases", "*", q => q.order("purchase_date", { ascending: false }), { cacheKey: "purchases", cacheTTL: 20000 }),
       dbu.from("procurement_history").select("*").order("created_at", { ascending: false }).limit(100)
         .then(({ data }: any) => data || []),
     ]);
     setComparisons(c); setPurchases(p); setHistory(h);
     setLoading(false);
+  }
+  function reloadFresh() {
+    invalidateCache("purchase-comparisons");
+    invalidateCache("purchases");
+    load();
   }
 
   if (!canView) {
@@ -511,7 +517,7 @@ export default function ProcurementPage() {
         <ComparisonModal
           record={modal === "new" ? null : modal}
           onClose={() => setModal(null)}
-          onSaved={load}
+          onSaved={reloadFresh}
           profile={profile}
           canEdit={canEdit} canCheck={canCheck} canApprove={canApprove}
         />

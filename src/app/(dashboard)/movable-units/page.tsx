@@ -1,7 +1,8 @@
-/* eslint-disable @typescript-eslint/no-unused-expressions */
-/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable react-hooks/immutability */
+/* eslint-disable @typescript-eslint/no-unused-expressions */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -10,7 +11,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import { dbu } from "@/lib/db";
 import { useAuth } from "@/hooks/use-auth";
-import { fetchAllRows } from "@/lib/fetch-all";
+import { fetchAllRows, invalidateCache } from "@/lib/fetch-all";
 
 const iCls = "w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 const fmtDT = (d: string) => d ? new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—";
@@ -193,15 +194,18 @@ function CreateMUModal({ open, onClose, onSaved, profile }: { open: boolean; onC
   // ★ MULTI-STORE FIX: items you can add to an MU must come from the
   // SOURCE store's real, live balance — never the frozen global
   // stock_items number. Refetches every time From Location changes.
+  // ★ PERFORMANCE FIX: same pattern as Store and SRO — one embedded
+  // join instead of two fetches plus a client-side .find() match,
+  // sharing the same cache key namespace as both, so this reuses an
+  // already-warm cache if either page was viewed recently.
   useEffect(() => {
     setStoreLines([]); // location changed — old picks no longer valid
     if (!fromLocation) { setStoreBalances([]); return; }
-    fetchAllRows("store_stock_balances", "*", (q:any) => q.eq("store_location", fromLocation)).then(async (balances:any) => {
-      const items = await fetchAllRows("stock_items", "id,name,part_number");
-      setStoreBalances(balances.map((b:any) => {
-        const item = (items as any[]).find(i => i.id === b.stock_item_id);
-        return { ...b, name: item?.name, part_number: item?.part_number };
-      }));
+    fetchAllRows("store_stock_balances", "*, stock_items(name,part_number)",
+      (q:any) => q.eq("store_location", fromLocation),
+      { cacheKey: `store-balances-${fromLocation}` }
+    ).then((balances:any) => {
+      setStoreBalances((balances as any[]).map(b => ({ ...b, name: b.stock_items?.name, part_number: b.stock_items?.part_number })));
     });
   }, [fromLocation]);
 
@@ -536,6 +540,8 @@ function MUDetailModal({ mu: initialMu, onClose, onSaved, profile, roles }: {
         return;
       }
     }
+    // Stock genuinely left this store — the cached balance is now stale.
+    invalidateCache(`store-balances-${mu.from_location}`);
     await dbu.from("movable_units").update({ status: "In Transit", dispatched_by: profile?.full_name, dispatched_at: new Date().toISOString() }).eq("id", mu.id);
     setSaving(false); refreshMU();
   }
@@ -583,6 +589,8 @@ function MUDetailModal({ mu: initialMu, onClose, onSaved, profile, roles }: {
       }]);
       if (err) { alert(`Could not land ${item.item_name} at ${mu.to_location}: ${err.message}`); setSaving(false); return; }
     }
+    // Stock genuinely arrived at this store — the cached balance is now stale.
+    invalidateCache(`store-balances-${mu.to_location}`);
     await dbu.from("movable_units").update({
       status: allConfirmed ? "Received" : "Partially Received",
       received_verification_status: verifyStatus,
@@ -755,10 +763,11 @@ export default function MovableUnitsPage() {
   useEffect(() => { load(); }, []);
   async function load() {
     setLoading(true);
-    const data = await fetchAllRows("movable_units", "*", q => q.order("created_at", { ascending: false }));
+    const data = await fetchAllRows("movable_units", "*", q => q.order("created_at", { ascending: false }), { cacheKey: "mu-list", cacheTTL: 20000 });
     setMus(data);
     setLoading(false);
   }
+  function reloadFresh() { invalidateCache("mu-list"); load(); }
 
   function toggleCheck(id: string) {
     setChecked(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
@@ -845,8 +854,8 @@ export default function MovableUnitsPage() {
         </div>
       </div>
 
-      <CreateMUModal open={createModal} onClose={()=>setCreateModal(false)} onSaved={load} profile={profile} />
-      {selected && <MUDetailModal mu={selected} onClose={()=>{setSelected(null); load();}} onSaved={load} profile={profile} roles={roles} />}
+      <CreateMUModal open={createModal} onClose={()=>setCreateModal(false)} onSaved={reloadFresh} profile={profile} />
+      {selected && <MUDetailModal mu={selected} onClose={()=>{setSelected(null); reloadFresh();}} onSaved={reloadFresh} profile={profile} roles={roles} />}
       <ManifestHeaderModal open={manifestModal} onClose={()=>setManifestModal(false)} onGenerate={generateManifest} selectedCount={checked.size} />
     </div>
   );
