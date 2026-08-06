@@ -35,7 +35,7 @@ function F({ label, required, children }: { label: string; required?: boolean; c
 // belongs to ONE specific store. A brand-new item still registers
 // once in the shared catalog (stock_items), but the actual quantity
 // always lands as a store_transactions row tagged to a store, which
-// is what the balance triggers key off — never the item master.
+// is what the balance triggers key off, never the item master.
 // ─────────────────────────────────────────────────────────────
 function ReceiveStockModal({ open, onClose, onSaved, itemsMaster, stores, defaultStore, lockStore, profile }: {
   open: boolean; onClose: () => void; onSaved: () => void; itemsMaster: any[];
@@ -58,7 +58,34 @@ function ReceiveStockModal({ open, onClose, onSaved, itemsMaster, stores, defaul
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  // Optional SRO linkage. This search deliberately only queries
+  // comparisons with status "Signed Off" — that's the whole gate.
+  // A receipt against an SRO that Procurement hasn't signed off can't
+  // be found or selected here, so there's nothing to bypass. Ordinary
+  // stock-ins unrelated to any purchase order stay untouched — the
+  // toggle is opt-in.
+  const [linkPO, setLinkPO] = useState(false);
+  const [poQuery, setPoQuery] = useState("");
+  const [poResults, setPoResults] = useState<any[]>([]);
+  const [linkedComparison, setLinkedComparison] = useState<any>(null);
+
   useEffect(() => { setStoreLocation(defaultStore); }, [defaultStore, open]);
+
+  useEffect(() => {
+    let active = true;
+    async function searchPOs() {
+      if (!poQuery.trim()) { setPoResults([]); return; }
+      const { data } = await dbu.from("purchase_comparisons")
+        .select("id,sro_number,selected_supplier,total_amount,currency,status")
+        .eq("status", "Signed Off")
+        .ilike("sro_number", `%${poQuery.trim()}%`)
+        .order("signed_off_at", { ascending: false })
+        .limit(10);
+      if (active) setPoResults(data || []);
+    }
+    const t = setTimeout(searchPOs, 250);
+    return () => { active = false; clearTimeout(t); };
+  }, [poQuery]);
 
   const filtered = itemsMaster.filter(i => {
     if (!query) return false;
@@ -70,6 +97,7 @@ function ReceiveStockModal({ open, onClose, onSaved, itemsMaster, stores, defaul
     setQuery(""); setSelected(null); setIsNew(false); setNewName(""); setNewCategory("Spare Parts");
     setNewUnit("pcs"); setQty(""); setUnitCost(""); setSupplier(""); setWaybillNo(""); setInvoiceNo("");
     setLpoNo(""); setRemarks(""); setError("");
+    setLinkPO(false); setPoQuery(""); setPoResults([]); setLinkedComparison(null);
   }
   function handleClose() { reset(); onClose(); }
 
@@ -79,6 +107,12 @@ function ReceiveStockModal({ open, onClose, onSaved, itemsMaster, stores, defaul
     if (!isNew && !selected) { setError("Select an existing item, or register a new one."); return; }
     if (isNew && !newName.trim()) { setError("Enter the new item's name."); return; }
     if (isNew && !newCategory.trim()) { setError("Enter or select a category."); return; }
+    // The actual gate: if linking to a purchase order, a Signed Off
+    // comparison must be selected. Since the search only ever returns
+    // Signed Off records, this can only fail if the toggle is on but
+    // nothing's been picked yet — not because an un-signed-off SRO
+    // slipped through.
+    if (linkPO && !linkedComparison) { setError("Search and select the signed-off purchase order this receipt is against."); return; }
     setSaving(true); setError("");
 
     let stockItemId = selected?.id;
@@ -100,13 +134,15 @@ function ReceiveStockModal({ open, onClose, onSaved, itemsMaster, stores, defaul
       store_location: storeLocation,
       quantity: Number(qty),
       unit_cost: Number(unitCost) || null,
-      supplier: supplier || null,
+      supplier: supplier || (linkedComparison?.selected_supplier ?? null),
       waybill_no: waybillNo || null,
       invoice_no: invoiceNo || null,
       lpo_no: lpoNo || null,
       received_by: profile?.full_name,
       performed_by: profile?.full_name,
       remarks: remarks || null,
+      comparison_id: linkPO ? linkedComparison?.id ?? null : null,
+      sro_number: linkPO ? linkedComparison?.sro_number ?? null : null,
     }]);
     if (txnErr) { setError(txnErr.message); setSaving(false); return; }
 
@@ -138,6 +174,49 @@ function ReceiveStockModal({ open, onClose, onSaved, itemsMaster, stores, defaul
               </select>
             )}
           </F>
+
+          <F label="Linked Purchase Order (optional)">
+            <button onClick={()=>{ setLinkPO(v=>!v); if (linkPO) { setPoQuery(""); setPoResults([]); setLinkedComparison(null); } }}
+              className={`w-full py-2.5 rounded-xl border-2 text-sm font-bold text-left px-4 ${linkPO ? "border-teal-400 bg-teal-50 text-teal-700" : "border-slate-200 text-slate-500"}`}>
+              {linkPO ? "✓ Linking to a signed-off SRO" : "This receipt is against an SRO purchase order"}
+            </button>
+          </F>
+
+          {linkPO && (
+            <div className="border border-teal-200 bg-teal-50/40 rounded-xl p-4 space-y-2">
+              {linkedComparison ? (
+                <div className="border border-teal-300 bg-white rounded-xl px-3 py-2.5 flex items-center justify-between">
+                  <div>
+                    <span className="text-sm font-bold text-teal-700">SRO {linkedComparison.sro_number}</span>
+                    <span className="text-xs text-slate-500 ml-2">
+                      {linkedComparison.selected_supplier} · {naira(linkedComparison.total_amount)}
+                    </span>
+                  </div>
+                  <button onClick={()=>setLinkedComparison(null)} className="text-slate-400 hover:text-red-500 text-lg leading-none">×</button>
+                </div>
+              ) : (
+                <>
+                  <input className={iCls} placeholder="Search SRO number..." value={poQuery} onChange={e=>setPoQuery(e.target.value)} />
+                  {poQuery.trim() && poResults.length === 0 && (
+                    <p className="text-xs text-teal-700 px-1">
+                      No signed-off SRO matches. Only purchase orders Procurement has signed off appear here.
+                    </p>
+                  )}
+                  {poResults.length > 0 && (
+                    <div className="bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                      {poResults.map(c => (
+                        <button key={c.id} onClick={()=>{setLinkedComparison(c); setPoQuery("");}}
+                          className="w-full text-left px-4 py-2.5 hover:bg-teal-50 border-b border-slate-50 last:border-0 text-sm">
+                          <span className="font-bold text-teal-700">SRO {c.sro_number}</span>{" "}
+                          <span className="text-slate-500 text-xs">{c.selected_supplier} · {naira(c.total_amount)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           <div className="flex gap-2">
             <button onClick={()=>setIsNew(false)}
@@ -421,7 +500,7 @@ export default function StorePage() {
     setLoading(true);
     // ★ PERFORMANCE FIX: this used to be two separate full-table
     // fetches (balances + items) followed by a manual .find() match
-    // in the browser — an O(n×m) loop across thousands of rows on
+    // in the browser, an O(n×m) loop across thousands of rows on
     // every load. Supabase can embed the related stock_items row
     // directly in the same query (it already knows the foreign key),
     // so the database does the matching in one pass instead of the
@@ -447,7 +526,7 @@ export default function StorePage() {
   }
 
   // Any write (GRN, Adjustment, Import) must invalidate the cache
-  // first — otherwise the change wouldn't show up for up to 60s,
+  // first, otherwise the change wouldn't show up for up to 60s,
   // since loadBalances would happily serve the now-stale cached copy.
   function reloadFresh() {
     invalidateCache("store-balances-");
