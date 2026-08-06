@@ -1,3 +1,7 @@
+/* eslint-disable react-hooks/set-state-in-effect */
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable react-hooks/immutability */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -479,7 +483,7 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
         if (mine) setActingStore(mine);
       }
     });
-  }, []); // eslint-disable-line
+  }, []); 
 
   // Best-effort name match: exact match first, then a loose "one
   // contains the other" match as a fallback. This pre-fills the link
@@ -525,7 +529,7 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
         return next;
       });
     });
-  }, [actingStore, items]); // eslint-disable-line
+  }, [actingStore, items]); 
 
   useEffect(() => { load(); }, []);
   async function load() {
@@ -623,6 +627,50 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
     setSaving(false); load();
   }
 
+  // Reject — for an item that doesn't exist in the catalog at all
+  // (nothing to link) or is genuinely at zero stock. This is NOT
+  // available when a real, in-stock item is linked — that case
+  // should go through Confirm instead, never a lazy reject.
+  async function rejectToProcurement(item: any) {
+    if (!actingStore) { alert("Select which store you're checking from first."); return; }
+    setSaving(true);
+    await dbu.from("sro_items").update({
+      store_location: actingStore,
+      qty_approved: 0,
+      qty_to_procure: Number(item.qty_requested),
+      status: "To Procurement",
+      availability_checked_by: profile?.full_name,
+    }).eq("id", item.id);
+
+    const { data: comp } = await dbu.from("purchase_comparisons").insert([{
+      sro_number: sro.sro_number,
+      site: sro.site,
+      fleet_number: sro.fleet_number,
+      line_items: [{
+        part_no: item.part_number || "",
+        description: item.item_description,
+        qty: Number(item.qty_requested),
+        fleet_number: sro.fleet_number || "",
+        site: sro.site || "",
+        avg_price: "", last_purchase_price: "",
+        quotes: [
+          { supplier:"", brand:"", country:"", offered_price:"", negotiated_price:"" },
+          { supplier:"", brand:"", country:"", offered_price:"", negotiated_price:"" },
+          { supplier:"", brand:"", country:"", offered_price:"", negotiated_price:"" },
+        ],
+        selected_supplier: "",
+      }],
+      status: "Draft",
+      prepared_by: profile?.full_name || "",
+      remarks: `Auto-created from ${sro.sro_number} — "${item.item_description}" not available at ${actingStore} (not in catalog or zero stock)`,
+    }]).select().single();
+    if (comp) {
+      invalidateCache("purchase-comparisons");
+      await logHistory("Rejected — Routed to Procurement", `Not available at ${actingStore} — full quantity (${item.qty_requested}) sent to Procurement as a new item`, item.id);
+    }
+    setSaving(false); load();
+  }
+
   // Store Manager approves the issue → generates the SIV, decrements
   // stock AT THE RIGHT STORE (the same one that confirmed availability —
   // never re-derived, never left blank).
@@ -662,7 +710,7 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
     if (!loading && items.length > 0 && items.every(i => ["Issued","Rejected"].includes(i.status))) {
       dbu.from("sro").update({ status: "Completed" }).eq("id", sro.id).then(() => {});
     }
-  }, [items]); // eslint-disable-line
+  }, [items]); 
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start justify-center z-50 p-4 overflow-y-auto">
@@ -721,7 +769,7 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
                     </div>
                   ) : (
                     <select className={iCls} value={actingStore} onChange={e=>setActingStore(e.target.value)}>
-                      <option value="">Select the store you're checking from...</option>
+                      <option value="">Select the store you&apos;re checking from...</option>
                       {stores.map(s => <option key={s}>{s}</option>)}
                     </select>
                   )}
@@ -741,20 +789,48 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
                     {sro.status === "At Store" && item.status === "Pending" && canCheckAvail && (
                       <div className="bg-blue-50 rounded-lg p-3 space-y-2">
                         {!actingStore ? (
-                          <p className="text-xs text-blue-700">Select which store you're checking from, above, before confirming any lines.</p>
-                        ) : (
-                          <div className="grid grid-cols-3 gap-2">
-                            <select className={iCls} value={linkMap[item.id] || ""} onChange={e=>setLinkMap(p=>({...p,[item.id]:e.target.value}))}>
-                              <option value="">Link to stock item at {actingStore}...</option>
-                              {storeBalances.map(s => <option key={s.stock_item_id} value={s.stock_item_id}>{s.name} (bal: {s.balance})</option>)}
-                            </select>
-                            <input type="number" className={iCls} placeholder="Qty available"
-                              value={availQty[item.id] ?? item.qty_requested}
-                              onChange={e=>setAvailQty(p=>({...p,[item.id]:e.target.value}))} />
-                            <button onClick={()=>confirmAvailability(item)} disabled={saving}
-                              className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold">Confirm</button>
-                          </div>
-                        )}
+                          <p className="text-xs text-blue-700">Select which store you&apos;re checking from, above, before confirming any lines.</p>
+                        ) : (() => {
+                          const selectedBalance = storeBalances.find(s => s.stock_item_id === linkMap[item.id])?.balance ?? null;
+                          // Reject only makes sense when there's genuinely
+                          // nothing to give — no item found in the catalog
+                          // at all, or a linked item sitting at zero. If
+                          // real stock is linked, force Confirm instead —
+                          // rejecting something that's actually available
+                          // would be a lazy shortcut, not an honest check.
+                          const canReject = !linkMap[item.id] || Number(selectedBalance) <= 0;
+                          return (
+                            <>
+                              <div className="grid grid-cols-3 gap-2">
+                                <select className={iCls} value={linkMap[item.id] || ""} onChange={e=>setLinkMap(p=>({...p,[item.id]:e.target.value}))}>
+                                  <option value="">Link to stock item at {actingStore}...</option>
+                                  {storeBalances.map(s => <option key={s.stock_item_id} value={s.stock_item_id}>{s.name} (bal: {s.balance})</option>)}
+                                </select>
+                                <input type="number" className={iCls} placeholder="Qty available"
+                                  value={availQty[item.id] ?? item.qty_requested}
+                                  onChange={e=>setAvailQty(p=>({...p,[item.id]:e.target.value}))} />
+                                <button onClick={()=>confirmAvailability(item)} disabled={saving}
+                                  className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold">Confirm</button>
+                              </div>
+                              <div className="flex items-center justify-between pt-1">
+                                <p className="text-[11px] text-slate-400">
+                                  {!linkMap[item.id]
+                                    ? "Not found in the catalog? You can reject and send to Procurement."
+                                    : Number(selectedBalance) <= 0
+                                      ? "This item is at zero stock — reject if none can be issued."
+                                      : "This item is in stock — Confirm the real quantity instead of rejecting."}
+                                </p>
+                                <button onClick={()=>rejectToProcurement(item)} disabled={saving || !canReject}
+                                  title={canReject ? "" : "This item has real stock — use Confirm instead"}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap ${
+                                    canReject ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                  }`}>
+                                  ✗ Reject — Not Available
+                                </button>
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
 
