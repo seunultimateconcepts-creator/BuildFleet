@@ -58,8 +58,13 @@ function ComparisonModal({ record, onClose, onSaved, profile, canEdit, canCheck,
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState("");
 
-  // "Signed Off" is now also a locked/terminal state, same as Approved/Purchased/Closed
-  const readOnly = !canEdit || ["Approved","Purchased","Signed Off","Closed"].includes(form.status);
+  // Once Checked, the record is locked for Procurement too — only the
+  // Plant Manager's Approve action can move it forward. Previously
+  // "Checked" wasn't in this list, so Procurement could keep editing
+  // and re-saving as if it were still Draft, which is exactly what
+  // made it look stuck. Approved/Purchased/Signed Off/Closed were
+  // already locked; Checked belongs in the same set.
+  const readOnly = !canEdit || ["Checked","Approved","Purchased","Signed Off","Closed"].includes(form.status);
 
   function set(k: string, v: any) { setForm((p: any) => ({ ...p, [k]: v })); }
   function setLine(i: number, k: string, v: any) {
@@ -485,12 +490,12 @@ export default function ProcurementPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-100">
-                <tr>{["SRO No.","Date","Items","Suppliers","Selected","Total","Status",""].map(h=>(
+                <tr>{["SRO No.","Date","Items","Suppliers","Selected","Total","Status","Checked By",""].map(h=>(
                   <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">{h}</th>))}</tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {loading ? <tr><td colSpan={8} className="px-5 py-12 text-center text-slate-400">Loading...</td></tr>
-                : comparisons.length === 0 ? <tr><td colSpan={8} className="px-5 py-12 text-center text-slate-400">No comparisons yet.</td></tr>
+                {loading ? <tr><td colSpan={9} className="px-5 py-12 text-center text-slate-400">Loading...</td></tr>
+                : comparisons.length === 0 ? <tr><td colSpan={9} className="px-5 py-12 text-center text-slate-400">No comparisons yet.</td></tr>
                 : comparisons.map((c:any) => (
                   <tr key={c.id} className="hover:bg-amber-50/20">
                     <td className="px-4 py-3 font-mono text-xs font-bold text-amber-600">{c.sro_number || "—"}</td>
@@ -502,6 +507,7 @@ export default function ProcurementPage() {
                     <td className="px-4 py-3 text-slate-700 text-xs font-medium">{c.selected_supplier || "—"}</td>
                     <td className="px-4 py-3 text-xs font-bold text-slate-800">{naira(c.total_amount, c.currency)}</td>
                     <td className="px-4 py-3"><span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_STYLE[c.status]}`}>{c.status}</span></td>
+                    <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">{c.checked_by || "—"}</td>
                     <td className="px-4 py-3">
                       <button onClick={()=>setModal(c)}
                         className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium">Open</button>

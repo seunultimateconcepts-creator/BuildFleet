@@ -588,6 +588,14 @@ export default function DashboardPage() {
   const [loading,     setLoading]     = useState(true);
   const [chartRange,  setChartRange]  = useState<ChartRange>("30d");
   const [profileLoaded, setProfileLoaded] = useState(false);
+  // Plant management-tier roles (plant_manager/engineer/admin/super_admin)
+  // are deliberately excluded from isProcurementUser below, so they land
+  // on THIS dashboard, not ProcurementDashboard — but they're exactly
+  // who needs to see "N comparisons awaiting your approval" for fund
+  // release, since that button only exists on the Procurement page.
+  // Fetched separately and lightly so it doesn't slow down the main
+  // fleet queries for users who don't hold an approving role.
+  const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
 
   // Load profile first, alone, so we know which dashboard to render
   // before firing off the (unnecessary, for Store users) plant queries.
@@ -606,6 +614,18 @@ export default function DashboardPage() {
 
   const isStoreUser = roles.some(r => STORE_ROLES.includes(r)) && !roles.some(r => PLANT_OVERRIDE_ROLES.includes(r));
   const isProcurementUser = !isStoreUser && roles.some(r => PROCUREMENT_ROLES.includes(r)) && !roles.some(r => PLANT_OVERRIDE_ROLES.includes(r));
+  // Mirrors procurement-page.tsx's canApprove exactly — plant_engineer,
+  // plant_manager, super_admin. If that list changes there, change it
+  // here too, or this banner will drift out of sync with the real gate.
+  const canApproveComparisons = roles.some(r => ["plant_engineer","plant_manager","super_admin"].includes(r));
+
+  useEffect(() => {
+    if (!profileLoaded || !canApproveComparisons) { setPendingApprovals([]); return; }
+    fetchAllRows("purchase_comparisons", "id,sro_number,selected_supplier,total_amount,currency",
+      (q:any) => q.eq("status", "Checked"))
+      .then((rows:any) => setPendingApprovals(rows || []))
+      .catch(() => setPendingApprovals([]));
+  }, [profileLoaded, canApproveComparisons]); 
 
   useEffect(() => {
     if (!profileLoaded || isStoreUser || isProcurementUser) { setLoading(false); return; }
@@ -759,8 +779,24 @@ export default function DashboardPage() {
       </div>
 
       {/* Alerts */}
-      {!loading && (pendingTransfers > 0 || pendingMaint > 0 || inProgressMaint > 0) && (
+      {!loading && (pendingTransfers > 0 || pendingMaint > 0 || inProgressMaint > 0 || pendingApprovals.length > 0) && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {pendingApprovals.length > 0 && (
+            <Link href="/procurement" className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 hover:bg-emerald-100 transition-colors">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">💰</span>
+                <div>
+                  <p className="font-bold text-emerald-800 text-sm">
+                    {pendingApprovals.length} purchase{pendingApprovals.length > 1 ? "s" : ""} awaiting your approval to release funds
+                  </p>
+                  <p className="text-emerald-600 text-xs mt-0.5">
+                    {pendingApprovals.slice(0,3).map((c:any) => c.sro_number).filter(Boolean).join(", ")}
+                    {pendingApprovals.length > 3 ? ` +${pendingApprovals.length - 3} more` : ""} — click to review &amp; approve
+                  </p>
+                </div>
+              </div>
+            </Link>
+          )}
           {pendingTransfers > 0 && (
             <Link href="/transfer" className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl p-4 hover:bg-amber-100 transition-colors">
               <div className="flex items-center gap-3">
