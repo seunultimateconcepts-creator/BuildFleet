@@ -705,10 +705,19 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
     setSaving(false); load();
   }
 
-  const allTerminal = items.length > 0 && items.every(i => ["Issued","Rejected","Completed"].includes(i.status) || i.status === "To Procurement");
+  // Once every line has left Store's hands — whether Issued or routed
+  // to Procurement — the header must stop showing "At Store". All
+  // Issued means genuinely done; any mix that includes "To Procurement"
+  // means Store's part is finished but Procurement still has work,
+  // so it moves to "In Progress" rather than sitting stuck forever.
+  const allDoneAtStore = items.length > 0 && items.every(i => ["Issued","Rejected","To Procurement"].includes(i.status));
+  const allIssued = items.length > 0 && items.every(i => i.status === "Issued");
   useEffect(() => {
-    if (!loading && items.length > 0 && items.every(i => ["Issued","Rejected"].includes(i.status))) {
-      dbu.from("sro").update({ status: "Completed" }).eq("id", sro.id).then(() => {});
+    if (loading || items.length === 0) return;
+    if (allIssued && sro.status !== "Completed") {
+      dbu.from("sro").update({ status: "Completed" }).eq("id", sro.id).then(() => { invalidateCache("sro-list"); load(); });
+    } else if (allDoneAtStore && sro.status === "At Store") {
+      dbu.from("sro").update({ status: "In Progress" }).eq("id", sro.id).then(() => { invalidateCache("sro-list"); load(); });
     }
   }, [items]); 
 
