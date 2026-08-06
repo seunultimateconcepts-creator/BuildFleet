@@ -12,12 +12,13 @@ import { fetchAllRows, invalidateCache } from "@/lib/fetch-all";
 const iCls = "w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 
 const STATUS_STYLE: Record<string, string> = {
-  "Draft":     "bg-slate-100 text-slate-600",
-  "Checked":   "bg-blue-100 text-blue-700",
-  "Approved":  "bg-emerald-100 text-emerald-700",
-  "Purchased": "bg-amber-100 text-amber-700",
-  "Closed":    "bg-slate-200 text-slate-500",
-  "Rejected":  "bg-red-100 text-red-600",
+  "Draft":      "bg-slate-100 text-slate-600",
+  "Checked":    "bg-blue-100 text-blue-700",
+  "Approved":   "bg-emerald-100 text-emerald-700",
+  "Purchased":  "bg-amber-100 text-amber-700",
+  "Signed Off": "bg-teal-100 text-teal-700",
+  "Closed":     "bg-slate-200 text-slate-500",
+  "Rejected":   "bg-red-100 text-red-600",
 };
 
 const naira = (n: number, cur = "NGN") =>
@@ -35,10 +36,15 @@ function blankLine() {
 
 // ─────────────────────────────────────────────────────────────
 // COMPARISON FORM MODAL — the digital Purchase Comparison & Analysis Form
+// Full chain: Draft (Officer prepares) → Checked (Procurement Manager
+// ONLY — not Officer, that was the earlier bug) → Approved (Plant
+// Engineer/Manager releases funds) → Purchased (Officer records the
+// buy) → Signed Off (Officer/Manager confirms goods match the order —
+// THIS is what gates Store's GRN from receiving against this SRO).
 // ─────────────────────────────────────────────────────────────
-function ComparisonModal({ record, onClose, onSaved, profile, canEdit, canCheck, canApprove }: {
+function ComparisonModal({ record, onClose, onSaved, profile, canEdit, canCheck, canApprove, canSignOff }: {
   record: any | null; onClose: () => void; onSaved: () => void;
-  profile: any; canEdit: boolean; canCheck: boolean; canApprove: boolean;
+  profile: any; canEdit: boolean; canCheck: boolean; canApprove: boolean; canSignOff: boolean;
 }) {
   const isNew = !record;
   const [form, setForm] = useState<any>(record ? {
@@ -52,7 +58,8 @@ function ComparisonModal({ record, onClose, onSaved, profile, canEdit, canCheck,
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState("");
 
-  const readOnly = !canEdit || ["Approved","Purchased","Closed"].includes(form.status);
+  // "Signed Off" is now also a locked/terminal state, same as Approved/Purchased/Closed
+  const readOnly = !canEdit || ["Approved","Purchased","Signed Off","Closed"].includes(form.status);
 
   function set(k: string, v: any) { setForm((p: any) => ({ ...p, [k]: v })); }
   function setLine(i: number, k: string, v: any) {
@@ -109,8 +116,9 @@ function ComparisonModal({ record, onClose, onSaved, profile, canEdit, canCheck,
       remarks: form.remarks,
     };
     if (nextStatus) payload.status = nextStatus;
-    if (nextStatus === "Checked")  { payload.checked_by = profile?.full_name || ""; payload.checked_at = new Date().toISOString(); }
-    if (nextStatus === "Approved") { payload.approved_by = profile?.full_name || ""; payload.approved_at = new Date().toISOString(); }
+    if (nextStatus === "Checked")    { payload.checked_by    = profile?.full_name || ""; payload.checked_at    = new Date().toISOString(); }
+    if (nextStatus === "Approved")   { payload.approved_by   = profile?.full_name || ""; payload.approved_at   = new Date().toISOString(); }
+    if (nextStatus === "Signed Off") { payload.signed_off_by = profile?.full_name || ""; payload.signed_off_at = new Date().toISOString(); }
     if (isNew) payload.prepared_by = profile?.full_name || "";
 
     let compId = record?.id;
@@ -149,6 +157,24 @@ function ComparisonModal({ record, onClose, onSaved, profile, canEdit, canCheck,
     await dbu.from("procurement_history").insert([{
       comparison_id: record.id, purchase_id: pData.id,
       action: "Purchased", performed_by: profile?.full_name || "",
+    }]);
+    setSaving(false); onSaved(); onClose();
+  }
+
+  // Purchased → Signed Off. This is the gate Store's GRN checks before
+  // allowing receipt against this SRO. Kept as its own explicit action
+  // (not folded into markPurchased) so the Procurement Clerk who signs
+  // off can be a different person/moment than whoever recorded the buy.
+  async function signOff() {
+    setSaving(true); setError("");
+    const { error: err } = await dbu.from("purchase_comparisons").update({
+      status: "Signed Off",
+      signed_off_by: profile?.full_name || "",
+      signed_off_at: new Date().toISOString(),
+    }).eq("id", record.id);
+    if (err) { setError(err.message); setSaving(false); return; }
+    await dbu.from("procurement_history").insert([{
+      comparison_id: record.id, action: "Signed Off", performed_by: profile?.full_name || "",
     }]);
     setSaving(false); onSaved(); onClose();
   }
@@ -265,6 +291,14 @@ function ComparisonModal({ record, onClose, onSaved, profile, canEdit, canCheck,
             ))}
           </div>
 
+          {form.status === "Signed Off" && (
+            <div className="bg-teal-50 border border-teal-200 rounded-xl p-3 text-teal-700 text-sm">
+              ✓ Signed off by {form.signed_off_by || "—"}
+              {form.signed_off_at && ` on ${new Date(form.signed_off_at).toLocaleDateString("en-GB")}`}.
+              Store can now receive against SRO {form.sro_number}.
+            </div>
+          )}
+
           {error && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">⚠️ {error}</div>}
         </div>
 
@@ -280,19 +314,25 @@ function ComparisonModal({ record, onClose, onSaved, profile, canEdit, canCheck,
           {canCheck && form.status === "Draft" && !isNew && (
             <button onClick={()=>save("Checked","Checked")} disabled={saving}
               className="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 disabled:opacity-50">
-              ✓ Check (Procurement)
+              ✓ Check (Procurement Manager)
             </button>
           )}
           {canApprove && form.status === "Checked" && (
             <button onClick={()=>save("Approved","Approved")} disabled={saving}
               className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-50">
-              ✓ Approve (Plant Eng/Mgr)
+              ✓ Approve — Release Funds (Plant Mgr)
             </button>
           )}
           {canEdit && form.status === "Approved" && !isNew && (
             <button onClick={markPurchased} disabled={saving}
               className="px-5 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 disabled:opacity-50">
               🛒 Mark Purchased
+            </button>
+          )}
+          {canSignOff && form.status === "Purchased" && (
+            <button onClick={signOff} disabled={saving}
+              className="px-5 py-2.5 rounded-xl bg-teal-600 text-white text-sm font-bold hover:bg-teal-700 disabled:opacity-50">
+              ✍️ Sign Off — Release to Store
             </button>
           )}
         </div>
@@ -308,12 +348,15 @@ export default function ProcurementPage() {
   const { profile } = useAuth();
   const roles: string[] = (profile?.roles as string[]) || [];
 
-  // Access matrix (agreed): procurement roles edit; store manager,
-  // plant eng/manager, executives view-only; approvals per chain.
-  const canEdit    = roles.some(r => ["procurement_officer","procurement_manager","super_admin"].includes(r));
-  const canCheck   = roles.some(r => ["procurement_officer","procurement_manager","super_admin"].includes(r));
-  const canApprove = roles.some(r => ["plant_engineer","plant_manager","super_admin"].includes(r));
-  const canView    = canEdit || canApprove || roles.some(r =>
+  // Access matrix: Officer prepares/edits Drafts and signs off after
+  // purchase. Manager is the ONLY one who Checks (this was the bug —
+  // Officer used to be allowed to Check too, collapsing the two-person
+  // control). Plant Eng/Mgr give final Approval to release funds.
+  const canEdit     = roles.some(r => ["procurement_officer","procurement_manager","super_admin"].includes(r));
+  const canCheck    = roles.some(r => ["procurement_manager","super_admin"].includes(r));
+  const canApprove  = roles.some(r => ["plant_engineer","plant_manager","super_admin"].includes(r));
+  const canSignOff  = roles.some(r => ["procurement_officer","procurement_manager","super_admin"].includes(r));
+  const canView     = canEdit || canApprove || roles.some(r =>
     ["store_manager","plant_admin","executive","finance_viewer"].includes(r));
 
   const [tab, setTab] = useState<"dashboard"|"comparisons"|"purchases"|"history">("dashboard");
@@ -354,8 +397,9 @@ export default function ProcurementPage() {
   const bySupplier: Record<string, number> = {};
   monthPurchases.forEach(p => { bySupplier[p.supplier || "—"] = (bySupplier[p.supplier || "—"] || 0) + Number(p.amount || 0); });
 
-  const pendingCheck   = comparisons.filter(c => c.status === "Draft").length;
-  const pendingApprove = comparisons.filter(c => c.status === "Checked").length;
+  const pendingCheck    = comparisons.filter(c => c.status === "Draft").length;
+  const pendingApprove  = comparisons.filter(c => c.status === "Checked").length;
+  const pendingSignOff  = comparisons.filter(c => c.status === "Purchased").length;
 
   return (
     <div className="space-y-6 pb-10">
@@ -388,7 +432,7 @@ export default function ProcurementPage() {
 
       {tab === "dashboard" && (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="bg-slate-900 text-white rounded-2xl p-5">
               <p className="text-2xl font-bold">{naira(monthTotal)}</p>
               <p className="text-sm opacity-70 mt-1">Spend — {month}</p>
@@ -404,6 +448,10 @@ export default function ProcurementPage() {
             <div className="bg-emerald-600 text-white rounded-2xl p-5">
               <p className="text-3xl font-bold">{pendingApprove}</p>
               <p className="text-sm opacity-70 mt-1">Awaiting Approval</p>
+            </div>
+            <div className="bg-teal-600 text-white rounded-2xl p-5">
+              <p className="text-3xl font-bold">{pendingSignOff}</p>
+              <p className="text-sm opacity-70 mt-1">Awaiting Sign Off</p>
             </div>
           </div>
 
@@ -519,7 +567,7 @@ export default function ProcurementPage() {
           onClose={() => setModal(null)}
           onSaved={reloadFresh}
           profile={profile}
-          canEdit={canEdit} canCheck={canCheck} canApprove={canApprove}
+          canEdit={canEdit} canCheck={canCheck} canApprove={canApprove} canSignOff={canSignOff}
         />
       )}
     </div>
