@@ -23,7 +23,7 @@ const ROLES = [
   { value: "store_officer",       label: "Data Analyst",        color: "bg-emerald-100 text-emerald-700", desc: "In charge of Inventory, Filling Station & SRO — sees incoming requests and acts on them. Scoped to their own assigned store; cannot adjust or approve issues.", group: "Store & Procurement" },
   { value: "store_supervisor",    label: "Store Supervisor",    color: "bg-teal-100 text-teal-700",       desc: "Views ALL stores' inventory for oversight and reconciliation — read access across every location", group: "Store & Procurement" },
   { value: "store_manager",       label: "Store Manager",       color: "bg-green-100 text-green-700",     desc: "Full store control — stock adjustments, issue approval, receives Movable Units", group: "Store & Procurement" },
-  { value: "procurement_officer", label: "Procurement Officer", color: "bg-orange-100 text-orange-700",   desc: "Prepares purchase comparisons — cannot approve", group: "Store & Procurement" },
+  { value: "procurement_officer", label: "Procurement Officer", color: "bg-orange-100 text-orange-700",   desc: "Prepares purchase comparisons and does the departmental check — final approval stays with Plant Manager/Engineer", group: "Store & Procurement" },
   { value: "procurement_manager", label: "Procurement Manager", color: "bg-rose-100 text-rose-700",       desc: "Approves purchase comparisons & bills, views monthly spend", group: "Store & Procurement" },
   { value: "driver",              label: "Driver",              color: "bg-lime-100 text-lime-700",       desc: "Confirms Movable Unit handover during dispatch verification", group: "Store & Procurement" },
 

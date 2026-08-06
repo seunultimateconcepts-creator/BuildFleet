@@ -311,7 +311,7 @@ export default function ProcurementPage() {
   // Access matrix (agreed): procurement roles edit; store manager,
   // plant eng/manager, executives view-only; approvals per chain.
   const canEdit    = roles.some(r => ["procurement_officer","procurement_manager","super_admin"].includes(r));
-  const canCheck   = roles.some(r => ["procurement_manager","super_admin"].includes(r));
+  const canCheck   = roles.some(r => ["procurement_officer","procurement_manager","super_admin"].includes(r));
   const canApprove = roles.some(r => ["plant_engineer","plant_manager","super_admin"].includes(r));
   const canView    = canEdit || canApprove || roles.some(r =>
     ["store_manager","plant_admin","executive","finance_viewer"].includes(r));
