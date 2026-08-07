@@ -152,10 +152,6 @@ export default function LoginPage() {
                 <p className="text-xs font-semibold uppercase tracking-widest mt-1" style={{ color: "#8A9AC0", letterSpacing: "3px" }}>
                   Enterprise Fleet Management
                 </p>
-                <p className="text-xs mt-1" style={{ color: "#2A4060" }}>
-                  A product of{" "}
-                  <span className="font-bold" style={{ color: "#F5A623" }}>Ultimate Tech Lab</span>
-                </p>
               </div>
             </div>
           </div>
@@ -188,7 +184,7 @@ export default function LoginPage() {
           </div>
 
           <p className="text-slate-600 text-xs">
-            © {new Date().getFullYear()} Ultimate Tech Lab · BuildFleet v1.0
+            © {new Date().getFullYear()} BuildFleet v1.0
           </p>
         </div>
       </div>
@@ -331,7 +327,7 @@ export default function LoginPage() {
           </div>
 
           <p className="text-center text-xs text-slate-300 dark:text-slate-600 mt-5">
-            © {new Date().getFullYear()} Ultimate Tech Lab
+            © {new Date().getFullYear()} BuildFleet
           </p>
         </div>
       </div>

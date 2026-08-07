@@ -8,6 +8,7 @@ import {
   LayoutDashboard, Truck, MapPin, ArrowLeftRight, Wrench,
   ClipboardList, BookOpen, BarChart3, Users, Settings,
   ChevronDown, CircleDot, ImageIcon, AlertTriangle, Package, Fuel, PackageCheck,
+  ShieldCheck,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────
@@ -60,6 +61,7 @@ const navItems = [
   { label: "Daily Logs",    href: "/daily-logs",  icon: BookOpen,        roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
   { label: "Plant Gallery", href: "/gallery",     icon: ImageIcon,       roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
   { label: "Reports",       href: "/reports",     icon: BarChart3,       roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer"] },
+  { label: "Audit",         href: "/audit",       icon: ShieldCheck,     roles: ["super_admin","plant_admin","executive"] },
   { label: "Users",         href: "/users",       icon: Users,           roles: ["super_admin","plant_admin"] },
   { label: "Settings",      href: "/settings",    icon: Settings,        roles: ["super_admin","plant_admin"] },
 ];
@@ -98,10 +100,6 @@ function BuildFleetLogo() {
         </p>
         <p className="text-[9px] font-medium uppercase tracking-widest mt-0.5" style={{ color: "#8A9AC0" }}>
           Enterprise Fleet Management
-        </p>
-        <p className="text-[8px] mt-0.5" style={{ color: "#2A4060" }}>
-          A product of{" "}
-          <span className="font-bold" style={{ color: "#F5A623" }}>Ultimate Tech Lab</span>
         </p>
       </div>
     </div>

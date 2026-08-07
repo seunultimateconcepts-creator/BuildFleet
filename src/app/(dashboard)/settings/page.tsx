@@ -27,6 +27,15 @@ const CATEGORY_RATES = [
   { category: "Pneumatic Equipment",              default_rate: 6500  },
 ];
 
+// Settings holds destructive/sensitive actions (hire rates, system info,
+// eventually user management shortcuts) — gated behind re-entering the
+// user's own login password, not a separate password to manage. Unlock
+// is remembered in sessionStorage for a short window so navigating
+// between Settings tabs doesn't re-prompt on every click; it clears on
+// tab close, same convention as the app's existing idle-timeout logic.
+const SETTINGS_UNLOCK_KEY = "bf_settings_unlocked_at";
+const SETTINGS_UNLOCK_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
 export default function SettingsPage() {
   const [profile,    setProfile]    = useState<any>(null);
   const [saving,     setSaving]     = useState(false);
@@ -46,6 +55,44 @@ export default function SettingsPage() {
   });
   const [pwError,  setPwError]  = useState("");
   const [pwSaved,  setPwSaved]  = useState(false);
+
+  // ── Password gate state ──
+  const [locked,        setLocked]        = useState(true);
+  const [checkingLock,  setCheckingLock]  = useState(true);
+  const [unlockPw,      setUnlockPw]      = useState("");
+  const [unlockError,   setUnlockError]   = useState("");
+  const [unlocking,     setUnlocking]     = useState(false);
+
+  useEffect(() => {
+    const last = sessionStorage.getItem(SETTINGS_UNLOCK_KEY);
+    if (last && Date.now() - parseInt(last, 10) < SETTINGS_UNLOCK_TTL_MS) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLocked(false);
+    }
+    setCheckingLock(false);
+  }, []);
+
+  async function handleUnlock(e: React.FormEvent) {
+    e.preventDefault();
+    setUnlockError(""); setUnlocking(true);
+    const { data: { user } } = await dbu.auth.getUser();
+    const email = user?.email;
+    if (!email) {
+      setUnlockError("Could not verify your account. Please refresh and try again.");
+      setUnlocking(false);
+      return;
+    }
+    const { error } = await dbu.auth.signInWithPassword({ email, password: unlockPw });
+    if (error) {
+      setUnlockError("Incorrect password.");
+      setUnlocking(false);
+      return;
+    }
+    sessionStorage.setItem(SETTINGS_UNLOCK_KEY, String(Date.now()));
+    setLocked(false);
+    setUnlocking(false);
+    setUnlockPw("");
+  }
 
   useEffect(() => {
     async function load() {
@@ -108,6 +155,47 @@ export default function SettingsPage() {
   const roles: string[] = profile?.roles || [];
   const isAdmin      = roles.some(r => ["plant_manager","plant_director","plant_admin"].includes(r));
   const isSuperAdmin = roles.includes("super_admin");
+
+  // ── Lock screen — checking state avoids a flash of the unlocked
+  // form before sessionStorage has been read on mount ──
+  if (checkingLock) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (locked) {
+    return (
+      <div className="flex items-center justify-center min-h-[70vh]">
+        <form onSubmit={handleUnlock} className="w-full max-w-sm bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center text-3xl mx-auto mb-4">
+            🔒
+          </div>
+          <h2 className="text-lg font-bold text-slate-800">Settings is locked</h2>
+          <p className="text-slate-500 text-sm mt-1 mb-6">
+            Re-enter your password to continue.
+          </p>
+          <input
+            type="password"
+            autoFocus
+            className={iCls + " text-center mb-3"}
+            placeholder="Your password"
+            value={unlockPw}
+            onChange={e => setUnlockPw(e.target.value)}
+          />
+          {unlockError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm mb-3">⚠️ {unlockError}</div>
+          )}
+          <button type="submit" disabled={unlocking || !unlockPw}
+            className="w-full py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 disabled:opacity-50">
+            {unlocking ? "Checking..." : "Unlock"}
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-10">
