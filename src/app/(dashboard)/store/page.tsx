@@ -76,7 +76,7 @@ function ReceiveStockModal({ open, onClose, onSaved, itemsMaster, stores, defaul
     async function searchPOs() {
       if (!poQuery.trim()) { setPoResults([]); return; }
       const { data } = await dbu.from("purchase_comparisons")
-        .select("id,sro_number,selected_supplier,total_amount,currency,status")
+        .select("id,sro_number,sro_item_id,selected_supplier,total_amount,currency,status")
         .eq("status", "Signed Off")
         .ilike("sro_number", `%${poQuery.trim()}%`)
         .order("signed_off_at", { ascending: false })
@@ -145,6 +145,37 @@ function ReceiveStockModal({ open, onClose, onSaved, itemsMaster, stores, defaul
       sro_number: linkPO ? linkedComparison?.sro_number ?? null : null,
     }]);
     if (txnErr) { setError(txnErr.message); setSaving(false); return; }
+
+    // ★ CLOSES THE LOOP: if this receipt is against a Signed-Off
+    // purchase comparison that was auto-created from an SRO shortfall
+    // (see sro/page.tsx confirmAvailability/rejectToProcurement), that
+    // comparison carries the EXACT sro_items row it came from. Flip
+    // that line from "To Procurement" back to "Pending Store Manager"
+    // — the same status a normally-available item reaches — so it
+    // re-enters the existing issue-approval flow with zero new UI.
+    if (linkPO && linkedComparison?.sro_item_id) {
+      const { data: sroItemRow } = await dbu.from("sro_items")
+        .select("sro_id").eq("id", linkedComparison.sro_item_id).single();
+
+      await dbu.from("sro_items").update({
+        stock_item_id: stockItemId,
+        store_location: storeLocation,
+        qty_approved: Number(qty),
+        qty_to_procure: 0,
+        status: "Pending Store Manager",
+      }).eq("id", linkedComparison.sro_item_id);
+
+      if (sroItemRow?.sro_id) {
+        await dbu.from("sro_history").insert([{
+          sro_id: sroItemRow.sro_id,
+          sro_item_id: linkedComparison.sro_item_id,
+          action: "Received from Procurement",
+          performed_by: profile?.full_name || "",
+          note: `${qty} received into ${storeLocation} against SRO ${linkedComparison.sro_number} — ready to issue`,
+        }]);
+      }
+      invalidateCache("sro-list");
+    }
 
     setSaving(false); reset(); onSaved(); onClose();
   }

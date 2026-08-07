@@ -74,7 +74,7 @@ function printSIVReceipt(sro: any, item: any) {
   <div class="print-bar"><span style="color:#fff;font-weight:700">${esc(item.siv_number)}</span>
     <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button></div>
   <div class="header">
-    <div class="logo">Build<span>Fleet</span><div style="font-size:9px;font-weight:normal;color:#64748B">A product of Ultimate Tech Lab</div></div>
+    <div class="logo">Build<span>Fleet</span></div>
     <h1>STORE ISSUE VOUCHER</h1>
   </div>
   <div class="meta">
@@ -108,11 +108,7 @@ function printSIVReceipt(sro: any, item: any) {
 function blankLine() { return { item_description: "", part_number: "", unit: "pcs", qty_requested: 1, remarks: "", stock_item_id: null as string | null, live_balance: 0 }; }
 
 // ─────────────────────────────────────────────────────────────
-// FLEET PICKER — searchable, scoped by the selected site.
-// Central Workshop (or no site chosen yet) sees every equipment;
-// a site-based store only sees equipment actually at that site —
-// this is what keeps fleet_number trustworthy as real history
-// instead of a free-text field someone could mistype.
+// FLEET PICKER
 // ─────────────────────────────────────────────────────────────
 function FleetPicker({ equipment, site, sites, value, onChange }: {
   equipment: any[]; site: string; sites: any[]; value: string; onChange: (fleetNo: string) => void;
@@ -168,13 +164,7 @@ function FleetPicker({ equipment, site, sites, value, onChange }: {
 }
 
 // ─────────────────────────────────────────────────────────────
-// ITEM PICKER — search real stock, get live availability as you
-// pick. This IS the "request comes in, store verifies immediately"
-// requirement: the requester sees stock balance right here, before
-// the formal store confirmation step even happens. If nothing
-// matches, free-text entry still works — that's simply an item not
-// yet in the catalog, which the formal availability check (and
-// possibly procurement) will handle downstream, same as before.
+// ITEM PICKER
 // ─────────────────────────────────────────────────────────────
 function ItemPicker({ stockItems, line, onSelect, onFreeText }: {
   stockItems: any[]; line: any;
@@ -246,7 +236,6 @@ function RaiseSROModal({ onClose, onSaved, profile }: { onClose: () => void; onS
   const [fleetNumber, setFleetNumber] = useState("");
   const [purpose, setPurpose] = useState("");
   const [lines, setLines] = useState<any[]>([blankLine()]);
-  // Retroactive-only fields
   const [amountPaid, setAmountPaid] = useState("");
   const [vendor, setVendor] = useState("");
   const [receiptRef, setReceiptRef] = useState("");
@@ -254,22 +243,10 @@ function RaiseSROModal({ onClose, onSaved, profile }: { onClose: () => void; onS
   const [error, setError] = useState("");
 
   useEffect(() => {
-    // Site dropdown is scoped to Project and Workshop types ONLY —
-    // that's where actual work (and therefore material consumption)
-    // happens. Repair Yards and Storage Yards just hold idle/waiting
-    // equipment; nothing is being built or fixed there, so an SRO
-    // from one wouldn't make operational sense.
     fetchAllRows("sites", "name,code,site_type").then(all =>
       setSites(all.filter((s:any) => s.site_type === "Project" || ["Central Workshop","Regional Workshop","Field Workshop"].includes(s.site_type)))
     );
     fetchAllRows("equipment", "id,fleet_number,name,site").then(setEquipment);
-    // ★ MULTI-STORE FIX: stock_items.balance is now a frozen legacy
-    // snapshot — live balances live in store_stock_balances, per
-    // store. At raise time we don't yet know WHICH store will
-    // fulfill this request, so this shows a SUM across every store —
-    // "does this exist anywhere in our system" — not a promise of
-    // availability. The real, store-specific check happens later
-    // when a Data Analyst confirms it (see SRODetailModal below).
     Promise.all([
       fetchAllRows("stock_items", "id,name,part_number,legacy_item_code,unit,category", undefined, { cacheKey: "all-stock-items" }),
       fetchAllRows("store_stock_balances", "stock_item_id,balance", undefined, { cacheKey: "all-store-balances" }),
@@ -459,19 +436,14 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
   const [storeBalances, setStoreBalances] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [linkMap, setLinkMap] = useState<Record<string, string>>({}); // sro_item_id -> stock_item_id chosen
-  const [availQty, setAvailQty] = useState<Record<string, string>>({}); // sro_item_id -> qty to issue now
+  const [linkMap, setLinkMap] = useState<Record<string, string>>({});
+  const [availQty, setAvailQty] = useState<Record<string, string>>({});
 
   const canApprovePlant = roles.some(r => ["plant_manager","plant_engineer","super_admin"].includes(r));
   const canCheckAvail    = roles.some(r => ["store_officer","store_manager","store_supervisor","super_admin"].includes(r));
   const canApproveIssue  = roles.some(r => ["store_manager","super_admin"].includes(r));
   const canApproveProc   = roles.some(r => ["procurement_manager","super_admin"].includes(r));
 
-  // A Data Analyst (store_officer, no cross-store role) is already
-  // scoped to exactly one store — no need to ask which one they're
-  // checking from, the system already knows. Store Manager/Supervisor/
-  // super_admin see every store, so they must declare which one
-  // they're acting from before they can confirm anything.
   const isScopedOfficer = roles.includes("store_officer") && !roles.some(r => ["store_manager","store_supervisor","super_admin"].includes(r));
 
   useEffect(() => {
@@ -485,11 +457,6 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
     });
   }, []); 
 
-  // Best-effort name match: exact match first, then a loose "one
-  // contains the other" match as a fallback. This pre-fills the link
-  // so the common case needs zero manual searching — the Data Analyst
-  // can still change the selection if the guess is wrong, since this
-  // only sets an initial value, it never locks anything in.
   function findBestMatch(description: string, balances: any[]): string {
     const desc = (description || "").toLowerCase().trim();
     if (!desc) return "";
@@ -504,22 +471,12 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
 
   useEffect(() => {
     if (!actingStore) { setStoreBalances([]); return; }
-    // ★ PERFORMANCE FIX: same bug as Store had — separate fetch +
-    // client-side .find() to match items to balances. One embedded
-    // join does this instantly in the database instead. Reuses the
-    // exact same cache key namespace as the Store page's Register,
-    // so checking availability here and viewing Inventory both draw
-    // from one shared, already-warm cache instead of two cold ones.
     fetchAllRows("store_stock_balances", "*, stock_items(name,part_number)",
       (q:any) => q.eq("store_location", actingStore),
       { cacheKey: `store-balances-${actingStore}` }
     ).then((balances:any) => {
       const enriched = (balances as any[]).map(b => ({ ...b, name: b.stock_items?.name, part_number: b.stock_items?.part_number }));
       setStoreBalances(enriched);
-
-      // Auto-match every still-unlinked pending line against this
-      // store's real items — this is the "link is supposed to be
-      // automatic" fix.
       setLinkMap(prev => {
         const next = { ...prev };
         items.filter(it => it.status === "Pending" && !next[it.id]).forEach(it => {
@@ -550,7 +507,6 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
     }]);
   }
 
-  // Plant Manager approves the whole SRO → moves to store
   async function approvePlant() {
     setSaving(true);
     await dbu.from("sro").update({ status: "At Store", approved_by: profile?.full_name, approved_at: new Date().toISOString() }).eq("id", sro.id);
@@ -566,10 +522,9 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
     setSaving(false); onSaved();
   }
 
-  // Store confirms availability per line — this IS the "issue what you
-  // have, route the rest" mechanic. Now checks the REAL balance at the
-  // acting store, and remembers that store on the line so issue-time
-  // can never drift onto a different one.
+  // Store confirms availability per line. Now stamps sro_item_id onto
+  // the auto-created comparison, so a later Store receipt can find
+  // this EXACT line again instead of guessing by description text.
   async function confirmAvailability(item: any) {
     if (!actingStore) { alert("Select which store you're checking from first."); return; }
     const stockId = linkMap[item.id];
@@ -589,13 +544,10 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
       availability_checked_by: profile?.full_name,
     }).eq("id", item.id);
 
-    // ★ CLOSES THE LOOP: a shortfall used to just tell someone to go
-    // manually create a comparison on the Procurement page. Now it's
-    // auto-created as a Draft, pre-filled with the item, quantity, and
-    // SRO number — Procurement opens it and just fills in the quotes.
     if (shortfall > 0) {
       const { data: comp } = await dbu.from("purchase_comparisons").insert([{
         sro_number: sro.sro_number,
+        sro_item_id: item.id,
         site: sro.site,
         fleet_number: sro.fleet_number,
         line_items: [{
@@ -627,10 +579,8 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
     setSaving(false); load();
   }
 
-  // Reject — for an item that doesn't exist in the catalog at all
-  // (nothing to link) or is genuinely at zero stock. This is NOT
-  // available when a real, in-stock item is linked — that case
-  // should go through Confirm instead, never a lazy reject.
+  // Reject — same sro_item_id stamping as above, for the "nothing in
+  // catalog at all" case.
   async function rejectToProcurement(item: any) {
     if (!actingStore) { alert("Select which store you're checking from first."); return; }
     setSaving(true);
@@ -644,6 +594,7 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
 
     const { data: comp } = await dbu.from("purchase_comparisons").insert([{
       sro_number: sro.sro_number,
+      sro_item_id: item.id,
       site: sro.site,
       fleet_number: sro.fleet_number,
       line_items: [{
@@ -671,9 +622,6 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
     setSaving(false); load();
   }
 
-  // Store Manager approves the issue → generates the SIV, decrements
-  // stock AT THE RIGHT STORE (the same one that confirmed availability —
-  // never re-derived, never left blank).
   async function approveIssue(item: any) {
     if (!item.store_location) { alert("This line has no store recorded from the availability check — re-confirm it first."); return; }
     setSaving(true);
@@ -693,9 +641,6 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
       performed_by: profile?.full_name,
     }]);
     if (err) { alert(err.message); setSaving(false); return; }
-    // Real stock just moved — the cached balance for this store (and
-    // the cross-store total used on Raise SRO) is now stale. Clear
-    // both so the next view anywhere shows the true number.
     invalidateCache(`store-balances-${item.store_location}`);
     invalidateCache("all-store-balances");
     await dbu.from("sro_items").update({
@@ -705,11 +650,6 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
     setSaving(false); load();
   }
 
-  // Once every line has left Store's hands — whether Issued or routed
-  // to Procurement — the header must stop showing "At Store". All
-  // Issued means genuinely done; any mix that includes "To Procurement"
-  // means Store's part is finished but Procurement still has work,
-  // so it moves to "In Progress" rather than sitting stuck forever.
   const allDoneAtStore = items.length > 0 && items.every(i => ["Issued","Rejected","To Procurement"].includes(i.status));
   const allIssued = items.length > 0 && items.every(i => i.status === "Issued");
   useEffect(() => {
@@ -794,19 +734,12 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
                     </div>
                     <p className="text-xs text-slate-500 mb-3">Requested: {item.qty_requested} {item.unit}{item.qty_approved != null && ` · Approved: ${item.qty_approved}`}{item.qty_to_procure > 0 && ` · Shortfall to procure: ${item.qty_to_procure}`}</p>
 
-                    {/* Store availability check */}
                     {sro.status === "At Store" && item.status === "Pending" && canCheckAvail && (
                       <div className="bg-blue-50 rounded-lg p-3 space-y-2">
                         {!actingStore ? (
                           <p className="text-xs text-blue-700">Select which store you&apos;re checking from, above, before confirming any lines.</p>
                         ) : (() => {
                           const selectedBalance = storeBalances.find(s => s.stock_item_id === linkMap[item.id])?.balance ?? null;
-                          // Reject only makes sense when there's genuinely
-                          // nothing to give — no item found in the catalog
-                          // at all, or a linked item sitting at zero. If
-                          // real stock is linked, force Confirm instead —
-                          // rejecting something that's actually available
-                          // would be a lazy shortcut, not an honest check.
                           const canReject = !linkMap[item.id] || Number(selectedBalance) <= 0;
                           return (
                             <>
@@ -843,7 +776,6 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
                       </div>
                     )}
 
-                    {/* Store Manager issue approval */}
                     {item.status === "Pending Store Manager" && canApproveIssue && (
                       <button onClick={()=>approveIssue(item)} disabled={saving}
                         className="px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold">
@@ -862,7 +794,7 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
                     )}
                     {item.status === "To Procurement" && (
                       <p className="text-xs text-purple-700">
-                        ✓ Not available at {actingStore || "the store"} — a draft Purchase Comparison for {sro.sro_number} was created automatically. Procurement just needs to fill in supplier quotes.
+                        ✓ Not available at {actingStore || "the store"} — a draft Purchase Comparison for {sro.sro_number} was created automatically. Once Procurement signs it off and Store receives the goods, this line will automatically re-open for issue.
                       </p>
                     )}
                   </div>
@@ -871,7 +803,6 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
             </>
           )}
 
-          {/* History */}
           <div>
             <p className="text-xs font-bold text-slate-500 uppercase mb-2">History</p>
             <div className="space-y-2 max-h-48 overflow-y-auto">
@@ -917,10 +848,6 @@ export default function SROPage() {
     setLoading(false);
   }
 
-  // Any write inside either modal (raise, approve, confirm, issue,
-  // reject) must invalidate the list cache first — otherwise the
-  // status you just changed could still show the old value for up
-  // to 20s, since load() would happily serve the cached copy.
   function reloadFresh() {
     invalidateCache("sro-list");
     load();
