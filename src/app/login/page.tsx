@@ -13,7 +13,7 @@ const BG_IMAGES = [
   "https://images.unsplash.com/photo-1629807473015-41699c4471b5?q=80&w=870&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", // fleet trucks road
 ];
 
-const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 export default function LoginPage() {
   const [email,        setEmail]        = useState("");
