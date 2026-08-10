@@ -85,7 +85,8 @@ function StoreDashboard({ profile, roles }: { profile: any; roles: string[] }) {
   const isScopedOfficer = roles.includes("store_officer") && !roles.some(r => ["store_manager","store_supervisor","super_admin"].includes(r));
 
   const [loading, setLoading] = useState(true);
-  const [balances, setBalances] = useState<any[]>([]);
+  const [summary, setSummary] = useState<{ total_items:number; stock_value:number; total_received:number; total_issued:number; low_stock_count:number } | null>(null);
+  const [lowStockList, setLowStockList] = useState<any[]>([]);
   const [pendingSROs, setPendingSROs] = useState<any[]>([]);
   const [recentTxns, setRecentTxns] = useState<any[]>([]);
   const [activeMUs, setActiveMUs] = useState<any[]>([]);
@@ -102,32 +103,42 @@ function StoreDashboard({ profile, roles }: { profile: any; roles: string[] }) {
       setMyStore(storeFilter);
     }
 
-    const [bal, items, sros, txns, mus] = await Promise.all([
-      storeFilter
-        ? fetchAllRows("store_stock_balances", "*", (q:any) => q.eq("store_location", storeFilter))
-        : fetchAllRows("store_stock_balances", "*"),
-      fetchAllRows("stock_items", "id,name,unit_cost"),
+    // ★ PERFORMANCE FIX: this used to download every balance row
+    // (thousands) AND every stock_items row, then match them with a
+    // client-side .find() loop — up to tens of millions of
+    // comparisons in the browser just to show 5 numbers. The KPI
+    // numbers now come from the same fast Postgres aggregate function
+    // used on the Store page (get_store_summary.sql); the low-stock
+    // LIST (which needs actual item names, not just a count) is a
+    // separate, properly filtered+limited query — never the whole
+    // table. Recent transactions also switched from "fetch all
+    // 32,000+ rows, then slice(0,8) in JS" to a real
+    // .order().limit(8) query, which is what that clause is for.
+    const [summaryRes, lowStockRes, sros, txns, mus] = await Promise.all([
+      dbu.rpc("get_store_summary", { p_store_location: storeFilter || null }),
+      (() => {
+        let q = dbu.from("store_stock_balances")
+          .select("balance, reorder_level, stock_items!inner(name)")
+          .order("balance", { ascending: true })
+          .limit(10);
+        if (storeFilter) q = q.eq("store_location", storeFilter);
+        return q;
+      })(),
       fetchAllRows("sro", "*", (q:any) => q.in("status", ["At Store","In Progress"]).order("created_at", { ascending: false })),
-      fetchAllRows("store_transactions", "*", (q:any) => q.order("created_at", { ascending: false })),
+      dbu.from("store_transactions").select("*").order("created_at", { ascending: false }).limit(8),
       fetchAllRows("movable_units", "*", (q:any) => q.in("status", ["In Transit","Approved"])),
     ]);
 
-    const enriched = (bal as any[]).map(b => {
-      const item = (items as any[]).find(i => i.id === b.stock_item_id);
-      return { ...b, name: item?.name, unit_cost: item?.unit_cost || 0 };
-    });
-    setBalances(enriched);
+    if (summaryRes.data && summaryRes.data[0]) setSummary(summaryRes.data[0]);
+    setLowStockList(((lowStockRes.data as any[]) || [])
+      .filter(b => Number(b.balance) <= Number(b.reorder_level || 10))
+      .map(b => ({ ...b, name: b.stock_items?.name })));
     setPendingSROs(sros as any[]);
-    setRecentTxns((txns as any[]).slice(0, 8));
+    setRecentTxns((txns.data as any[]) || []);
     setActiveMUs(mus as any[]);
     setLoading(false);
   }
 
-  const totalItems = balances.length;
-  const stockValue = balances.reduce((s, b) => s + Number(b.balance||0) * Number(b.unit_cost||0), 0);
-  const lowStock = balances.filter(b => Number(b.balance) <= Number(b.reorder_level || 10));
-  const totalReceived = balances.reduce((s,b) => s + Number(b.qty_received||0), 0);
-  const totalIssued = balances.reduce((s,b) => s + Number(b.qty_issued||0), 0);
 
   const txnIcon: Record<string,string> = { GRN: "📥", SIV: "📤", ADJUSTMENT: "⚠️", RETURN: "↩️" };
 
@@ -144,17 +155,17 @@ function StoreDashboard({ profile, roles }: { profile: any; roles: string[] }) {
             {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
           </p>
         </div>
-        <div className={`rounded-2xl px-5 py-3 text-center border ${lowStock.length > 0 ? "bg-red-50 border-red-200" : "bg-emerald-50 border-emerald-200"}`}>
-          <p className={`text-3xl font-bold ${lowStock.length > 0 ? "text-red-600" : "text-emerald-600"}`}>{loading ? "..." : lowStock.length}</p>
-          <p className={`text-xs font-semibold mt-0.5 ${lowStock.length > 0 ? "text-red-700" : "text-emerald-700"}`}>Low / Out of Stock</p>
+        <div className={`rounded-2xl px-5 py-3 text-center border ${summary && summary.low_stock_count > 0 ? "bg-red-50 border-red-200" : "bg-emerald-50 border-emerald-200"}`}>
+          <p className={`text-3xl font-bold ${summary && summary.low_stock_count > 0 ? "text-red-600" : "text-emerald-600"}`}>{!summary ? "..." : summary.low_stock_count}</p>
+          <p className={`text-xs font-semibold mt-0.5 ${summary && summary.low_stock_count > 0 ? "text-red-700" : "text-emerald-700"}`}>Low / Out of Stock</p>
         </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard title="Total Items"  value={loading ? "..." : totalItems}       sub={isScopedOfficer ? "At your store" : "Across all stores"} color="dark"  link="/store" />
-        <KpiCard title="Stock Value"  value={loading ? "..." : naira(stockValue)} sub="Current inventory"  color="amber" link="/store" />
-        <KpiCard title="Received"     value={loading ? "..." : totalReceived}     sub="Total received"     color="green" link="/store" />
-        <KpiCard title="Issued"       value={loading ? "..." : totalIssued}       sub="Total issued"       color="blue"  link="/store" />
+        <KpiCard title="Total Items"  value={!summary ? "..." : summary.total_items}       sub={isScopedOfficer ? "At your store" : "Across all stores"} color="dark"  link="/store" />
+        <KpiCard title="Stock Value"  value={!summary ? "..." : naira(summary.stock_value)} sub="Current inventory"  color="amber" link="/store" />
+        <KpiCard title="Received"     value={!summary ? "..." : summary.total_received}     sub="Total received"     color="green" link="/store" />
+        <KpiCard title="Issued"       value={!summary ? "..." : summary.total_issued}       sub="Total issued"       color="blue"  link="/store" />
       </div>
 
       {!loading && (pendingSROs.length > 0 || activeMUs.length > 0) && (
@@ -211,10 +222,10 @@ function StoreDashboard({ profile, roles }: { profile: any; roles: string[] }) {
           <div className="p-5 space-y-3 max-h-96 overflow-y-auto">
             {loading ? (
               <p className="text-slate-400 text-xs text-center py-4">Loading...</p>
-            ) : lowStock.length === 0 ? (
+            ) : lowStockList.length === 0 ? (
               <p className="text-slate-400 text-xs text-center py-4">✅ Nothing low right now.</p>
-            ) : lowStock.slice(0, 10).map((b:any) => (
-              <div key={b.id} className="flex items-center justify-between text-xs">
+            ) : lowStockList.map((b:any, i:number) => (
+              <div key={i} className="flex items-center justify-between text-xs">
                 <span className="text-slate-600 dark:text-slate-300 truncate max-w-32">{b.name}</span>
                 <span className="font-bold text-red-600">{b.balance} left</span>
               </div>
@@ -625,7 +636,7 @@ export default function DashboardPage() {
       (q:any) => q.eq("status", "Checked"))
       .then((rows:any) => setPendingApprovals(rows || []))
       .catch(() => setPendingApprovals([]));
-  }, [profileLoaded, canApproveComparisons]); 
+  }, [profileLoaded, canApproveComparisons]); // eslint-disable-line
 
   useEffect(() => {
     if (!profileLoaded || isStoreUser || isProcurementUser) { setLoading(false); return; }

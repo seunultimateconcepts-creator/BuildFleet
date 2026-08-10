@@ -36,6 +36,10 @@ const navItems = [
         roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
       { label: "Daily Logs", href: "/daily-logs",  icon: BookOpen,
         roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
+      { label: "Plant Gallery", href: "/gallery",   icon: ImageIcon,
+        roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
+      { label: "Plant Reports", href: "/reports",   icon: BarChart3,
+        roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer"] },
     ],
   },
   {
@@ -55,7 +59,7 @@ const navItems = [
       { label: "Inventory",        href: "/store",            icon: Package },
       { label: "Filling Station", href: "/filling-station",   icon: Fuel },
       { label: "Movable Units",   href: "/movable-units",     icon: PackageCheck },
-      { label: "Reports",         href: "/store-reports",     icon: BarChart3 },
+      { label: "Store Reports",   href: "/store-reports",   icon: BarChart3 },
     ],
   },
   {
@@ -75,8 +79,6 @@ const navItems = [
   { label: "Finance", href: "/finance", icon: BarChart3,
     roles: ["super_admin","finance_viewer","finance_manager","procurement_manager","store_manager",
             "plant_engineer","plant_manager","plant_admin","executive"] },
-  { label: "Plant Gallery", href: "/gallery",     icon: ImageIcon,       roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
-  { label: "Reports",       href: "/reports",     icon: BarChart3,       roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer"] },
   { label: "Audit",         href: "/audit",       icon: ShieldCheck,     roles: ["super_admin","plant_admin","executive"] },
   { label: "Users",         href: "/users",       icon: Users,           roles: ["super_admin","plant_admin"] },
   { label: "Settings",      href: "/settings",    icon: Settings,        roles: ["super_admin","plant_admin"] },
