@@ -636,7 +636,7 @@ export default function DashboardPage() {
       (q:any) => q.eq("status", "Checked"))
       .then((rows:any) => setPendingApprovals(rows || []))
       .catch(() => setPendingApprovals([]));
-  }, [profileLoaded, canApproveComparisons]); // eslint-disable-line
+  }, [profileLoaded, canApproveComparisons]); 
 
   useEffect(() => {
     if (!profileLoaded || isStoreUser || isProcurementUser) { setLoading(false); return; }
