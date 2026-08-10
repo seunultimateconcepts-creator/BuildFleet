@@ -431,6 +431,7 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
 }) {
   const [items, setItems] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
+  const [comparisons, setComparisons] = useState<any[]>([]); // Signed-Off links back for "To Procurement" lines
   const [stores, setStores] = useState<string[]>([]);
   const [actingStore, setActingStore] = useState("");
   const [storeBalances, setStoreBalances] = useState<any[]>([]);
@@ -491,12 +492,14 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
   useEffect(() => { load(); }, []);
   async function load() {
     setLoading(true);
-    const [it, hi] = await Promise.all([
+    const [it, hi, cp] = await Promise.all([
       dbu.from("sro_items").select("*").eq("sro_id", sro.id).order("created_at"),
       dbu.from("sro_history").select("*").eq("sro_id", sro.id).order("created_at", { ascending: false }),
+      dbu.from("purchase_comparisons").select("*").eq("sro_number", sro.sro_number),
     ]);
     setItems(it.data || []);
     setHistory(hi.data || []);
+    setComparisons(cp.data || []);
     setLoading(false);
   }
 
@@ -650,6 +653,99 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
     setSaving(false); load();
   }
 
+  // ★ ONE-CLICK RECEIVE & ISSUE — for a "To Procurement" line whose
+  // purchase comparison has reached "Signed Off". Every approval this
+  // item needed already happened upstream: Plant Manager approved the
+  // SRO, Procurement Manager checked the comparison, Plant Manager
+  // approved fund release, Procurement signed off. Forcing a THIRD
+  // manual "approve issue" click here would just be re-approving the
+  // same decision — so this records the GRN (goods physically arrived)
+  // and the SIV (handed straight to the original requester) as one
+  // action, generates the receipt immediately, and marks the line
+  // Issued. Still writes both transaction types for a correct stock
+  // ledger — the item briefly enters inventory and leaves again in the
+  // same breath, which is exactly what physically happens: no stock
+  // was ever sitting on a shelf waiting for a second sign-off.
+  async function receiveAndIssue(item: any, comparison: any) {
+    if (!actingStore) { alert("Select which store is receiving this, above, first."); return; }
+    setSaving(true);
+
+    const qty = Number(item.qty_to_procure) || Number(item.qty_requested);
+    const unitCost = qty > 0 && comparison.total_amount ? Math.round(Number(comparison.total_amount) / qty) : 0;
+
+    // Resolve a real stock_items catalog entry — this item was routed
+    // to Procurement specifically because it wasn't in stock/catalog
+    // at check time, so it very likely still needs registering.
+    let stockItemId = item.stock_item_id;
+    if (!stockItemId) {
+      const { data: existing } = await dbu.from("stock_items")
+        .select("id").ilike("name", item.item_description).limit(1);
+      if (existing && existing.length) {
+        stockItemId = existing[0].id;
+      } else {
+        const { data: created, error: createErr } = await dbu.from("stock_items").insert([{
+          name: item.item_description, category: "Spare Parts", unit: item.unit || "pcs",
+          unit_cost: unitCost, qty_received: 0, qty_issued: 0, reorder_level: 10,
+        }]).select().single();
+        if (createErr) { alert(createErr.message); setSaving(false); return; }
+        stockItemId = created.id;
+      }
+    }
+
+    const siv = `SIV-${sro.sro_number}-${item.id.slice(0,4)}`;
+
+    const { error: grnErr } = await dbu.from("store_transactions").insert([{
+      txn_type: "GRN",
+      stock_item_id: stockItemId,
+      item_name: item.item_description,
+      store_location: actingStore,
+      quantity: qty,
+      unit_cost: unitCost || null,
+      supplier: comparison.selected_supplier || null,
+      comparison_id: comparison.id,
+      sro_number: sro.sro_number,
+      received_by: profile?.full_name,
+      performed_by: profile?.full_name,
+      remarks: `Received against Signed-Off comparison for ${sro.sro_number}`,
+    }]);
+    if (grnErr) { alert(grnErr.message); setSaving(false); return; }
+
+    const { error: sivErr } = await dbu.from("store_transactions").insert([{
+      txn_type: "SIV",
+      stock_item_id: stockItemId,
+      item_name: item.item_description,
+      store_location: actingStore,
+      quantity: qty,
+      sro_id: sro.id, sro_item_id: item.id,
+      siv_number: siv,
+      job_order_no: sro.job_order_no,
+      fleet_number: sro.fleet_number,
+      issued_by: profile?.full_name,
+      issued_to: sro.raised_by,
+      performed_by: profile?.full_name,
+    }]);
+    if (sivErr) { alert(sivErr.message); setSaving(false); return; }
+
+    invalidateCache(`store-balances-${actingStore}`);
+    invalidateCache("all-store-balances");
+
+    await dbu.from("sro_items").update({
+      stock_item_id: stockItemId,
+      store_location: actingStore,
+      qty_approved: qty,
+      qty_to_procure: 0,
+      status: "Issued",
+      issued_by: profile?.full_name,
+      issued_at: new Date().toISOString(),
+      siv_number: siv,
+    }).eq("id", item.id);
+
+    await logHistory("Received & Issued", `${qty} received into ${actingStore} against Signed-Off comparison, and issued directly to ${sro.raised_by} — SIV ${siv}`, item.id);
+
+    setSaving(false); load();
+    printSIVReceipt(sro, { ...item, store_location: actingStore, qty_approved: qty, siv_number: siv, issued_by: profile?.full_name });
+  }
+
   const allDoneAtStore = items.length > 0 && items.every(i => ["Issued","Rejected","To Procurement"].includes(i.status));
   const allIssued = items.length > 0 && items.every(i => i.status === "Issued");
   useEffect(() => {
@@ -709,9 +805,9 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
                 </div>
               )}
 
-              {sro.status === "At Store" && canCheckAvail && (
+              {(sro.status === "At Store" || items.some(i => i.status === "To Procurement")) && canCheckAvail && (
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Checking From — Store</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Acting Store — checking / receiving</label>
                   {isScopedOfficer ? (
                     <div className="border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm text-slate-600">
                       {actingStore || "No store assigned to you yet — ask an admin to assign one."}
@@ -792,11 +888,27 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
                         </button>
                       </div>
                     )}
-                    {item.status === "To Procurement" && (
-                      <p className="text-xs text-purple-700">
-                        ✓ Not available at {actingStore || "the store"} — a draft Purchase Comparison for {sro.sro_number} was created automatically. Once Procurement signs it off and Store receives the goods, this line will automatically re-open for issue.
-                      </p>
-                    )}
+                    {item.status === "To Procurement" && (() => {
+                      const signedOff = comparisons.find(c => c.sro_item_id === item.id && c.status === "Signed Off");
+                      return signedOff ? (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 space-y-2">
+                          <p className="text-xs text-emerald-700 font-semibold">
+                            ✓ Procurement signed off — {signedOff.selected_supplier || "supplier"} · ₦{Number(signedOff.total_amount||0).toLocaleString()}
+                          </p>
+                          {canCheckAvail && (
+                            <button onClick={()=>receiveAndIssue(item, signedOff)} disabled={saving || !actingStore}
+                              title={!actingStore ? "Select the acting store above first" : ""}
+                              className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 disabled:opacity-50">
+                              📥 Receive &amp; Issue — Generate Receipt
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-purple-700">
+                          ✓ Not available at {actingStore || "the store"} — a draft Purchase Comparison for {sro.sro_number} was created automatically. Once Procurement signs it off, a Receive &amp; Issue button appears here — no further approval needed.
+                        </p>
+                      );
+                    })()}
                   </div>
                 ))}
               </div>
@@ -839,8 +951,23 @@ export default function SROPage() {
   const [raiseModal, setRaiseModal] = useState(false);
   const [selected, setSelected] = useState<any>(null);
   const [search, setSearch] = useState("");
+  const [readyToReceive, setReadyToReceive] = useState<any[]>([]); // SROs with a To Procurement line whose comparison is Signed Off
+
+  const isStoreRole = roles.some(r => ["store_officer","store_manager","store_supervisor","super_admin"].includes(r));
 
   useEffect(() => { load(); }, []);
+  useEffect(() => { if (isStoreRole) loadReadyToReceive(); }, [sros]); 
+
+  async function loadReadyToReceive() {
+    const inProgress = sros.filter((s:any) => s.status === "In Progress" || s.status === "At Store");
+    if (inProgress.length === 0) { setReadyToReceive([]); return; }
+    const numbers = inProgress.map((s:any) => s.sro_number);
+    const { data: signedOff } = await dbu.from("purchase_comparisons")
+      .select("sro_number").eq("status", "Signed Off").not("sro_item_id", "is", null).in("sro_number", numbers);
+    const readyNumbers = new Set((signedOff || []).map((c:any) => c.sro_number));
+    setReadyToReceive(inProgress.filter((s:any) => readyNumbers.has(s.sro_number)));
+  }
+
   async function load() {
     setLoading(true);
     const data = await fetchAllRows("sro", "*", q => q.order("created_at", { ascending: false }), { cacheKey: "sro-list", cacheTTL: 20000 });
@@ -901,6 +1028,20 @@ export default function SROPage() {
             {myApprovals.map((s:any) => (
               <button key={s.id} onClick={()=>setSelected(s)}
                 className="px-3 py-1.5 bg-white border border-orange-200 rounded-lg text-xs font-semibold text-orange-700 hover:bg-orange-100">
+                {s.sro_number} — {s.purpose?.slice(0,30)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {readyToReceive.length > 0 && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
+          <p className="font-bold text-emerald-800 text-sm mb-2">📥 {readyToReceive.length} ready to receive — Procurement signed off</p>
+          <div className="flex flex-wrap gap-2">
+            {readyToReceive.map((s:any) => (
+              <button key={s.id} onClick={()=>setSelected(s)}
+                className="px-3 py-1.5 bg-white border border-emerald-200 rounded-lg text-xs font-semibold text-emerald-700 hover:bg-emerald-100">
                 {s.sro_number} — {s.purpose?.slice(0,30)}
               </button>
             ))}

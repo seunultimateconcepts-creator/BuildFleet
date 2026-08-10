@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/immutability */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -7,7 +6,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import { dbu } from "@/lib/db";
 import { useAuth } from "@/hooks/use-auth";
-import { fetchAllRows, invalidateCache } from "@/lib/fetch-all";
+import { invalidateCache } from "@/lib/fetch-all";
 
 const iCls = "w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
 
@@ -365,46 +364,104 @@ export default function ProcurementPage() {
     ["store_manager","plant_admin","executive","finance_viewer"].includes(r));
 
   const [tab, setTab] = useState<"dashboard"|"comparisons"|"purchases"|"history">("dashboard");
-  const [comparisons, setComparisons] = useState<any[]>([]);
-  const [purchases,   setPurchases]   = useState<any[]>([]);
+  const [comparisons, setComparisons] = useState<any[]>([]); // current page only
+  const [purchases,   setPurchases]   = useState<any[]>([]); // current page only
   const [history,     setHistory]     = useState<any[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [modal,       setModal]       = useState<any|"new"|null>(null);
   const [month,       setMonth]       = useState(() => new Date().toISOString().slice(0,7));
+  const [months,      setMonths]      = useState<string[]>([]);
 
-  useEffect(() => { load(); }, []);
+  // ★ PAGINATION — same pattern as Store/Equipment. Volume is small
+  // today (a handful of rows), but this is built to not need
+  // revisiting once Procurement's volume grows.
+  const PAGE_SIZE = 50;
+  const [compPage, setCompPage] = useState(1);
+  const [compTotal, setCompTotal] = useState(0);
+  const [purchPage, setPurchPage] = useState(1);
+  const [purchTotal, setPurchTotal] = useState(0);
 
-  async function load() {
+  // ★ Dashboard aggregates via get_procurement_summary() — Postgres
+  // computes the monthly total, spend-by-supplier breakdown, and
+  // pending counts directly, instead of downloading every
+  // comparison/purchase row and summing them in the browser.
+  const [summary, setSummary] = useState<{
+    month_total: number; month_purchase_count: number; pending_check: number;
+    pending_approve: number; pending_sign_off: number; total_comparisons: number;
+    total_purchases: number; by_supplier: { supplier: string; total: number }[];
+  } | null>(null);
+
+  useEffect(() => { loadMonths(); }, []);
+  useEffect(() => { loadSummary(); }, [month]); // eslint-disable-line
+  useEffect(() => { if (tab === "comparisons") loadComparisonsPage(); }, [tab, compPage]); // eslint-disable-line
+  useEffect(() => { if (tab === "purchases") loadPurchasesPage(); }, [tab, purchPage]); // eslint-disable-line
+  useEffect(() => { if (tab === "history") loadHistory(); }, [tab]);  
+
+  async function loadMonths() {
+    const { data } = await dbu.rpc("get_procurement_months");
+    setMonths((data as string[]) || []);
+  }
+
+  async function loadSummary() {
     setLoading(true);
-    const [c, p, h] = await Promise.all([
-      fetchAllRows("purchase_comparisons", "*", q => q.order("created_at", { ascending: false }), { cacheKey: "purchase-comparisons", cacheTTL: 20000 }),
-      fetchAllRows("purchases", "*", q => q.order("purchase_date", { ascending: false }), { cacheKey: "purchases", cacheTTL: 20000 }),
-      dbu.from("procurement_history").select("*").order("created_at", { ascending: false }).limit(100)
-        .then(({ data }: any) => data || []),
-    ]);
-    setComparisons(c); setPurchases(p); setHistory(h);
+    const { data, error } = await dbu.rpc("get_procurement_summary", { p_month: month });
+    if (error) { console.error("Procurement summary error:", error.message); setLoading(false); return; }
+    if (data && data[0]) setSummary(data[0]);
     setLoading(false);
   }
+
+  async function loadComparisonsPage() {
+    setLoading(true);
+    const from = (compPage - 1) * PAGE_SIZE;
+    const { data, count, error } = await dbu.from("purchase_comparisons")
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) { console.error("Comparisons load error:", error.message); setLoading(false); return; }
+    setComparisons((data as any[]) || []);
+    setCompTotal(count || 0);
+    setLoading(false);
+  }
+
+  async function loadPurchasesPage() {
+    setLoading(true);
+    const from = (purchPage - 1) * PAGE_SIZE;
+    const { data, count, error } = await dbu.from("purchases")
+      .select("*", { count: "exact" })
+      .order("purchase_date", { ascending: false })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) { console.error("Purchases load error:", error.message); setLoading(false); return; }
+    setPurchases((data as any[]) || []);
+    setPurchTotal(count || 0);
+    setLoading(false);
+  }
+
+  async function loadHistory() {
+    const { data } = await dbu.from("procurement_history").select("*").order("created_at", { ascending: false }).limit(100);
+    setHistory(data || []);
+  }
+
   function reloadFresh() {
     invalidateCache("purchase-comparisons");
     invalidateCache("purchases");
-    load();
+    loadSummary(); loadMonths();
+    if (tab === "comparisons") loadComparisonsPage();
+    if (tab === "purchases") loadPurchasesPage();
+    if (tab === "history") loadHistory();
   }
 
   if (!canView) {
     return <div className="py-24 text-center text-slate-400">You don&apos;t have access to Procurement.</div>;
   }
 
-  // Monthly spend (requirement #3: "how much has been spent in a month")
-  const monthPurchases = purchases.filter(p => (p.purchase_date || "").startsWith(month));
-  const monthTotal = monthPurchases.reduce((s, p) => s + Number(p.amount || 0), 0);
-  const months = [...new Set(purchases.map(p => (p.purchase_date || "").slice(0,7)))].filter(Boolean).sort().reverse();
-  const bySupplier: Record<string, number> = {};
-  monthPurchases.forEach(p => { bySupplier[p.supplier || "—"] = (bySupplier[p.supplier || "—"] || 0) + Number(p.amount || 0); });
-
-  const pendingCheck    = comparisons.filter(c => c.status === "Draft").length;
-  const pendingApprove  = comparisons.filter(c => c.status === "Checked").length;
-  const pendingSignOff  = comparisons.filter(c => c.status === "Purchased").length;
+  const monthTotal = summary?.month_total || 0;
+  const monthPurchases = { length: summary?.month_purchase_count || 0 }; // shape kept for existing render code below
+  const bySupplier = summary?.by_supplier || [];
+  const pendingCheck    = summary?.pending_check || 0;
+  const pendingApprove  = summary?.pending_approve || 0;
+  const pendingSignOff  = summary?.pending_sign_off || 0;
+  const compTotalPages = Math.max(1, Math.ceil(compTotal / PAGE_SIZE));
+  const purchTotalPages = Math.max(1, Math.ceil(purchTotal / PAGE_SIZE));
 
   return (
     <div className="space-y-6 pb-10">
@@ -426,8 +483,8 @@ export default function ProcurementPage() {
       </div>
 
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit flex-wrap">
-        {([["dashboard","📊 Dashboard"],["comparisons",`📋 Comparisons (${comparisons.length})`],
-           ["purchases",`🛒 Purchases (${purchases.length})`],["history","🕒 History"]] as const).map(([k,l]) => (
+        {([["dashboard","📊 Dashboard"],["comparisons",`📋 Comparisons (${compTotal})`],
+           ["purchases",`🛒 Purchases (${purchTotal})`],["history","🕒 History"]] as const).map(([k,l]) => (
           <button key={k} onClick={()=>setTab(k)}
             className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${tab===k?"bg-white text-slate-800 shadow-sm":"text-slate-500 hover:text-slate-700"}`}>
             {l}
@@ -471,10 +528,10 @@ export default function ProcurementPage() {
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100"><h3 className="font-bold text-slate-800">Spend by Supplier — {month}</h3></div>
             <div className="divide-y divide-slate-50">
-              {Object.entries(bySupplier).sort((a,b)=>b[1]-a[1]).map(([s, amt]) => (
-                <div key={s} className="px-6 py-3 flex items-center justify-between text-sm">
-                  <span className="text-slate-700 font-medium">{s}</span>
-                  <span className="font-bold text-slate-800">{naira(amt)}</span>
+              {bySupplier.map((row: any) => (
+                <div key={row.supplier} className="px-6 py-3 flex items-center justify-between text-sm">
+                  <span className="text-slate-700 font-medium">{row.supplier}</span>
+                  <span className="font-bold text-slate-800">{naira(row.total)}</span>
                 </div>
               ))}
               {monthPurchases.length === 0 && (
@@ -487,6 +544,20 @@ export default function ProcurementPage() {
 
       {tab === "comparisons" && (
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+          <div className="px-6 py-3 border-b border-slate-100 flex items-center justify-between">
+            <p className="text-slate-500 text-xs">
+              {loading ? "Loading..." : compTotal === 0 ? "0 comparisons" : `Showing ${((compPage-1)*PAGE_SIZE)+1}–${Math.min(compPage*PAGE_SIZE, compTotal)} of ${compTotal}`}
+            </p>
+            {compTotalPages > 1 && (
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <button onClick={()=>setCompPage(p=>Math.max(1,p-1))} disabled={compPage===1}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50">‹ Prev</button>
+                Page {compPage} of {compTotalPages}
+                <button onClick={()=>setCompPage(p=>Math.min(compTotalPages,p+1))} disabled={compPage===compTotalPages}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50">Next ›</button>
+              </div>
+            )}
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-100">
@@ -495,7 +566,7 @@ export default function ProcurementPage() {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {loading ? <tr><td colSpan={9} className="px-5 py-12 text-center text-slate-400">Loading...</td></tr>
-                : comparisons.length === 0 ? <tr><td colSpan={9} className="px-5 py-12 text-center text-slate-400">No comparisons yet.</td></tr>
+                : compTotal === 0 ? <tr><td colSpan={9} className="px-5 py-12 text-center text-slate-400">No comparisons yet.</td></tr>
                 : comparisons.map((c:any) => (
                   <tr key={c.id} className="hover:bg-amber-50/20">
                     <td className="px-4 py-3 font-mono text-xs font-bold text-amber-600">{c.sro_number || "—"}</td>
@@ -522,6 +593,20 @@ export default function ProcurementPage() {
 
       {tab === "purchases" && (
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+          <div className="px-6 py-3 border-b border-slate-100 flex items-center justify-between">
+            <p className="text-slate-500 text-xs">
+              {loading ? "Loading..." : purchTotal === 0 ? "0 purchases" : `Showing ${((purchPage-1)*PAGE_SIZE)+1}–${Math.min(purchPage*PAGE_SIZE, purchTotal)} of ${purchTotal}`}
+            </p>
+            {purchTotalPages > 1 && (
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <button onClick={()=>setPurchPage(p=>Math.max(1,p-1))} disabled={purchPage===1}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50">‹ Prev</button>
+                Page {purchPage} of {purchTotalPages}
+                <button onClick={()=>setPurchPage(p=>Math.min(purchTotalPages,p+1))} disabled={purchPage===purchTotalPages}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50">Next ›</button>
+              </div>
+            )}
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-100">
@@ -529,7 +614,7 @@ export default function ProcurementPage() {
                   <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase whitespace-nowrap">{h}</th>))}</tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {purchases.length === 0 ? <tr><td colSpan={8} className="px-5 py-12 text-center text-slate-400">No purchases recorded yet.</td></tr>
+                {purchTotal === 0 ? <tr><td colSpan={8} className="px-5 py-12 text-center text-slate-400">No purchases recorded yet.</td></tr>
                 : purchases.map((p:any) => (
                   <tr key={p.id} className="hover:bg-amber-50/20">
                     <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
