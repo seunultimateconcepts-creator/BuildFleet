@@ -746,13 +746,28 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
     printSIVReceipt(sro, { ...item, store_location: actingStore, qty_approved: qty, siv_number: siv, issued_by: profile?.full_name });
   }
 
+  // ★ BUG FIX — "dancing" modal / infinite reload loop. This effect
+  // used to compare against the `sro` PROP's status directly, which
+  // is fixed at whatever value it had the moment the modal opened and
+  // never updates. Once every item became Issued, this would write
+  // "Completed" to the database, reload, see the same stale prop
+  // still saying "In Progress", and write "Completed" again — forever,
+  // each write triggering another reload, each reload re-triggering
+  // this effect. A local state mirror, updated the moment the write
+  // succeeds, is what actually breaks the loop — this is the same
+  // "stale-modal-status" pattern already fixed on Movable Units and
+  // documented as outstanding on SRO.
+  const [localSroStatus, setLocalSroStatus] = useState(sro.status);
+
   const allDoneAtStore = items.length > 0 && items.every(i => ["Issued","Rejected","To Procurement"].includes(i.status));
   const allIssued = items.length > 0 && items.every(i => i.status === "Issued");
   useEffect(() => {
     if (loading || items.length === 0) return;
-    if (allIssued && sro.status !== "Completed") {
+    if (allIssued && localSroStatus !== "Completed") {
+      setLocalSroStatus("Completed"); // set FIRST — stops this effect from re-firing on the reload below
       dbu.from("sro").update({ status: "Completed" }).eq("id", sro.id).then(() => { invalidateCache("sro-list"); load(); });
-    } else if (allDoneAtStore && sro.status === "At Store") {
+    } else if (allDoneAtStore && localSroStatus === "At Store") {
+      setLocalSroStatus("In Progress");
       dbu.from("sro").update({ status: "In Progress" }).eq("id", sro.id).then(() => { invalidateCache("sro-list"); load(); });
     }
   }, [items]); 
@@ -767,7 +782,7 @@ function SRODetailModal({ sro, onClose, onSaved, profile, roles }: {
             <p className="text-slate-400 text-xs mt-0.5">{sro.purpose}</p>
           </div>
           <div className="flex items-center gap-3">
-            <span className={`px-3 py-1 rounded-full text-xs font-bold ${SRO_STATUS_STYLE[sro.status]}`}>{sro.status}</span>
+            <span className={`px-3 py-1 rounded-full text-xs font-bold ${SRO_STATUS_STYLE[localSroStatus]}`}>{localSroStatus}</span>
             <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl">×</button>
           </div>
         </div>
@@ -956,7 +971,7 @@ export default function SROPage() {
   const isStoreRole = roles.some(r => ["store_officer","store_manager","store_supervisor","super_admin"].includes(r));
 
   useEffect(() => { load(); }, []);
-  useEffect(() => { if (isStoreRole) loadReadyToReceive(); }, [sros]); 
+  useEffect(() => { if (isStoreRole) loadReadyToReceive(); }, [sros]); // eslint-disable-line
 
   async function loadReadyToReceive() {
     const inProgress = sros.filter((s:any) => s.status === "In Progress" || s.status === "At Store");
