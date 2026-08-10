@@ -553,7 +553,7 @@ export default function StorePage() {
   // fetch only ever pulls PAGE_SIZE rows, never the whole table.
   useEffect(() => {
     if (selectedStore || selectedStore === "__all__") { loadPage(); loadSummary(); }
-  }, [selectedStore, search, filterCategory, page]); // eslint-disable-line
+  }, [selectedStore, search, filterCategory, page]); 
 
   // Store/search/category changes should reset back to page 1 —
   // otherwise a search could land on "page 4" of a result set that
