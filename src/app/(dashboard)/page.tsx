@@ -23,6 +23,12 @@ type ChartRange = "7d" | "30d" | "90d";
 const STORE_ROLES = ["store_officer", "store_manager", "store_supervisor"];
 const PROCUREMENT_ROLES = ["procurement_officer", "procurement_manager"];
 const PLANT_OVERRIDE_ROLES = ["plant_admin", "plant_manager", "plant_director", "plant_engineer", "super_admin"];
+// Top-management tier — sees the cross-module Executive Overview
+// instead of the Plant-only fleet dashboard. plant_engineer,
+// site_supervisor, plant_officer, plant_clerk, and plant_admin
+// deliberately stay on the existing Plant dashboard below — they're
+// operational/site-scoped roles, not company-wide oversight roles.
+const EXECUTIVE_ROLES = ["super_admin", "executive", "plant_director", "plant_manager"];
 
 // ─────────────────────────────────────────────────────────────
 // SHARED — KPI CARD, ACTIVITY ITEM (used by both dashboards)
@@ -357,6 +363,144 @@ function ProcurementDashboard({ profile }: { profile: any }) {
   );
 }
 
+// ═════════════════════════════════════════════════════════════
+// EXECUTIVE DASHBOARD — cross-module Oracle-style overview for
+// super_admin, executive (GM/MD/Chairman), plant_director, and
+// plant_manager. One card per module (Plant, Store, Procurement,
+// Finance, Audit), each pulling from its module's own fast summary
+// RPC — the same pattern already proven on the Store/Equipment/
+// Procurement pages, just aggregated in one place instead of one
+// number type per page.
+// ═════════════════════════════════════════════════════════════
+function ExecutiveDashboard({ profile, pendingApprovals }: { profile: any; pendingApprovals: any[] }) {
+  const [loading, setLoading] = useState(true);
+  const [equip, setEquip] = useState<any>(null);
+  const [store, setStore] = useState<any>(null);
+  const [proc, setProc] = useState<any>(null);
+  const [fin, setFin] = useState<any>(null);
+  const [auditToday, setAuditToday] = useState(0);
+  const [auditTotal, setAuditTotal] = useState(0);
+
+  useEffect(() => { load(); }, []); // eslint-disable-line
+  async function load() {
+    setLoading(true);
+    const month = new Date().toISOString().slice(0, 7);
+    const year = String(new Date().getFullYear());
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+
+    const [eq, st, pr, fi, atCount, atTotal] = await Promise.all([
+      dbu.rpc("get_equipment_summary", { p_sites: null }),
+      dbu.rpc("get_store_summary", { p_store_location: null }),
+      dbu.rpc("get_procurement_summary", { p_month: month }),
+      dbu.rpc("get_finance_summary", { p_year: year }),
+      dbu.from("audit_log").select("id", { count: "exact", head: true }).gte("changed_at", todayStart.toISOString()),
+      dbu.from("audit_log").select("id", { count: "exact", head: true }),
+    ]);
+
+    if (eq.data?.[0]) setEquip(eq.data[0]);
+    if (st.data?.[0]) setStore(st.data[0]);
+    if (pr.data?.[0]) setProc(pr.data[0]);
+    if (fi.data?.[0]) setFin(fi.data[0]);
+    setAuditToday(atCount.count || 0);
+    setAuditTotal(atTotal.count || 0);
+    setLoading(false);
+  }
+
+  return (
+    <div className="space-y-6 pb-10">
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-1">Company Overview</p>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
+            {profile ? `Welcome, ${profile.full_name.split(" ")[0]}` : "Dashboard"}
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">
+            {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+          </p>
+        </div>
+      </div>
+
+      {!loading && pendingApprovals.length > 0 && (
+        <Link href="/procurement" className="block bg-emerald-50 border border-emerald-200 rounded-2xl p-4 hover:bg-emerald-100 transition-colors">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">💰</span>
+            <div>
+              <p className="font-bold text-emerald-800 text-sm">
+                {pendingApprovals.length} purchase{pendingApprovals.length > 1 ? "s" : ""} awaiting your approval to release funds
+              </p>
+              <p className="text-emerald-600 text-xs mt-0.5">
+                {pendingApprovals.slice(0,3).map((c:any) => c.sro_number).filter(Boolean).join(", ")}
+                {pendingApprovals.length > 3 ? ` +${pendingApprovals.length - 3} more` : ""} — click to review &amp; approve
+              </p>
+            </div>
+          </div>
+        </Link>
+      )}
+
+      {/* One card per module — Plant, Store, Procurement, Finance, Audit */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+        <Link href="/equipment" className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5 hover:shadow-md transition-shadow">
+          <p className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-3">🚜 Plant</p>
+          <p className="text-3xl font-bold text-slate-800 dark:text-white">{loading ? "..." : equip?.total ?? 0}</p>
+          <p className="text-xs text-slate-400 mt-0.5">Total Fleet</p>
+          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#1E2235] space-y-1 text-xs">
+            <div className="flex justify-between"><span className="text-slate-500">Working</span><span className="font-semibold text-emerald-600">{loading ? "…" : equip?.working ?? 0}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Under Repair</span><span className="font-semibold text-amber-600">{loading ? "…" : equip?.repair ?? 0}</span></div>
+          </div>
+        </Link>
+
+        <Link href="/store" className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5 hover:shadow-md transition-shadow">
+          <p className="text-xs font-bold text-emerald-500 uppercase tracking-wider mb-3">📦 Store</p>
+          <p className="text-3xl font-bold text-slate-800 dark:text-white">{loading ? "..." : naira(store?.stock_value ?? 0)}</p>
+          <p className="text-xs text-slate-400 mt-0.5">Stock Value</p>
+          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#1E2235] space-y-1 text-xs">
+            <div className="flex justify-between"><span className="text-slate-500">Items</span><span className="font-semibold text-slate-700 dark:text-slate-200">{loading ? "…" : store?.total_items ?? 0}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Low Stock</span><span className="font-semibold text-red-600">{loading ? "…" : store?.low_stock_count ?? 0}</span></div>
+          </div>
+        </Link>
+
+        <Link href="/procurement" className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5 hover:shadow-md transition-shadow">
+          <p className="text-xs font-bold text-orange-500 uppercase tracking-wider mb-3">🛒 Procurement</p>
+          <p className="text-3xl font-bold text-slate-800 dark:text-white">{loading ? "..." : naira(proc?.month_total ?? 0)}</p>
+          <p className="text-xs text-slate-400 mt-0.5">Spend This Month</p>
+          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#1E2235] space-y-1 text-xs">
+            <div className="flex justify-between"><span className="text-slate-500">Awaiting Approval</span><span className="font-semibold text-blue-600">{loading ? "…" : proc?.pending_approve ?? 0}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Awaiting Sign Off</span><span className="font-semibold text-teal-600">{loading ? "…" : proc?.pending_sign_off ?? 0}</span></div>
+          </div>
+        </Link>
+
+        <Link href="/finance" className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5 hover:shadow-md transition-shadow">
+          <p className="text-xs font-bold text-purple-500 uppercase tracking-wider mb-3">📊 Finance</p>
+          <p className="text-3xl font-bold text-slate-800 dark:text-white">{loading ? "..." : naira(fin?.total_spend ?? 0)}</p>
+          <p className="text-xs text-slate-400 mt-0.5">Total Spend — {new Date().getFullYear()}</p>
+          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#1E2235] space-y-1 text-xs">
+            <div className="flex justify-between"><span className="text-slate-500">Budget Set</span><span className="font-semibold text-slate-700 dark:text-slate-200">{loading ? "…" : naira(fin?.total_budget ?? 0)}</span></div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Variance</span>
+              <span className={`font-semibold ${fin && fin.total_budget - fin.total_spend < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                {loading || !fin?.total_budget ? "—" : naira(fin.total_budget - fin.total_spend)}
+              </span>
+            </div>
+          </div>
+        </Link>
+
+        <Link href="/audit" className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5 hover:shadow-md transition-shadow">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">🛡️ Audit</p>
+          <p className="text-3xl font-bold text-slate-800 dark:text-white">{loading ? "..." : auditToday}</p>
+          <p className="text-xs text-slate-400 mt-0.5">Changes Today</p>
+          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#1E2235] space-y-1 text-xs">
+            <div className="flex justify-between"><span className="text-slate-500">All-Time Entries</span><span className="font-semibold text-slate-700 dark:text-slate-200">{loading ? "…" : auditTotal.toLocaleString()}</span></div>
+          </div>
+        </Link>
+      </div>
+
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl px-4 py-3 text-xs text-blue-700 dark:text-blue-300">
+        ℹ️ Company-wide view across every module. Click any card to open that module directly.
+      </div>
+    </div>
+  );
+}
+
 function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
@@ -625,6 +769,7 @@ export default function DashboardPage() {
 
   const isStoreUser = roles.some(r => STORE_ROLES.includes(r)) && !roles.some(r => PLANT_OVERRIDE_ROLES.includes(r));
   const isProcurementUser = !isStoreUser && roles.some(r => PROCUREMENT_ROLES.includes(r)) && !roles.some(r => PLANT_OVERRIDE_ROLES.includes(r));
+  const isExecutiveUser = roles.some(r => EXECUTIVE_ROLES.includes(r));
   // Mirrors procurement-page.tsx's canApprove exactly — plant_engineer,
   // plant_manager, super_admin. If that list changes there, change it
   // here too, or this banner will drift out of sync with the real gate.
@@ -639,7 +784,7 @@ export default function DashboardPage() {
   }, [profileLoaded, canApproveComparisons]); 
 
   useEffect(() => {
-    if (!profileLoaded || isStoreUser || isProcurementUser) { setLoading(false); return; }
+    if (!profileLoaded || isStoreUser || isProcurementUser || isExecutiveUser) { setLoading(false); return; }
 
     async function load() {
       setLoading(true);
@@ -701,7 +846,7 @@ export default function DashboardPage() {
       }
     }
     load();
-  }, [profileLoaded, isStoreUser, isProcurementUser]); // eslint-disable-line
+  }, [profileLoaded, isStoreUser, isProcurementUser, isExecutiveUser]); // eslint-disable-line
 
   // ── Route to the Store dashboard, entirely separate content ──
   if (profileLoaded && isStoreUser) {
@@ -709,6 +854,9 @@ export default function DashboardPage() {
   }
   if (profileLoaded && isProcurementUser) {
     return <ProcurementDashboard profile={profile} />;
+  }
+  if (profileLoaded && isExecutiveUser) {
+    return <ExecutiveDashboard profile={profile} pendingApprovals={pendingApprovals} />;
   }
 
   // ── Everything below is the ORIGINAL Plant dashboard, unchanged ──
