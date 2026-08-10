@@ -1,3 +1,5 @@
+/* eslint-disable prefer-const */
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
@@ -7,9 +9,9 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEquipment } from "@/hooks/use-equipment";
 import { useAuth } from "@/hooks/use-auth";
 import { dbu } from "@/lib/db";
+import { fetchAllRows } from "@/lib/fetch-all";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import type { Equipment, OperationalStatus } from "@/types";
 
@@ -154,27 +156,12 @@ function buildPrintHTML(
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family: Arial, sans-serif; font-size: 9pt; color: #1e293b; background: #fff; }
-
-  /* ── Header banner ── */
-  .banner {
-    background: #080D1A;
-    color: #fff;
-    text-align: center;
-    padding: 14px 24px 10px;
-  }
+  .banner { background: #080D1A; color: #fff; text-align: center; padding: 14px 24px 10px; }
   .banner h1 { font-size: 18pt; font-weight: 800; letter-spacing: 1px; }
   .banner h2 { font-size: 11pt; color: #F5A623; font-weight: 700; margin-top: 3px; }
   .banner p  { font-size: 8pt; color: #94a3b8; margin-top: 4px; }
-
-  /* ── KPI summary bar ── */
-  .summary {
-    display: flex; gap: 0;
-    border-bottom: 3px solid #F5A623;
-  }
-  .kpi {
-    flex: 1; padding: 8px 12px; text-align: center;
-    border-right: 1px solid #e2e8f0;
-  }
+  .summary { display: flex; gap: 0; border-bottom: 3px solid #F5A623; }
+  .kpi { flex: 1; padding: 8px 12px; text-align: center; border-right: 1px solid #e2e8f0; }
   .kpi:last-child { border-right: none; }
   .kpi .num  { font-size: 16pt; font-weight: 800; }
   .kpi .lbl  { font-size: 7pt; color: #64748b; text-transform: uppercase; letter-spacing:.5px; }
@@ -184,135 +171,58 @@ function buildPrintHTML(
   .kpi.repair   { background: #fffbeb; } .kpi.repair   .num { color: #d97706; }
   .kpi.storage  { background: #f8fafc; } .kpi.storage  .num { color: #475569; }
   .kpi.scrapped { background: #fef2f2; } .kpi.scrapped .num { color: #dc2626; }
-
-  /* ── Meta row ── */
-  .meta {
-    display: flex; justify-content: space-between;
-    padding: 6px 16px; background: #f8fafc;
-    font-size: 8pt; color: #64748b;
-    border-bottom: 1px solid #e2e8f0;
-  }
-
-  /* ── Table ── */
+  .meta { display: flex; justify-content: space-between; padding: 6px 16px; background: #f8fafc; font-size: 8pt; color: #64748b; border-bottom: 1px solid #e2e8f0; }
   .wrap { padding: 0; }
   table { width: 100%; border-collapse: collapse; }
   thead tr { background: #080D1A; }
-  thead th {
-    color: #fff; font-size: 8pt; font-weight: 700;
-    padding: 7px 6px; text-align: left;
-    text-transform: uppercase; letter-spacing: .4px;
-    white-space: nowrap;
-    border-right: 1px solid #1a2744;
-  }
+  thead th { color: #fff; font-size: 8pt; font-weight: 700; padding: 7px 6px; text-align: left; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; border-right: 1px solid #1a2744; }
   thead th:last-child { border-right: none; }
-  tbody td {
-    padding: 5px 6px; font-size: 8.5pt; color: #1e293b;
-    border-bottom: 1px solid #f1f5f9;
-    border-right: 1px solid #f1f5f9;
-  }
+  tbody td { padding: 5px 6px; font-size: 8.5pt; color: #1e293b; border-bottom: 1px solid #f1f5f9; border-right: 1px solid #f1f5f9; }
   tbody td:last-child { border-right: none; }
   tbody tr:hover { background: #fffbeb !important; }
-
-  /* ── Footer ── */
-  .footer {
-    margin-top: 16px; padding: 10px 16px;
-    border-top: 2px solid #F5A623;
-    display: flex; justify-content: space-between; align-items: flex-end;
-  }
+  .footer { margin-top: 16px; padding: 10px 16px; border-top: 2px solid #F5A623; display: flex; justify-content: space-between; align-items: flex-end; }
   .sig-block { text-align: center; width: 200px; }
-  .sig-line  { border-top: 1px solid #1e293b; padding-top: 4px; margin-top: 28px;
-               font-size: 8pt; color: #475569; }
+  .sig-line  { border-top: 1px solid #1e293b; padding-top: 4px; margin-top: 28px; font-size: 8pt; color: #475569; }
   .footer-note { font-size: 7.5pt; color: #94a3b8; text-align: center; flex: 1; padding: 0 12px; }
-
-  /* ── Print setup ── */
-  @media print {
-    @page { size: A3 landscape; margin: 8mm; }
-    body  { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .no-print { display: none; }
-  }
-
-  /* ── Print button (screen only) ── */
-  .print-bar {
-    position: sticky; top: 0; z-index: 99;
-    background: #F5A623; padding: 10px 20px;
-    display: flex; align-items: center; justify-content: space-between;
-  }
+  @media print { @page { size: A3 landscape; margin: 8mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .no-print { display: none; } }
+  .print-bar { position: sticky; top: 0; z-index: 99; background: #F5A623; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; }
   .print-bar span { color: #fff; font-weight: 700; font-size: 10pt; }
-  .print-btn {
-    background: #080D1A; color: #fff; border: none;
-    padding: 8px 24px; border-radius: 8px; font-size: 10pt;
-    font-weight: 700; cursor: pointer;
-  }
+  .print-btn { background: #080D1A; color: #fff; border: none; padding: 8px 24px; border-radius: 8px; font-size: 10pt; font-weight: 700; cursor: pointer; }
 </style>
 </head>
 <body>
-
-<!-- Print bar (hidden when printing) -->
 <div class="print-bar no-print">
   <span>📄 Hartland Plant &amp; Equipment Register — ${esc(dateStr)}</span>
   <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
 </div>
-
-<!-- Header -->
 <div class="banner">
   <h1>HARTLAND NIGERIA LIMITED</h1>
   <h2>PLANT &amp; EQUIPMENT REGISTER</h2>
   <p>Confidential — For internal use only &nbsp;|&nbsp; A BuildFleet™ Report</p>
 </div>
-
-<!-- KPI Summary -->
 <div class="summary">
-  <div class="kpi total">
-    <div class="num">${counts.total}</div>
-    <div class="lbl">Total Fleet</div>
-  </div>
-  <div class="kpi working">
-    <div class="num">${counts.working}</div>
-    <div class="lbl">Working</div>
-  </div>
-  <div class="kpi repair">
-    <div class="num">${counts.repair}</div>
-    <div class="lbl">Under Repair</div>
-  </div>
-  <div class="kpi storage">
-    <div class="num">${counts.storage}</div>
-    <div class="lbl">Storage</div>
-  </div>
-  <div class="kpi scrapped">
-    <div class="num">${counts.scrapped}</div>
-    <div class="lbl">Scrapped</div>
-  </div>
+  <div class="kpi total"><div class="num">${counts.total}</div><div class="lbl">Total Fleet</div></div>
+  <div class="kpi working"><div class="num">${counts.working}</div><div class="lbl">Working</div></div>
+  <div class="kpi repair"><div class="num">${counts.repair}</div><div class="lbl">Under Repair</div></div>
+  <div class="kpi storage"><div class="num">${counts.storage}</div><div class="lbl">Storage</div></div>
+  <div class="kpi scrapped"><div class="num">${counts.scrapped}</div><div class="lbl">Scrapped</div></div>
 </div>
-
-<!-- Meta -->
 <div class="meta">
   <span>Generated: <strong>${esc(dateStr)}</strong></span>
   <span>Prepared by: <strong>${esc(generatedBy)}</strong></span>
   <span>Showing: <strong>${equipment.length}</strong> equipment</span>
 </div>
-
-<!-- Table -->
 <div class="wrap">
   <table>
     <thead><tr>${headerCells}</tr></thead>
     <tbody>${dataRows}</tbody>
   </table>
 </div>
-
-<!-- Footer -->
 <div class="footer">
-  <div class="sig-block">
-    <div class="sig-line">Plant Admin<br/>Name &amp; Signature</div>
-  </div>
-  <div class="footer-note">
-    Generated by <strong>BuildFleet™</strong> — A product of Ultimate Tech Lab (UTL)<br/>
-    <span style="color:#cbd5e1">${esc(dateStr)}</span>
-  </div>
-  <div class="sig-block">
-    <div class="sig-line">Plant Manager<br/>Name &amp; Signature</div>
-  </div>
+  <div class="sig-block"><div class="sig-line">Plant Admin<br/>Name &amp; Signature</div></div>
+  <div class="footer-note">Generated by <strong>BuildFleet™</strong><br/><span style="color:#cbd5e1">${esc(dateStr)}</span></div>
+  <div class="sig-block"><div class="sig-line">Plant Manager<br/>Name &amp; Signature</div></div>
 </div>
-
 </body>
 </html>`;
 }
@@ -460,11 +370,6 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
       .then(({ data }: { data: any[] | null }) => setAllSites(data || []));
   }, []);
 
-  // Which sibling site-code suffix each status needs within the SAME
-  // cluster as this equipment's own site — e.g. Break Down looks for
-  // "133R" if this equipment sits at "133P" or "133W". No cross-site
-  // picker: moving equipment to a genuinely different site is what
-  // Transfer is for, not a status update.
   const YARD_SUFFIX: Partial<Record<EquipmentStatus, string>> = {
     "Break Down":   "R",
     "Under Repair": "W",
@@ -478,7 +383,7 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
     if (!suffix || !ownSite) return { site: null, standalone: false };
 
     const code = ownSite.code || "";
-    const isStandalone = /^\d{3}$/.test(code); // 010–099, no attached cluster
+    const isStandalone = /^\d{3}$/.test(code);
     if (isStandalone) return { site: null, standalone: true };
 
     const isSR = code.endsWith("SR");
@@ -501,8 +406,6 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
       return;
     }
     setSaving(true); setError(null);
-    // Auto-resolved yard name, or "" for standalone sites / statuses that
-    // don't need one — equipment.site itself never changes here.
     await onSave(status, resolvedYard?.name || "");
     setSaving(false);
     onClose();
@@ -538,7 +441,6 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
           ))}
         </div>
 
-        {/* Auto-resolved yard — read-only, no picker, always within this equipment's own site */}
         {needsYard && resolvedYard && (
           <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-xs text-emerald-700">
             Will move to <span className="font-semibold">{resolvedYard.name}</span> — within {item.site}.
@@ -583,69 +485,190 @@ function StatusModal({ item, onClose, onSave, isClerk }: {
 }
 
 // ─────────────────────────────────────────────────────────────
-// MAIN PAGE
+// MAIN PAGE — now self-contained for data. Does NOT use
+// useEquipment() any more; that hook still exists unchanged for
+// whatever else may rely on it, but the register here does its own
+// real server-side pagination instead of loading the whole fleet.
 // ─────────────────────────────────────────────────────────────
 export default function EquipmentPage() {
-  const { equipment, loading, updateStatus } = useEquipment();
-  const { profile, canCommission, canTransfer, isClerk } = useAuth();
+  const { profile, canCommission, canTransfer, isClerk, isSupervisor, hasFullAccess } = useAuth();
   const searchParams = useSearchParams();
 
+  const roles: string[] = profile?.roles || [];
+  const isRestricted = (isClerk || isSupervisor) && !hasFullAccess;
+  const assignedSites: string[] = profile?.assigned_sites || [];
+  const roleSiteScope = isRestricted && assignedSites.length > 0 ? assignedSites : null;
+
   const [search,          setSearch]          = useState("");
+  const [searchInput,     setSearchInput]     = useState("");
   const [filterSt,        setFilterSt]        = useState("");
   const [filterCat,       setFilterCat]       = useState("");
-  // Pre-filter by site when arriving via ?site=<name> (e.g. from the Sites page)
   const [filterSite,      setFilterSite]      = useState(() => searchParams.get("site") || "");
   const [filterRegion,    setFilterRegion]    = useState("");
   const [statusItem,      setStatusItem]      = useState<Equipment | null>(null);
   const [view,            setView]            = useState<"table"|"grid">("table");
   const [showExportModal, setShowExportModal] = useState(false);
+  const [exportData,      setExportData]      = useState<Equipment[] | null>(null);
+  const [exporting,       setExporting]       = useState(false);
 
-  // Keep filter in sync if the URL param changes while already on this page
-  // (e.g. navigating from Sites → Equipment → Sites → a different site)
+  // ★ PAGINATION state
+  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+  const [equipmentPage, setEquipmentPage] = useState<Equipment[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // KPI counts + filter dropdown options, both from fast RPCs instead
+  // of derived from a fully-downloaded array.
+  const [counts, setCounts] = useState({ total:0, working:0, repair:0, storage:0, scrapped:0 });
+  const [categories, setCategories] = useState<string[]>([]);
+  const [sites, setSites] = useState<string[]>([]);
+  const [regions, setRegions] = useState<string[]>([]);
+
   useEffect(() => {
     const siteParam = searchParams.get("site");
     if (siteParam) setFilterSite(siteParam);
   }, [searchParams]);
 
-  const canSeeStatusBtn = profile?.roles?.some((r: string) =>
+  // Debounce raw typing before it becomes an actual query.
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => { setPage(1); }, [filterSt, filterCat, filterSite, filterRegion]);
+
+  useEffect(() => {
+    if (!profile) return;
+    loadPage();
+  }, [profile, search, filterSt, filterCat, filterSite, filterRegion, page]); 
+
+  useEffect(() => {
+    if (!profile) return;
+    loadSummaryAndOptions();
+  }, [profile]); 
+
+  async function loadPage() {
+    setLoading(true);
+    let q = dbu.from("equipment").select("*", { count: "exact" });
+
+    if (roleSiteScope) q = q.in("site", roleSiteScope);
+    if (filterSite) q = q.eq("site", filterSite);
+    if (filterCat) q = q.eq("category", filterCat);
+    if (filterRegion) q = q.eq("region", filterRegion);
+    if (filterSt) {
+      q = filterSt === "Under Repair"
+        ? q.in("operational_status", ["Under Repair","Break Down"])
+        : q.eq("operational_status", filterSt);
+    }
+    if (search.trim()) {
+      const s = search.trim();
+      q = q.or([
+        `fleet_number.ilike.%${s}%`,
+        `name.ilike.%${s}%`,
+        `make.ilike.%${s}%`,
+        `model.ilike.%${s}%`,
+        `reg_no.ilike.%${s}%`,
+        `category.ilike.%${s}%`,
+        `allocated_to.ilike.%${s}%`,
+        `allocated_position.ilike.%${s}%`,
+      ].join(","));
+    }
+
+    const from = (page - 1) * PAGE_SIZE;
+    q = q.order("fleet_number", { ascending: true }).order("id", { ascending: true }).range(from, from + PAGE_SIZE - 1);
+
+    const { data, count, error } = await q;
+    if (error) { console.error("Equipment load error:", error.message); setLoading(false); return; }
+    setEquipmentPage((data as any[]) || []);
+    setTotalRows(count || 0);
+    setLoading(false);
+  }
+
+  async function loadSummaryAndOptions() {
+    const [summaryRes, optionsRes] = await Promise.all([
+      dbu.rpc("get_equipment_summary", { p_sites: roleSiteScope }),
+      dbu.rpc("get_equipment_filter_options", { p_sites: roleSiteScope }),
+    ]);
+    if (summaryRes.data && summaryRes.data[0]) setCounts(summaryRes.data[0]);
+    if (optionsRes.data && optionsRes.data[0]) {
+      setCategories(optionsRes.data[0].categories || []);
+      setSites(optionsRes.data[0].all_sites || []);
+      setRegions(optionsRes.data[0].regions || []);
+    }
+  }
+
+  function reloadFresh() {
+    loadPage();
+    loadSummaryAndOptions();
+  }
+
+  const canSeeStatusBtn = roles.some((r: string) =>
     ["plant_clerk","site_supervisor","plant_engineer","plant_admin","plant_manager","plant_director","super_admin"].includes(r)
   );
 
-  const filtered = equipment.filter(e => {
-    const q = search.toLowerCase();
-    const matchQ = !q ||
-      e.fleet_number.toLowerCase().includes(q) ||
-      e.name.toLowerCase().includes(q) ||
-      e.make.toLowerCase().includes(q) ||
-      e.model.toLowerCase().includes(q) ||
-      (e.reg_no||"").toLowerCase().includes(q) ||
-      e.category.toLowerCase().includes(q) ||
-      ((e as any).allocated_to||"").toLowerCase().includes(q) ||
-      ((e as any).allocated_position||"").toLowerCase().includes(q);
+  // Local status-update — replaces the hook's version. Updates the DB,
+  // logs history exactly as before, then just reloads the current
+  // page + summary rather than patching a full in-memory array that
+  // no longer exists here.
+  async function updateStatus(id: string, status: EquipmentStatus, by: string, yard?: string) {
+    const item = equipmentPage.find(e => e.id === id);
+    const updatePayload: any = { operational_status: status };
+    if (yard !== undefined) updatePayload.current_yard = yard || null;
 
-    const matchSt = !filterSt ||
-      e.operational_status === filterSt ||
-      (filterSt === "Under Repair" && e.operational_status === "Break Down");
+    const { error: err } = await dbu.from("equipment").update(updatePayload).eq("id", id);
+    if (err) { alert(err.message); return; }
 
-    return matchQ && matchSt &&
-      (!filterCat    || e.category === filterCat) &&
-      (!filterSite   || e.site === filterSite) &&
-      (!filterRegion || e.region === filterRegion);
-  });
+    if (item) {
+      dbu.from("equipment_history").insert([{
+        equipment_id: id,
+        fleet_number: item.fleet_number,
+        action_type:  "Status Changed",
+        from_status:  item.operational_status,
+        to_status:    status,
+        yard:         yard || null,
+        performed_by: by,
+      }]).then(({ error: hErr }: { error: any }) => {
+        if (hErr) console.warn("History log failed:", hErr?.message || hErr);
+      });
+    }
+    reloadFresh();
+  }
 
-  const categories = [...new Set(equipment.map(e => e.category))].filter(Boolean).sort();
-  const sites      = [...new Set(equipment.map(e => e.site))].filter(Boolean).sort();
-  const regions    = [...new Set(equipment.map(e => e.region))].filter(Boolean).sort();
-
-  const counts = {
-    total:    equipment.length,
-    working:  equipment.filter(e => e.operational_status === "Working").length,
-    repair:   equipment.filter(e => ["Under Repair","Break Down"].includes(e.operational_status)).length,
-    storage:  equipment.filter(e => e.operational_status === "Storage").length,
-    scrapped: equipment.filter(e => e.operational_status === "Scrapped").length,
-  };
-
-  const exportEquipment = filtered.length > 0 ? filtered : equipment;
+  // ★ Export fetches the FULL matching set on demand — this is the
+  // one legitimate place a complete fetch belongs, since the PDF is
+  // supposed to contain every matching row, not just the visible
+  // page. Triggered only when the user actually clicks Export, never
+  // on ordinary page load.
+  async function openExport() {
+    setExporting(true);
+    let modify = (q: any) => {
+      let qq = q;
+      if (roleSiteScope) qq = qq.in("site", roleSiteScope);
+      if (filterSite) qq = qq.eq("site", filterSite);
+      if (filterCat) qq = qq.eq("category", filterCat);
+      if (filterRegion) qq = qq.eq("region", filterRegion);
+      if (filterSt) {
+        qq = filterSt === "Under Repair"
+          ? qq.in("operational_status", ["Under Repair","Break Down"])
+          : qq.eq("operational_status", filterSt);
+      }
+      if (search.trim()) {
+        const s = search.trim();
+        qq = qq.or([
+          `fleet_number.ilike.%${s}%`, `name.ilike.%${s}%`, `make.ilike.%${s}%`,
+          `model.ilike.%${s}%`, `reg_no.ilike.%${s}%`, `category.ilike.%${s}%`,
+          `allocated_to.ilike.%${s}%`, `allocated_position.ilike.%${s}%`,
+        ].join(","));
+      }
+      return qq.order("fleet_number", { ascending: true });
+    };
+    const data = await fetchAllRows("equipment", "*", modify);
+    setExportData(data as Equipment[]);
+    setExporting(false);
+    setShowExportModal(true);
+  }
 
   return (
     <div className="space-y-6 pb-10">
@@ -660,9 +683,9 @@ export default function EquipmentPage() {
         </div>
         <div className="flex flex-wrap gap-3 shrink-0">
           <button
-            onClick={() => setShowExportModal(true)}
-            className="border border-slate-200 bg-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50 flex items-center gap-2">
-            📄 Export Plant List
+            onClick={openExport} disabled={exporting}
+            className="border border-slate-200 bg-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-50 flex items-center gap-2 disabled:opacity-50">
+            {exporting ? "Preparing..." : "📄 Export Plant List"}
           </button>
           {canTransfer && (
             <Link href="/transfer"
@@ -700,7 +723,7 @@ export default function EquipmentPage() {
         ))}
       </div>
 
-      {/* Active site filter banner — shown when arriving from Sites page */}
+      {/* Active site filter banner */}
       {filterSite && (
         <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
           <span className="text-sm text-amber-800">
@@ -717,7 +740,7 @@ export default function EquipmentPage() {
       <div className="bg-white rounded-2xl border border-slate-200 p-5">
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
           <input placeholder="Search fleet no., name, make, user, dept..."
-            value={search} onChange={e => setSearch(e.target.value)}
+            value={searchInput} onChange={e => setSearchInput(e.target.value)}
             className={iCls + " lg:col-span-2"} />
           <select className={iCls} value={filterSt} onChange={e => setFilterSt(e.target.value)}>
             <option value="">All Statuses</option>
@@ -739,18 +762,29 @@ export default function EquipmentPage() {
               {regions.map(r => <option key={r}>{r}</option>)}
             </select>
             <p className="text-sm text-slate-500 whitespace-nowrap">
-              Showing <span className="font-bold text-slate-800">{filtered.length}</span> of {equipment.length}
+              {loading ? "Loading..." : `Showing ${totalRows === 0 ? 0 : ((page-1)*PAGE_SIZE)+1}–${Math.min(page*PAGE_SIZE, totalRows)} of ${totalRows.toLocaleString()}`}
             </p>
           </div>
-          <div className="flex gap-2">
-            {(["table","grid"] as const).map(v => (
-              <button key={v} onClick={() => setView(v)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  view === v ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"
-                }`}>
-                {v === "table" ? "☰ Table" : "⊞ Grid"}
-              </button>
-            ))}
+          <div className="flex items-center gap-3">
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50">‹ Prev</button>
+                Page {page} of {totalPages}
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50">Next ›</button>
+              </div>
+            )}
+            <div className="flex gap-2">
+              {(["table","grid"] as const).map(v => (
+                <button key={v} onClick={() => setView(v)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    view === v ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"
+                  }`}>
+                  {v === "table" ? "☰ Table" : "⊞ Grid"}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -776,11 +810,13 @@ export default function EquipmentPage() {
               <tbody className="divide-y divide-slate-50">
                 {loading ? (
                   <tr><td colSpan={13} className="px-5 py-16 text-center text-slate-400">Loading equipment...</td></tr>
-                ) : filtered.length === 0 ? (
+                ) : equipmentPage.length === 0 ? (
                   <tr><td colSpan={13} className="px-5 py-16 text-center text-slate-400">
-                    {equipment.length === 0 ? "No equipment yet. Commission your first equipment to get started." : "No equipment matches your filters."}
+                    {totalRows === 0 && !search && !filterSt && !filterCat && !filterSite && !filterRegion
+                      ? "No equipment yet. Commission your first equipment to get started."
+                      : "No equipment matches your filters."}
                   </td></tr>
-                ) : filtered.map(item => (
+                ) : equipmentPage.map(item => (
                   <tr key={item.id} className="hover:bg-amber-50/30 transition-colors group">
                     <td className="px-5 py-4 sticky left-0 z-10 bg-white group-hover:bg-amber-50/30 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]">
                       <Link href={`/equipment/${item.code}`}
@@ -864,9 +900,9 @@ export default function EquipmentPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {loading ? (
             <div className="col-span-3 text-center py-16 text-slate-400">Loading...</div>
-          ) : filtered.length === 0 ? (
+          ) : equipmentPage.length === 0 ? (
             <div className="col-span-3 text-center py-16 text-slate-400">No equipment found.</div>
-          ) : filtered.map(item => (
+          ) : equipmentPage.map(item => (
             <div key={item.id}
               className="bg-white rounded-2xl border border-slate-200 p-5 hover:shadow-md hover:border-amber-200 transition-all">
               <div className="flex items-start justify-between mb-3">
@@ -924,11 +960,11 @@ export default function EquipmentPage() {
       )}
 
       {/* MODALS */}
-      {showExportModal && (
+      {showExportModal && exportData && (
         <ExportModal
-          equipment={exportEquipment}
+          equipment={exportData}
           counts={counts}
-          onClose={() => setShowExportModal(false)}
+          onClose={() => { setShowExportModal(false); setExportData(null); }}
           userName={profile?.full_name || "BuildFleet"}
         />
       )}
