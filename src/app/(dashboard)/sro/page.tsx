@@ -9,7 +9,6 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from "react";
 import { dbu } from "@/lib/db";
-import { useAuth } from "@/hooks/use-auth";
 import { fetchAllRows, invalidateCache } from "@/lib/fetch-all";
 
 const iCls = "w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white";
