@@ -10,6 +10,7 @@ import { fetchAllRows } from "@/lib/fetch-all";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
+  PieChart, Pie, Cell, BarChart, Bar,
 } from "recharts";
 
 // ─────────────────────────────────────────────────────────────
@@ -372,6 +373,22 @@ function ProcurementDashboard({ profile }: { profile: any }) {
 // Procurement pages, just aggregated in one place instead of one
 // number type per page.
 // ═════════════════════════════════════════════════════════════
+// Large sums (₦942,057,976) overflowing card width was the actual
+// bug — compact notation (₦942.1M) fixes it at a glance, with the
+// exact figure still available on hover via the title attribute.
+function compactNaira(n: number) {
+  const v = Number(n || 0);
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000_000) return `₦${(v / 1_000_000_000).toFixed(2)}B`;
+  if (abs >= 1_000_000)     return `₦${(v / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000)         return `₦${(v / 1_000).toFixed(1)}K`;
+  return naira(v);
+}
+
+const PIE_COLORS: Record<string, string> = {
+  "Working": "#10B981", "Under Repair": "#F59E0B", "Storage": "#64748B", "Scrapped": "#DC2626",
+};
+
 function ExecutiveDashboard({ profile, pendingApprovals }: { profile: any; pendingApprovals: any[] }) {
   const [loading, setLoading] = useState(true);
   const [equip, setEquip] = useState<any>(null);
@@ -380,6 +397,7 @@ function ExecutiveDashboard({ profile, pendingApprovals }: { profile: any; pendi
   const [fin, setFin] = useState<any>(null);
   const [auditToday, setAuditToday] = useState(0);
   const [auditTotal, setAuditTotal] = useState(0);
+  const [lowStockItems, setLowStockItems] = useState<any[]>([]);
 
   useEffect(() => { load(); }, []); // eslint-disable-line
   async function load() {
@@ -388,13 +406,20 @@ function ExecutiveDashboard({ profile, pendingApprovals }: { profile: any; pendi
     const year = String(new Date().getFullYear());
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
 
-    const [eq, st, pr, fi, atCount, atTotal] = await Promise.all([
+    const [eq, st, pr, fi, atCount, atTotal, lowStockRes] = await Promise.all([
       dbu.rpc("get_equipment_summary", { p_sites: null }),
       dbu.rpc("get_store_summary", { p_store_location: null }),
       dbu.rpc("get_procurement_summary", { p_month: month }),
       dbu.rpc("get_finance_summary", { p_year: year }),
       dbu.from("audit_log").select("id", { count: "exact", head: true }).gte("changed_at", todayStart.toISOString()),
       dbu.from("audit_log").select("id", { count: "exact", head: true }),
+      // Same "lowest balance, filtered client-side against its own
+      // reorder threshold" approach used on the Store dashboard —
+      // cheap, no full-table fetch, real item names for the chart.
+      dbu.from("store_stock_balances")
+        .select("balance, reorder_level, stock_items!inner(name)")
+        .order("balance", { ascending: true })
+        .limit(8),
     ]);
 
     if (eq.data?.[0]) setEquip(eq.data[0]);
@@ -403,8 +428,20 @@ function ExecutiveDashboard({ profile, pendingApprovals }: { profile: any; pendi
     if (fi.data?.[0]) setFin(fi.data[0]);
     setAuditToday(atCount.count || 0);
     setAuditTotal(atTotal.count || 0);
+    setLowStockItems(((lowStockRes.data as any[]) || [])
+      .filter(b => Number(b.balance) <= Number(b.reorder_level || 10))
+      .map(b => ({ name: b.stock_items?.name || "—", balance: Number(b.balance) })));
     setLoading(false);
   }
+
+  const equipPieData = equip ? [
+    { name: "Working",      value: equip.working },
+    { name: "Under Repair", value: equip.repair },
+    { name: "Storage",      value: equip.storage },
+    { name: "Scrapped",     value: equip.scrapped },
+  ].filter(d => d.value > 0) : [];
+
+  const supplierBarData = (proc?.by_supplier || []).slice(0, 6);
 
   return (
     <div className="space-y-6 pb-10">
@@ -437,11 +474,14 @@ function ExecutiveDashboard({ profile, pendingApprovals }: { profile: any; pendi
         </Link>
       )}
 
-      {/* One card per module — Plant, Store, Procurement, Finance, Audit */}
+      {/* One card per module — Plant, Store, Procurement, Finance, Audit.
+          Headline currency values use compactNaira (₦942.1M) instead of
+          the full number, which was overflowing the card width — the
+          exact figure is still on the element's title attribute for hover. */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-        <Link href="/equipment" className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5 hover:shadow-md transition-shadow">
+        <Link href="/equipment" className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5 hover:shadow-md transition-shadow overflow-hidden">
           <p className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-3">🚜 Plant</p>
-          <p className="text-3xl font-bold text-slate-800 dark:text-white">{loading ? "..." : equip?.total ?? 0}</p>
+          <p className="text-3xl font-bold text-slate-800 dark:text-white truncate">{loading ? "..." : equip?.total ?? 0}</p>
           <p className="text-xs text-slate-400 mt-0.5">Total Fleet</p>
           <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#1E2235] space-y-1 text-xs">
             <div className="flex justify-between"><span className="text-slate-500">Working</span><span className="font-semibold text-emerald-600">{loading ? "…" : equip?.working ?? 0}</span></div>
@@ -449,9 +489,9 @@ function ExecutiveDashboard({ profile, pendingApprovals }: { profile: any; pendi
           </div>
         </Link>
 
-        <Link href="/store" className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5 hover:shadow-md transition-shadow">
+        <Link href="/store" className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5 hover:shadow-md transition-shadow overflow-hidden">
           <p className="text-xs font-bold text-emerald-500 uppercase tracking-wider mb-3">📦 Store</p>
-          <p className="text-3xl font-bold text-slate-800 dark:text-white">{loading ? "..." : naira(store?.stock_value ?? 0)}</p>
+          <p className="text-3xl font-bold text-slate-800 dark:text-white truncate" title={naira(store?.stock_value ?? 0)}>{loading ? "..." : compactNaira(store?.stock_value ?? 0)}</p>
           <p className="text-xs text-slate-400 mt-0.5">Stock Value</p>
           <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#1E2235] space-y-1 text-xs">
             <div className="flex justify-between"><span className="text-slate-500">Items</span><span className="font-semibold text-slate-700 dark:text-slate-200">{loading ? "…" : store?.total_items ?? 0}</span></div>
@@ -459,9 +499,9 @@ function ExecutiveDashboard({ profile, pendingApprovals }: { profile: any; pendi
           </div>
         </Link>
 
-        <Link href="/procurement" className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5 hover:shadow-md transition-shadow">
+        <Link href="/procurement" className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5 hover:shadow-md transition-shadow overflow-hidden">
           <p className="text-xs font-bold text-orange-500 uppercase tracking-wider mb-3">🛒 Procurement</p>
-          <p className="text-3xl font-bold text-slate-800 dark:text-white">{loading ? "..." : naira(proc?.month_total ?? 0)}</p>
+          <p className="text-3xl font-bold text-slate-800 dark:text-white truncate" title={naira(proc?.month_total ?? 0)}>{loading ? "..." : compactNaira(proc?.month_total ?? 0)}</p>
           <p className="text-xs text-slate-400 mt-0.5">Spend This Month</p>
           <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#1E2235] space-y-1 text-xs">
             <div className="flex justify-between"><span className="text-slate-500">Awaiting Approval</span><span className="font-semibold text-blue-600">{loading ? "…" : proc?.pending_approve ?? 0}</span></div>
@@ -469,29 +509,93 @@ function ExecutiveDashboard({ profile, pendingApprovals }: { profile: any; pendi
           </div>
         </Link>
 
-        <Link href="/finance" className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5 hover:shadow-md transition-shadow">
+        <Link href="/finance" className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5 hover:shadow-md transition-shadow overflow-hidden">
           <p className="text-xs font-bold text-purple-500 uppercase tracking-wider mb-3">📊 Finance</p>
-          <p className="text-3xl font-bold text-slate-800 dark:text-white">{loading ? "..." : naira(fin?.total_spend ?? 0)}</p>
+          <p className="text-3xl font-bold text-slate-800 dark:text-white truncate" title={naira(fin?.total_spend ?? 0)}>{loading ? "..." : compactNaira(fin?.total_spend ?? 0)}</p>
           <p className="text-xs text-slate-400 mt-0.5">Total Spend — {new Date().getFullYear()}</p>
           <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#1E2235] space-y-1 text-xs">
-            <div className="flex justify-between"><span className="text-slate-500">Budget Set</span><span className="font-semibold text-slate-700 dark:text-slate-200">{loading ? "…" : naira(fin?.total_budget ?? 0)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Budget Set</span><span className="font-semibold text-slate-700 dark:text-slate-200 truncate ml-2" title={naira(fin?.total_budget ?? 0)}>{loading ? "…" : compactNaira(fin?.total_budget ?? 0)}</span></div>
             <div className="flex justify-between">
               <span className="text-slate-500">Variance</span>
-              <span className={`font-semibold ${fin && fin.total_budget - fin.total_spend < 0 ? "text-red-600" : "text-emerald-600"}`}>
-                {loading || !fin?.total_budget ? "—" : naira(fin.total_budget - fin.total_spend)}
+              <span className={`font-semibold truncate ml-2 ${fin && fin.total_budget - fin.total_spend < 0 ? "text-red-600" : "text-emerald-600"}`}
+                title={fin?.total_budget ? naira(fin.total_budget - fin.total_spend) : ""}>
+                {loading || !fin?.total_budget ? "—" : compactNaira(fin.total_budget - fin.total_spend)}
               </span>
             </div>
           </div>
         </Link>
 
-        <Link href="/audit" className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5 hover:shadow-md transition-shadow">
+        <Link href="/audit" className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5 hover:shadow-md transition-shadow overflow-hidden">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">🛡️ Audit</p>
-          <p className="text-3xl font-bold text-slate-800 dark:text-white">{loading ? "..." : auditToday}</p>
+          <p className="text-3xl font-bold text-slate-800 dark:text-white truncate">{loading ? "..." : auditToday}</p>
           <p className="text-xs text-slate-400 mt-0.5">Changes Today</p>
           <div className="mt-3 pt-3 border-t border-slate-100 dark:border-[#1E2235] space-y-1 text-xs">
             <div className="flex justify-between"><span className="text-slate-500">All-Time Entries</span><span className="font-semibold text-slate-700 dark:text-slate-200">{loading ? "…" : auditTotal.toLocaleString()}</span></div>
           </div>
         </Link>
+      </div>
+
+      {/* Charts — the actual "Oracle-style" visual layer */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5">
+          <h3 className="font-bold text-slate-800 dark:text-white text-sm mb-1">Equipment Status</h3>
+          <p className="text-slate-400 text-xs mb-3">Fleet-wide breakdown</p>
+          {loading ? (
+            <div className="h-52 flex items-center justify-center text-slate-400 text-xs">Loading...</div>
+          ) : equipPieData.length === 0 ? (
+            <div className="h-52 flex items-center justify-center text-slate-400 text-xs">No equipment data yet.</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie data={equipPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={2}>
+                  {equipPieData.map((d, i) => <Cell key={i} fill={PIE_COLORS[d.name] || "#94A3B8"} />)}
+                </Pie>
+                <Tooltip formatter={(v: any, n: any) => [`${v} units`, n]} />
+                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5">
+          <h3 className="font-bold text-slate-800 dark:text-white text-sm mb-1">Low Stock Items</h3>
+          <p className="text-slate-400 text-xs mb-3">Lowest balances across all stores</p>
+          {loading ? (
+            <div className="h-52 flex items-center justify-center text-slate-400 text-xs">Loading...</div>
+          ) : lowStockItems.length === 0 ? (
+            <div className="h-52 flex items-center justify-center text-slate-400 text-xs">✅ Nothing low right now.</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={lowStockItems} layout="vertical" margin={{ left: 8, right: 16 }}>
+                <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 10 }} axisLine={false} tickLine={false}
+                  tickFormatter={(v: string) => v.length > 14 ? v.slice(0,14)+"…" : v} />
+                <Tooltip formatter={(v: any) => [`${v} left`, "Balance"]} />
+                <Bar dataKey="balance" fill="#DC2626" radius={[0,4,4,0]} barSize={14} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div className="bg-white dark:bg-[#0F1117] rounded-2xl border border-slate-200 dark:border-[#1E2235] p-5">
+          <h3 className="font-bold text-slate-800 dark:text-white text-sm mb-1">Spend by Supplier</h3>
+          <p className="text-slate-400 text-xs mb-3">This month — {new Date().toLocaleDateString("en-GB",{month:"long",year:"numeric"})}</p>
+          {loading ? (
+            <div className="h-52 flex items-center justify-center text-slate-400 text-xs">Loading...</div>
+          ) : supplierBarData.length === 0 ? (
+            <div className="h-52 flex items-center justify-center text-slate-400 text-xs">No spend recorded this month yet.</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={supplierBarData} layout="vertical" margin={{ left: 8, right: 16 }}>
+                <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v:number)=>compactNaira(v)} />
+                <YAxis type="category" dataKey="supplier" width={90} tick={{ fontSize: 10 }} axisLine={false} tickLine={false}
+                  tickFormatter={(v: string) => v.length > 14 ? v.slice(0,14)+"…" : v} />
+                <Tooltip formatter={(v: any) => [naira(v), "Spend"]} />
+                <Bar dataKey="total" fill="#F59E0B" radius={[0,4,4,0]} barSize={14} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
       </div>
 
       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl px-4 py-3 text-xs text-blue-700 dark:text-blue-300">
