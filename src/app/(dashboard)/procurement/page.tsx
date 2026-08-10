@@ -391,11 +391,23 @@ export default function ProcurementPage() {
     total_purchases: number; by_supplier: { supplier: string; total: number }[];
   } | null>(null);
 
-  useEffect(() => { loadMonths(); }, []);
+  useEffect(() => { loadMonths(); loadCounts(); }, []);
+
+  // Lightweight — count only, no rows transferred. This is what the
+  // tab labels ("Comparisons (N)") show, so they're accurate from the
+  // moment the page loads, not just after visiting each tab once.
+  async function loadCounts() {
+    const [c, p] = await Promise.all([
+      dbu.from("purchase_comparisons").select("id", { count: "exact", head: true }),
+      dbu.from("purchases").select("id", { count: "exact", head: true }),
+    ]);
+    if (c.count != null) setCompTotal(c.count);
+    if (p.count != null) setPurchTotal(p.count);
+  }
   useEffect(() => { loadSummary(); }, [month]); // eslint-disable-line
   useEffect(() => { if (tab === "comparisons") loadComparisonsPage(); }, [tab, compPage]); // eslint-disable-line
   useEffect(() => { if (tab === "purchases") loadPurchasesPage(); }, [tab, purchPage]); // eslint-disable-line
-  useEffect(() => { if (tab === "history") loadHistory(); }, [tab]);  
+  useEffect(() => { if (tab === "history") loadHistory(); }, [tab]); 
 
   async function loadMonths() {
     const { data } = await dbu.rpc("get_procurement_months");
