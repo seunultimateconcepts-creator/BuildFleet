@@ -971,7 +971,7 @@ export default function SROPage() {
   const isStoreRole = roles.some(r => ["store_officer","store_manager","store_supervisor","super_admin"].includes(r));
 
   useEffect(() => { load(); }, []);
-  useEffect(() => { if (isStoreRole) loadReadyToReceive(); }, [sros]); // eslint-disable-line
+  useEffect(() => { if (isStoreRole) loadReadyToReceive(); }, [sros]); 
 
   async function loadReadyToReceive() {
     const inProgress = sros.filter((s:any) => s.status === "In Progress" || s.status === "At Store");
