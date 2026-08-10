@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import Sidebar from "../../components/dashboard/sidebar";
 import Header from "../../components/dashboard/header";
 import { dbu } from "@/lib/db";
+import { AuthProvider } from "@/hooks/use-auth";
 
-const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const SESSION_KEY     = "bf_tab_auth";   // sessionStorage key — wiped when tab/browser closes
 const LAST_ACTIVE_KEY = "bf_last_active"; // timestamp of last user activity
 
@@ -119,14 +120,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen bg-[#F7F8FC] dark:bg-[#0A0C14]">
-      <Sidebar />
-      <div className="ml-64 flex-1 flex flex-col overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-6 bg-[#F7F8FC] dark:bg-[#0A0C14]">
-          {children}
-        </main>
+    <AuthProvider>
+      <div className="flex h-screen bg-[#F7F8FC] dark:bg-[#0A0C14]">
+        <Sidebar />
+        <div className="ml-64 flex-1 flex flex-col overflow-hidden">
+          <Header />
+          <main className="flex-1 overflow-y-auto p-6 bg-[#F7F8FC] dark:bg-[#0A0C14]">
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </AuthProvider>
   );
 }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState } from "react";
@@ -18,9 +19,25 @@ import {
 // ─────────────────────────────────────────────────────────────
 const navItems = [
   { label: "Dashboard",     href: "/",            icon: LayoutDashboard, roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk","store_officer","store_manager","store_supervisor","procurement_officer","procurement_manager","finance_viewer","finance_manager","executive","driver"] },
-  { label: "Equipment",     href: "/equipment",   icon: Truck,           roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk","store_manager","store_supervisor"] },
-  { label: "Sites",         href: "/sites",       icon: MapPin,          roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","store_manager","store_supervisor"] },
-  { label: "Transfer",      href: "/transfer",    icon: ArrowLeftRight,  roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
+  {
+    label: "Plant", icon: Truck,
+    // Union of every child's roles below — this is what makes the
+    // GROUP itself appear. Each child then filters independently at
+    // render time, so a role only sees the specific pages it's
+    // actually allowed on, same boundary as before nesting.
+    roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer",
+            "site_supervisor","plant_clerk","store_manager","store_supervisor"],
+    children: [
+      { label: "Equipment",  href: "/equipment",   icon: Truck,
+        roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk","store_manager","store_supervisor"] },
+      { label: "Sites",      href: "/sites",       icon: MapPin,
+        roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","store_manager","store_supervisor"] },
+      { label: "Transfer",   href: "/transfer",    icon: ArrowLeftRight,
+        roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
+      { label: "Daily Logs", href: "/daily-logs",  icon: BookOpen,
+        roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
+    ],
+  },
   {
     label: "Maintenance", icon: Wrench,
     roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"],
@@ -58,7 +75,6 @@ const navItems = [
   { label: "Finance", href: "/finance", icon: BarChart3,
     roles: ["super_admin","finance_viewer","finance_manager","procurement_manager","store_manager",
             "plant_engineer","plant_manager","plant_admin","executive"] },
-  { label: "Daily Logs",    href: "/daily-logs",  icon: BookOpen,        roles: ["super_admin","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
   { label: "Plant Gallery", href: "/gallery",     icon: ImageIcon,       roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer","site_supervisor","plant_clerk"] },
   { label: "Reports",       href: "/reports",     icon: BarChart3,       roles: ["super_admin","plant_director","plant_manager","plant_engineer","plant_admin","plant_officer"] },
   { label: "Audit",         href: "/audit",       icon: ShieldCheck,     roles: ["super_admin","plant_admin","executive"] },
@@ -179,7 +195,9 @@ export default function Sidebar() {
 
                 {isOpen && (
                   <div className="ml-4 pl-3 mt-0.5 space-y-0.5 border-l" style={{ borderColor: "#1E2235" }}>
-                    {item.children.map(child => {
+                    {item.children
+                      .filter((child: any) => !child.roles || child.roles.some((r: string) => roles.includes(r)))
+                      .map(child => {
                       const ChildIcon = child.icon;
                       const active = isActive(child.href);
                       return (
