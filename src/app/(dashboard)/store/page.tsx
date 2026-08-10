@@ -486,14 +486,27 @@ export default function StorePage() {
   const [allStores, setAllStores] = useState<string[]>([]);
   const [myStores, setMyStores] = useState<string[]>([]);
   const [itemsMaster, setItemsMaster] = useState<any[]>([]);
-  const [balances, setBalances] = useState<any[]>([]);
+  const [balances, setBalances] = useState<any[]>([]); // only the CURRENT PAGE, never the whole table
   const [selectedStore, setSelectedStore] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState(""); // raw typing, debounced into `search`
   const [filterCategory, setFilterCategory] = useState("");
   const [importModal, setImportModal] = useState(false);
   const [grnModal, setGrnModal] = useState(false);
   const [adjustModal, setAdjustModal] = useState(false);
+
+  // ★ PAGINATION — the actual fix. Nothing above ever downloads the
+  // whole table anymore; the register only ever asks for one page.
+  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+
+  // ★ KPI cards — computed server-side by get_store_summary() instead
+  // of summing every row in the browser. See get_store_summary_function.sql.
+  const [summary, setSummary] = useState<{ total_items:number; stock_value:number; total_received:number; total_issued:number; low_stock_count:number } | null>(null);
+  const [categories, setCategories] = useState<string[]>([]);
 
   // Store Officer only ever sees THEIR OWN assigned store(s) — this is
   // the actual access boundary, not just a UI default.
@@ -514,36 +527,62 @@ export default function StorePage() {
     const assigned = (profile?.assigned_sites || []).filter((s: string) => storeNames.includes(s));
     setMyStores(assigned);
 
+    // itemsMaster still fetched in full for the GRN item picker's
+    // autocomplete search — that picker searches by typing, so it
+    // needs the catalog client-side. This is a separate, smaller
+    // concern from the Register table below; flagged as a follow-up
+    // if the catalog itself grows large enough to matter.
     const master = await fetchAllRows("stock_items", "*", q => q.order("name"));
     setItemsMaster(master);
+    setCategories([...new Set(master.map((i:any) => i.category))].filter(Boolean).sort() as string[]);
 
-    // Default: a scoped Data Analyst lands on their own store (they
-    // have no "All Stores" option anyway). Everyone else defaults to
-    // "All Stores" — landing on one arbitrary, alphabetically-first
-    // store was confusing and looked like a bug.
     const initialStore = isStoreOfficer ? (assigned[0] || "") : "__all__";
     setSelectedStore(initialStore);
     setLoading(false);
   }
 
-  useEffect(() => { if (selectedStore || selectedStore === "__all__") loadBalances(); }, [selectedStore]); 
-  async function loadBalances() {
-    setLoading(true);
-    // ★ PERFORMANCE FIX: this used to be two separate full-table
-    // fetches (balances + items) followed by a manual .find() match
-    // in the browser, an O(n×m) loop across thousands of rows on
-    // every load. Supabase can embed the related stock_items row
-    // directly in the same query (it already knows the foreign key),
-    // so the database does the matching in one pass instead of the
-    // browser doing it the slow way. Also cached for 60s so clicking
-    // back into this page doesn't force a full reload every time.
-    const select = "*, stock_items(name,part_number,category,unit,unit_cost,sourcing)";
-    const cacheKey = `store-balances-${selectedStore}`;
-    const raw = selectedStore === "__all__"
-      ? await fetchAllRows("store_stock_balances", select, undefined, { cacheKey })
-      : await fetchAllRows("store_stock_balances", select, (q:any) => q.eq("store_location", selectedStore), { cacheKey });
+  // Debounce raw typing into the actual search term used for queries —
+  // waits 350ms after the user stops typing before hitting the
+  // database, instead of firing a query on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
-    const enriched = (raw as any[]).map(b => ({
+  // Any change to store/search/category/page re-fetches — but each
+  // fetch only ever pulls PAGE_SIZE rows, never the whole table.
+  useEffect(() => {
+    if (selectedStore || selectedStore === "__all__") { loadPage(); loadSummary(); }
+  }, [selectedStore, search, filterCategory, page]); // eslint-disable-line
+
+  // Store/search/category changes should reset back to page 1 —
+  // otherwise a search could land on "page 4" of a result set that
+  // only has 1 page, showing an empty table for no obvious reason.
+  useEffect(() => { setPage(1); }, [selectedStore, filterCategory]);
+
+  async function loadPage() {
+    setLoading(true);
+    // !inner turns the stock_items join into a real SQL INNER JOIN,
+    // which is what makes filtering/searching ON the joined columns
+    // (name, category) possible server-side via PostgREST — this is
+    // the piece that lets search and category filter happen in the
+    // database instead of over an already-downloaded array.
+    let q = dbu.from("store_stock_balances")
+      .select("*, stock_items!inner(name,part_number,category,unit,unit_cost,sourcing)", { count: "exact" });
+
+    if (selectedStore !== "__all__") q = q.eq("store_location", selectedStore);
+    if (search.trim()) {
+      q = q.or(`name.ilike.%${search.trim()}%,part_number.ilike.%${search.trim()}%`, { foreignTable: "stock_items" });
+    }
+    if (filterCategory) q = q.eq("stock_items.category", filterCategory);
+
+    const from = (page - 1) * PAGE_SIZE;
+    q = q.order("id", { ascending: true }).range(from, from + PAGE_SIZE - 1);
+
+    const { data, count, error } = await q;
+    if (error) { console.error("Store register load error:", error.message); setLoading(false); return; }
+
+    const enriched = (data as any[] || []).map(b => ({
       ...b,
       name: b.stock_items?.name,
       part_number: b.stock_items?.part_number,
@@ -553,39 +592,41 @@ export default function StorePage() {
       sourcing: b.stock_items?.sourcing,
     }));
     setBalances(enriched);
+    setTotalRows(count || 0);
     setLoading(false);
+  }
+
+  async function loadSummary() {
+    const { data, error } = await dbu.rpc("get_store_summary", {
+      p_store_location: selectedStore === "__all__" ? null : selectedStore,
+    });
+    if (error) { console.error("Store summary load error:", error.message); return; }
+    if (data && data[0]) setSummary(data[0]);
   }
 
   // Any write (GRN, Adjustment, Import) must invalidate the cache
   // first, otherwise the change wouldn't show up for up to 60s,
-  // since loadBalances would happily serve the now-stale cached copy.
+  // since other pages sharing this cache namespace would still serve
+  // the stale copy. Then re-run both the current page and the summary,
+  // since a write can change either (or both).
   function reloadFresh() {
     invalidateCache("store-balances-");
-    loadBalances();
+    loadPage();
+    loadSummary();
   }
-
-  const categories = [...new Set(balances.map((b: any) => b.category))].filter(Boolean).sort();
-  const filtered = balances.filter((b: any) => {
-    const q = search.toLowerCase();
-    const matchQ = !q || (b.name||"").toLowerCase().includes(q) || (b.part_number||"").toLowerCase().includes(q);
-    return matchQ && (!filterCategory || b.category === filterCategory);
-  });
-
-  const totalValue = balances.reduce((s: number, b: any) => s + (Number(b.balance||0) * Number(b.unit_cost||0)), 0);
-  const lowStock = balances.filter((b: any) => Number(b.balance) <= Number(b.reorder_level || 10));
-  const totalReceived = balances.reduce((s: number, b: any) => s + Number(b.qty_received || 0), 0);
-  const totalIssued = balances.reduce((s: number, b: any) => s + Number(b.qty_issued || 0), 0);
 
   const grnDefaultStore = selectedStore === "__all__" ? (availableStores[0] || "") : selectedStore;
   const lockStoreForOfficer = isStoreOfficer && myStores.length <= 1;
 
-  // Exports exactly what's currently on screen — respects the active
-  // store selection, search, and category filter, so what management
-  // downloads matches what's visible, not a silent full dump.
+  // Exports exactly what's on the CURRENT PAGE — a genuine full-table
+  // export (respecting search/filter across every matching row, not
+  // just the visible 50) would need a separate server-side streaming
+  // export; flagged as a follow-up rather than re-introducing a full
+  // table download here, which is the exact pattern this fix removes.
   function exportCSV() {
     const headers = ["Name","Part No.", ...(selectedStore === "__all__" ? ["Store"] : []),
       "Category","Unit","Received","Issued","Balance","Unit Cost (₦)","Value (₦)"];
-    const rows = filtered.map((b: any) => [
+    const rows = balances.map((b: any) => [
       b.name, b.part_number || "",
       ...(selectedStore === "__all__" ? [b.store_location] : []),
       b.category || "", b.unit || "",
@@ -595,7 +636,7 @@ export default function StorePage() {
     const csv = [headers, ...rows].map(r => r.map((v:any) => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
-    a.download = `BuildFleet_Inventory_${selectedStore === "__all__" ? "AllStores" : selectedStore.replace(/[^a-z0-9]/gi,"_")}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.download = `BuildFleet_Inventory_${selectedStore === "__all__" ? "AllStores" : selectedStore.replace(/[^a-z0-9]/gi,"_")}_page${page}_${new Date().toISOString().slice(0,10)}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   }
@@ -656,30 +697,30 @@ export default function StorePage() {
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-slate-900 text-white rounded-2xl p-5">
-          <p className="text-2xl font-bold">{loading ? "..." : balances.length.toLocaleString()}</p>
+          <p className="text-2xl font-bold">{!summary ? "..." : summary.total_items.toLocaleString()}</p>
           <p className="text-sm opacity-70 mt-1">Items {selectedStore === "__all__" ? "(all stores)" : "here"}</p>
         </div>
         <div className="bg-amber-500 text-white rounded-2xl p-5">
-          <p className="text-2xl font-bold">{loading ? "..." : naira(totalValue)}</p>
+          <p className="text-2xl font-bold">{!summary ? "..." : naira(summary.stock_value)}</p>
           <p className="text-sm opacity-70 mt-1">Stock Value</p>
         </div>
         <div className="bg-blue-600 text-white rounded-2xl p-5">
-          <p className="text-2xl font-bold">{loading ? "..." : totalReceived.toLocaleString()}</p>
+          <p className="text-2xl font-bold">{!summary ? "..." : summary.total_received.toLocaleString()}</p>
           <p className="text-sm opacity-70 mt-1">Total Received</p>
         </div>
         <div className="bg-slate-600 text-white rounded-2xl p-5">
-          <p className="text-2xl font-bold">{loading ? "..." : totalIssued.toLocaleString()}</p>
+          <p className="text-2xl font-bold">{!summary ? "..." : summary.total_issued.toLocaleString()}</p>
           <p className="text-sm opacity-70 mt-1">Total Issued</p>
         </div>
-        <div className={`rounded-2xl p-5 ${lowStock.length > 0 ? "bg-red-600 text-white" : "bg-emerald-600 text-white"}`}>
-          <p className="text-2xl font-bold">{loading ? "..." : lowStock.length}</p>
+        <div className={`rounded-2xl p-5 ${summary && summary.low_stock_count > 0 ? "bg-red-600 text-white" : "bg-emerald-600 text-white"}`}>
+          <p className="text-2xl font-bold">{!summary ? "..." : summary.low_stock_count.toLocaleString()}</p>
           <p className="text-sm opacity-70 mt-1">Low / Out of Stock</p>
         </div>
       </div>
 
-      {!loading && balances.length === 0 && (
+      {!loading && totalRows === 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6 text-center">
-          <p className="text-blue-800 font-semibold">No stock at {selectedStore === "__all__" ? "any store" : selectedStore} yet.</p>
+          <p className="text-blue-800 font-semibold">No stock at {selectedStore === "__all__" ? "any store" : selectedStore} yet{search || filterCategory ? " matching this search/filter" : ""}.</p>
           <p className="text-blue-600 text-sm mt-1">
             {isSuperAdmin ? 'Import the historical ledger, or use "Receive Stock" to add the first item.' : 'Use "Receive Stock" to add the first item here.'}
           </p>
@@ -688,7 +729,7 @@ export default function StorePage() {
 
       <div className="bg-white rounded-2xl border border-slate-200 p-5 grid grid-cols-1 lg:grid-cols-3 gap-4">
         <input placeholder="Search name, part no..."
-          value={search} onChange={e => setSearch(e.target.value)}
+          value={searchInput} onChange={e => setSearchInput(e.target.value)}
           className={iCls + " lg:col-span-2"} />
         <select className={iCls} value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
           <option value="">All Categories</option>
@@ -697,9 +738,22 @@ export default function StorePage() {
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100">
-          <h2 className="font-bold text-slate-800">Stock Register</h2>
-          <p className="text-slate-400 text-sm">{loading ? "Loading..." : `${filtered.length} of ${balances.length} items`}</p>
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 className="font-bold text-slate-800">Stock Register</h2>
+            <p className="text-slate-400 text-sm">
+              {loading ? "Loading..." : totalRows === 0 ? "0 items" : `Showing ${((page-1)*PAGE_SIZE)+1}–${Math.min(page*PAGE_SIZE, totalRows)} of ${totalRows.toLocaleString()} items`}
+            </p>
+          </div>
+          {!loading && totalPages > 1 && (
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50">‹ Prev</button>
+              Page {page} of {totalPages}
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50">Next ›</button>
+            </div>
+          )}
         </div>
         <div className="overflow-auto max-h-[65vh]">
           <table className="w-full text-sm">
@@ -716,9 +770,9 @@ export default function StorePage() {
             <tbody className="divide-y divide-slate-50">
               {loading ? (
                 <tr><td colSpan={8} className="px-5 py-16 text-center text-slate-400">Loading...</td></tr>
-              ) : filtered.length === 0 ? (
+              ) : totalRows === 0 ? (
                 <tr><td colSpan={8} className="px-5 py-16 text-center text-slate-400">No items match your search.</td></tr>
-              ) : filtered.map((b: any) => {
+              ) : balances.map((b: any) => {
                 const low = Number(b.balance) <= Number(b.reorder_level || 10);
                 return (
                   <tr key={b.id} className={`hover:bg-amber-50/20 group ${low ? "bg-red-50/40" : ""}`}>
